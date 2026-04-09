@@ -1,0 +1,276 @@
+.table-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: #1a0f0a;
+}
+
+.casino-background {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-color: #2a1810;
+  background-image:
+    url('/assets/casino-bg.jpg'),
+    linear-gradient(155deg, #3d2418 0%, #2a1810 38%, #1a100c 72%, #0d0806 100%);
+  background-size: cover;
+  background-position: center;
+  filter: blur(6px) brightness(0.9) saturate(1.2);
+  transform: scale(1.05);
+  transform-origin: center center;
+}
+
+.overlay-gradient {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      ellipse 110% 70% at 50% 0%,
+      rgba(255, 224, 160, 0.38) 0%,
+      rgba(255, 190, 110, 0.16) 32%,
+      transparent 58%
+    ),
+    linear-gradient(
+      to bottom,
+      rgba(35, 22, 14, 0.12) 0%,
+      rgba(10, 8, 14, 0.55) 55%,
+      rgba(4, 3, 8, 0.78) 100%
+    );
+}
+
+.table-surface {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  height: 65%;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0.95;
+  background: radial-gradient(
+    ellipse at 50% 20%,
+    rgba(10, 70, 60, 0.9) 0%,
+    rgba(5, 25, 20, 0.95) 60%,
+    rgba(0, 0, 0, 1) 100%
+  );
+  border-top-left-radius: 50% 20%;
+  border-top-right-radius: 50% 20%;
+  box-shadow:
+    inset 0 40px 80px rgba(0, 0, 0, 0.6),
+    0 -10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.deck-container {
+  position: absolute;
+  top: 60%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+  width: 100%;
+  max-width: 100%;
+  display: flex;
+  justify-content: center;
+  transition: transform 0.2s ease;
+}
+
+.deck-container:hover:not(.is-dragging) {
+  transform: translate(-50%, calc(-50% - 6px)) scale(1.02);
+}
+
+.deck-container.is-dragging {
+  transform: translate(-50%, -50%);
+}
+
+.deck-container.is-dragging .deck-stack {
+  user-select: none;
+}
+
+.deck-container::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -36px;
+  width: min(90vw, 720px);
+  height: 64px;
+  transform: translateX(-50%);
+  background: radial-gradient(
+    ellipse at center,
+    rgba(0, 0, 0, 0.55) 0%,
+    rgba(0, 0, 0, 0.22) 45%,
+    transparent 72%
+  );
+  filter: blur(10px);
+  z-index: -1;
+  pointer-events: none;
+}
+
+.deck-stack {
+  position: relative;
+  width: min(100vw, 1920px);
+  min-width: min(100vw, 100%);
+  min-height: 420px;
+  height: min(52vh, 480px);
+  cursor: pointer;
+}
+
+.deck-card-layer {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 180px;
+  height: 260px;
+  margin-left: -90px;
+}
+
+.card-position {
+  position: relative;
+  width: 180px;
+  height: 260px;
+  transform-origin: center bottom;
+  transition: transform 0.4s ease;
+}
+
+.card {
+  position: absolute;
+  inset: 0;
+  width: 180px;
+  height: 260px;
+  perspective: 1000px;
+  transform-style: preserve-3d;
+  cursor: grab;
+  border-radius: 10px;
+  outline: none;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.card.floating {
+  position: fixed;
+  inset: auto;
+  cursor: default;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.card.floating .card-inner {
+  transition: none;
+  box-shadow:
+    0 25px 50px rgba(0, 0, 0, 0.7),
+    0 10px 30px rgba(0, 0, 0, 0.5),
+    inset 0 0 18px rgba(0, 0, 0, 0.18);
+}
+
+.card:active:not(.floating) {
+  cursor: grabbing;
+}
+
+.card:focus-visible {
+  box-shadow: 0 0 0 2px rgba(245, 230, 200, 0.45);
+  border-radius: 10px;
+}
+
+.card-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform 0.6s ease;
+  border-radius: 10px;
+  box-shadow:
+    0 20px 40px rgba(0, 0, 0, 0.6),
+    0 8px 20px rgba(0, 0, 0, 0.4),
+    inset 0 0 20px rgba(0, 0, 0, 0.2);
+}
+
+.card.flipped .card-inner {
+  transform: rotateY(180deg);
+}
+
+.card-front,
+.card-back {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  inset: 0;
+  border-radius: 10px;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.card-back {
+  background-color: #8a1426;
+  background-image: url('/assets/card-back-real.png');
+  transform: rotateY(180deg);
+}
+
+.card-front {
+  background-color: #faf8f3;
+  transform: rotateY(0deg);
+}
+
+.card-front-photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 10px;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.card-front-fallback {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: 10px;
+  border: 1px solid rgba(45, 35, 28, 0.35);
+  background: linear-gradient(168deg, #fdfcfa, #f2eee6 48%, #ebe6dc);
+}
+
+.card-front-fallback.red {
+  color: #b32030;
+}
+
+.card-front-fallback.black {
+  color: #141414;
+}
+
+.card-front-corner {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.05;
+}
+
+.card-front-corner.tl {
+  top: 8px;
+  left: 10px;
+}
+
+.card-front-corner.br {
+  right: 10px;
+  bottom: 8px;
+  transform: rotate(180deg);
+}
+
+.card-suit {
+  font-size: 20px;
+  margin-top: 2px;
+}
+
+.card-front-center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 42px;
+  opacity: 0.88;
+}
