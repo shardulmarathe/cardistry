@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useRef,
   useState,
 } from 'react'
@@ -19,42 +20,13 @@ const SUIT_SYMBOL = {
   spades: '♠',
 }
 
-const CARD_W = 270
-const CARD_H = 390
 const DRAG_THRESHOLD_PX = 6
 const FLIP_MS = 350
 const FLIP_STAGGER_MS = 7
 /** Position-based drop: matches spread math (card width − overlap step) */
 const DROP_CARD_WIDTH = 140
 const DROP_OVERLAP = 60
-/** Gap between bottom of top row and top of bottom row (screen px) */
-const ROW_FACE_GAP_PX = 32
-/** Lift both rows so the spread sits comfortably in the deck area */
-const DRAG_GROUP_LIFT_PX = 44
-/** Max width of each row as a fraction of viewport (centered, not full-bleed) */
-const ROW_MAX_WIDTH_FRAC = 0.65
-/** Target overlap between adjacent cards (~26% of card width → ~74% step) */
-const ROW_OVERLAP_FRAC = 0.26
-/** Insert preview gap (kept modest so the spread stays compact) */
-const INSERT_GAP_PX = 22
 const BULK_FLIP_MS = FLIP_MS + 51 * FLIP_STAGGER_MS
-
-/** Horizontal step (center-to-center) for k overlapping cards within maxRowW */
-function compactRowStep(k, maxRowW) {
-  if (k <= 1) return CARD_W
-  const loose = CARD_W * (1 - ROW_OVERLAP_FRAC)
-  const looseSpan = (k - 1) * loose + CARD_W
-  if (looseSpan <= maxRowW) return loose
-  const compressed = (maxRowW - CARD_W) / (k - 1)
-  return Math.max(10, compressed)
-}
-
-/** Remaining-list insert slot for gap animation from drop index (0..deckLen) */
-function remainingInsertSlotFromDrop(dropIdx, draggedIdx) {
-  if (dropIdx == null || draggedIdx == null) return 0
-  if (dropIdx <= draggedIdx) return dropIdx
-  return dropIdx - 1
-}
 
 /** Drop index 0..deckLen from cursor X vs deck bounds (position-based, no hover) */
 function computeDropIndex(mouseX, deckLen, rect) {
@@ -64,36 +36,6 @@ function computeDropIndex(mouseX, deckLen, rect) {
   if (effectiveWidth <= 0) return 0
   const index = Math.floor(relativeX / effectiveWidth)
   return Math.max(0, Math.min(deckLen, index))
-}
-
-/** Remaining-card index j in 0..n-1 → compact overlapping two-row spread */
-function getTwoRowTransform(
-  j,
-  n,
-  viewportWidth,
-  insertSlot,
-) {
-  if (n <= 0) return 'translate(0px, 0px) rotate(0deg)'
-
-  const maxRowW = Math.max(300, viewportWidth * ROW_MAX_WIDTH_FRAC)
-  const rowBudget = Math.max(240, maxRowW - INSERT_GAP_PX)
-
-  const topCount = Math.ceil(n / 2)
-  const row = j < topCount ? 0 : 1
-  const idxInRow = row === 0 ? j : j - topCount
-  const rowCount = row === 0 ? topCount : n - topCount
-
-  const step = compactRowStep(rowCount, rowBudget)
-  const firstCenterX = -((rowCount - 1) * step) / 2
-  let x = firstCenterX + idxInRow * step
-  if (j >= insertSlot) x += INSERT_GAP_PX
-
-  const y =
-    row === 0
-      ? -(CARD_H - ROW_FACE_GAP_PX) - DRAG_GROUP_LIFT_PX
-      : -DRAG_GROUP_LIFT_PX
-
-  return `translate(${x}px, ${y}px) rotate(0deg)`
 }
 
 const PlayingCard = memo(function PlayingCard({
@@ -169,11 +111,106 @@ const PlayingCard = memo(function PlayingCard({
   )
 })
 
-const Deck = forwardRef(function Deck(_props, ref) {
-  const [deck, setDeck] = useState(createDeck)
+/**
+ * Insert-mode adjustments ONLY (does not affect getFanTransform).
+ * Horizontal layout must match normal fan endpoints — duplicate geometry below.
+ */
+const INSERT_PEAK_HEIGHT = 150
+/** Gaussian hover spread (insert mode only). */
+const INSERT_HOVER_SIGMA = 150
+const INSERT_HOVER_SPREAD_AMOUNT = 30
+/** Global upward shift after insert layout (visibility only; insert mode only). */
+const INSERT_SHIFT_Y = 160
+
+/** Same numbers as getFanTransform — duplicate on purpose; do not change getFanTransform. */
+const NORMAL_FAN_SPREAD = 180
+const NORMAL_FAN_RADIUS = 630
+
+/**
+ * Normal-fan local slot (same math as getFanTransform) for locking insert mode X / rotation.
+ */
+function getNormalFanSlotLocal(i, total) {
+  if (total <= 0) {
+    return { x: 0, y: 0, rotationDeg: 0 }
+  }
+  const angleStep = total > 1 ? NORMAL_FAN_SPREAD / (total - 1) : 0
+  const angle = -NORMAL_FAN_SPREAD / 2 + i * angleStep
+  const rad = (angle * Math.PI) / 180
+  const x = Math.sin(rad) * NORMAL_FAN_RADIUS
+  const y = -Math.cos(rad) * NORMAL_FAN_RADIUS * 0.35
+  return { x, y, rotationDeg: angle }
+}
+
+/** Horizontal nudge from cursor — gaussian falloff, no effect far from pointer. */
+function insertHoverSpreadDeltaX(baseLocalX, anchorCx, mouseX) {
+  const cardX = anchorCx + baseLocalX
+  const dx = cardX - mouseX
+  const sigma = INSERT_HOVER_SIGMA
+  const influence = Math.exp(-(dx * dx) / (2 * sigma * sigma))
+  if (dx === 0) return 0
+  return influence * INSERT_HOVER_SPREAD_AMOUNT * Math.sign(dx)
+}
+
+function getInsertLayoutForSlot(i, count, anchorCx, mouseX) {
+  if (count <= 0) {
+    return {
+      localX: 0,
+      localY: 0,
+      rotationDeg: 0,
+      screenX: anchorCx,
+    }
+  }
+  const { x: baseX, y: baseY, rotationDeg } = getNormalFanSlotLocal(i, count)
+  const t = count <= 1 ? 0 : i / (count - 1)
+  const centerDist = Math.abs(t - 0.5) * 2
+  const lift = (1 - centerDist) ** 2 * INSERT_PEAK_HEIGHT
+  const localY = baseY - lift - INSERT_SHIFT_Y
+  const offsetX = insertHoverSpreadDeltaX(baseX, anchorCx, mouseX)
+  const localX = baseX + offsetX
+  const screenX = anchorCx + localX
+  return { localX, localY, rotationDeg, screenX }
+}
+
+function getInsertFanTransform(i, count, anchorCx, mouseX) {
+  if (count <= 0) return 'translate(0px, 0px) rotate(0deg)'
+  const p = getInsertLayoutForSlot(i, count, anchorCx, mouseX)
+  return `translate(${p.localX}px, ${p.localY}px) rotate(${p.rotationDeg}deg)`
+}
+
+/**
+ * Layout-first drop: argmin_i |dragX - positions[i].x| → insert index (same order as fan slots).
+ * dragX = pointer X (floating card follows cursor).
+ */
+function getInsertIndexFromLayout(dragX, positions) {
+  if (!positions.length) return 0
+  let closestIndex = 0
+  let minDist = Infinity
+  for (let i = 0; i < positions.length; i++) {
+    const d = Math.abs(dragX - positions[i].x)
+    if (d < minDist) {
+      minDist = d
+      closestIndex = i
+    }
+  }
+  return closestIndex
+}
+
+const Deck = forwardRef(function Deck({ deck, setDeck }, ref) {
   const [isFanned, setIsFanned] = useState(false)
   const [layoutWidth, setLayoutWidth] = useState(
     typeof window !== 'undefined' ? window.innerWidth : 1024,
+  )
+  const [layoutHeight, setLayoutHeight] = useState(
+    typeof window !== 'undefined' ? window.innerHeight : 800,
+  )
+  /** Pivot: stack center X and bottom Y (client coords) for screen → local insert transforms */
+  const [stackAnchor, setStackAnchor] = useState(() =>
+    typeof window !== 'undefined'
+      ? {
+          cx: window.innerWidth / 2,
+          by: window.innerHeight * 0.95,
+        }
+      : { cx: 0, by: 0 },
   )
 
   const [mouseX, setMouseX] = useState(0)
@@ -184,13 +221,17 @@ const Deck = forwardRef(function Deck(_props, ref) {
   const [draggedCardId, setDraggedCardId] = useState(null)
   const [draggedIndex, setDraggedIndex] = useState(null)
   const [isDragging, setIsDragging] = useState(false)
+  /** True only while actively dragging a card (after move threshold). Drives insert-arc layout. */
+  const [isDraggingCard, setIsDraggingCard] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const [isFlipping, setIsFlipping] = useState(false)
   const [bulkFlipActive, setBulkFlipActive] = useState(false)
 
   const deckRef = useRef(null)
-  /** Measured deck bounds for drop math (avoid reading ref during render) */
-  const [deckRect, setDeckRect] = useState(null)
+  const deckStackRef = useRef(null)
+  /** Screen X of each visible slot (same order as insert layout) — read on drop before state clears. */
+  const insertDropPositionsRef = useRef([])
+  const isFannedRef = useRef(false)
   const draggedIndexRef = useRef(null)
   const draggedCardIdRef = useRef(null)
   const isDraggingRef = useRef(false)
@@ -199,10 +240,30 @@ const Deck = forwardRef(function Deck(_props, ref) {
   const isFlippingRef = useRef(false)
 
   useEffect(() => {
-    const ro = () => setLayoutWidth(window.innerWidth)
+    const ro = () => {
+      setLayoutWidth(window.innerWidth)
+      setLayoutHeight(window.innerHeight)
+    }
     window.addEventListener('resize', ro)
     return () => window.removeEventListener('resize', ro)
   }, [])
+
+  useLayoutEffect(() => {
+    const el = deckStackRef.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    setStackAnchor({
+      cx: r.left + r.width / 2,
+      by: r.bottom,
+    })
+  }, [
+    isFanned,
+    isDraggingCard,
+    layoutWidth,
+    layoutHeight,
+    deck.length,
+    bulkFlipActive,
+  ])
 
   useEffect(() => {
     const handleMove = (e) => {
@@ -222,11 +283,7 @@ const Deck = forwardRef(function Deck(_props, ref) {
       if (!isDraggingRef.current && distance > DRAG_THRESHOLD_PX) {
         isDraggingRef.current = true
         setIsDragging(true)
-        const el = deckRef.current
-        if (el) {
-          const r = el.getBoundingClientRect()
-          setDeckRect({ left: r.left, width: r.width })
-        }
+        setIsDraggingCard(true)
       }
     }
 
@@ -258,7 +315,7 @@ const Deck = forwardRef(function Deck(_props, ref) {
     setDraggedCardId(null)
     setDraggedIndex(null)
     setIsDragging(false)
-    setDeckRect(null)
+    setIsDraggingCard(false)
   }, [])
 
   const flipAll = useCallback(() => {
@@ -277,7 +334,7 @@ const Deck = forwardRef(function Deck(_props, ref) {
       setIsFlipping(false)
       setBulkFlipActive(false)
     }, BULK_FLIP_MS + 40)
-  }, [clearInteractionState])
+  }, [clearInteractionState, setDeck])
 
   const resetDeck = useCallback(() => {
     clearInteractionState()
@@ -286,7 +343,7 @@ const Deck = forwardRef(function Deck(_props, ref) {
     setBulkFlipActive(false)
     setIsFanned(false)
     setDeck(createDeck())
-  }, [clearInteractionState])
+  }, [clearInteractionState, setDeck])
 
   useImperativeHandle(
     ref,
@@ -297,23 +354,38 @@ const Deck = forwardRef(function Deck(_props, ref) {
     [flipAll, resetDeck],
   )
 
+  isFannedRef.current = isFanned
+
   const handleDrop = useCallback(() => {
     const d = draggedIndexRef.current
     if (d == null) return
 
     setDeck((prev) => {
-      const el = deckRef.current
-      const r = el?.getBoundingClientRect()
-      const rect = r ? { left: r.left, width: r.width } : null
-      const dropIndex = computeDropIndex(
-        mouseXRef.current,
-        prev.length,
-        rect,
-      )
+      const insertPositions = insertDropPositionsRef.current
+      const useInsertDrop =
+        isFannedRef.current &&
+        insertPositions.length > 0 &&
+        insertPositions.length === prev.length - 1
+
       const next = [...prev]
       const [movedCard] = next.splice(d, 1)
-      const adjustedIndex = d < dropIndex ? dropIndex - 1 : dropIndex
-      const clamped = Math.max(0, Math.min(adjustedIndex, next.length))
+
+      let insertAt
+      if (useInsertDrop) {
+        insertAt = getInsertIndexFromLayout(mouseXRef.current, insertPositions)
+      } else {
+        const el = deckRef.current
+        const r = el?.getBoundingClientRect()
+        const rect = r ? { left: r.left, width: r.width } : null
+        const dropIndex = computeDropIndex(
+          mouseXRef.current,
+          prev.length,
+          rect,
+        )
+        insertAt = d < dropIndex ? dropIndex - 1 : dropIndex
+      }
+
+      const clamped = Math.max(0, Math.min(insertAt, next.length))
       next.splice(clamped, 0, movedCard)
       return next
     })
@@ -350,11 +422,11 @@ const Deck = forwardRef(function Deck(_props, ref) {
 
       isDraggingRef.current = false
       setIsDragging(false)
+      setIsDraggingCard(false)
       draggedCardIdRef.current = null
       setDraggedCardId(null)
       draggedIndexRef.current = null
       setDraggedIndex(null)
-      setDeckRect(null)
     }
 
     window.addEventListener('mouseup', onUp)
@@ -377,17 +449,33 @@ const Deck = forwardRef(function Deck(_props, ref) {
   const getStackTransform = (i) =>
     `translateY(${i * -3}px) translateX(${i * 1.2}px)`
 
-  const liveDropIndex =
-    isDragging && draggedIndex != null && deckRect
-      ? computeDropIndex(mouseX, deck.length, deckRect)
-      : null
+  const nVisibleFan =
+    isDraggingCard && draggedCardId ? deck.length - 1 : deck.length
 
-  const resolvePositionTransform = (deckIndex, j, nFiltered) => {
-    if (draggedCardId && isDragging && draggedIndex != null) {
-      const drop =
-        liveDropIndex != null ? liveDropIndex : draggedIndex
-      const gapSlot = remainingInsertSlotFromDrop(drop, draggedIndex)
-      return getTwoRowTransform(j, nFiltered, layoutWidth, gapSlot)
+  const isInserting =
+    isDraggingCard && Boolean(draggedCardId) && isFanned && nVisibleFan > 0
+
+  /** "normal" | "inserting" — inserting uses only the separate insert arc helpers above. */
+  const layoutMode = isInserting ? 'inserting' : 'normal'
+
+  const insertPositions =
+    layoutMode === 'inserting'
+      ? Array.from({ length: nVisibleFan }, (_, j) => ({
+          x: getInsertLayoutForSlot(j, nVisibleFan, stackAnchor.cx, mouseX)
+            .screenX,
+        }))
+      : []
+
+  insertDropPositionsRef.current = insertPositions
+
+  const resolvePositionTransform = (deckIndex, slotIndex) => {
+    if (layoutMode === 'inserting') {
+      return getInsertFanTransform(
+        slotIndex,
+        nVisibleFan,
+        stackAnchor.cx,
+        mouseX,
+      )
     }
     if (isFanned) return getFanTransform(deckIndex)
     return getStackTransform(deckIndex)
@@ -398,36 +486,34 @@ const Deck = forwardRef(function Deck(_props, ref) {
       ? deck.find((c) => c.id === draggedCardId)
       : null
 
-  const nVisible = isDragging && draggedCardId ? deck.length - 1 : deck.length
-
   return (
     <div
       ref={deckRef}
-      className={`deck-container${isDragging ? ' is-dragging' : ''}`}
+      className={`deck-container${isDragging ? ' is-dragging' : ''}${
+        layoutMode === 'inserting' ? ' is-insert-arc' : ''
+      }`}
     >
-      <div
-        className={`deck-stack${bulkFlipActive ? ' is-bulk-flip' : ''}`}
-        onClick={(e) => {
-          if (draggedCardId) return
-          if (e.target !== e.currentTarget) return
-          setIsFanned(!isFanned)
-        }}
-        role="presentation"
-      >
+      <div className="deck-position-wrap">
+        <div
+          ref={deckStackRef}
+          className={`deck-stack${bulkFlipActive ? ' is-bulk-flip' : ''}`}
+          onClick={(e) => {
+            if (draggedCardId) return
+            if (e.target !== e.currentTarget) return
+            setIsFanned(!isFanned)
+          }}
+          role="presentation"
+        >
         {deck.map((card, i) => {
           if (isDragging && card.id === draggedCardId) {
             return null
           }
 
-          const j = deck
+          const slotIndex = deck
             .slice(0, i)
             .filter((c) => !(isDragging && c.id === draggedCardId)).length
 
-          const positionTransform = resolvePositionTransform(
-            i,
-            j,
-            nVisible,
-          )
+          const positionTransform = resolvePositionTransform(i, slotIndex)
 
           const staggerMs =
             bulkFlipActive && !isDragging ? i * FLIP_STAGGER_MS : 0
@@ -456,6 +542,7 @@ const Deck = forwardRef(function Deck(_props, ref) {
                     setDragStart({ x, y })
                     isDraggingRef.current = false
                     setIsDragging(false)
+                    setIsDraggingCard(false)
                     draggedCardIdRef.current = card.id
                     setDraggedCardId(card.id)
                     draggedIndexRef.current = i
@@ -478,6 +565,7 @@ const Deck = forwardRef(function Deck(_props, ref) {
             </div>
           )
         })}
+        </div>
       </div>
 
       {isDragging &&
@@ -495,4 +583,5 @@ const Deck = forwardRef(function Deck(_props, ref) {
   )
 })
 
+export { PlayingCard }
 export default Deck
