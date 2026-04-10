@@ -347,123 +347,172 @@
 }
 
 .shuffle-view {
-  --card-w: 58px;
-  --card-h: 84px;
-  --card-radius: 8px;
   position: relative;
   z-index: 4;
   display: flex;
   flex-direction: column;
   min-height: calc(100dvh - 100px);
-  padding: 0 18px 100px;
+  padding: 0 18px 140px;
   pointer-events: auto;
 }
 
-.shuffle-deck-host {
-  position: fixed;
-  z-index: 5;
-  width: calc(var(--card-w) + 24px);
-  height: calc(var(--card-h) + 32px);
-  transition:
-    top 0.42s cubic-bezier(0.4, 0, 0.2, 1),
-    right 0.42s cubic-bezier(0.4, 0, 0.2, 1),
-    left 0.42s cubic-bezier(0.4, 0, 0.2, 1),
-    transform 0.42s cubic-bezier(0.4, 0, 0.2, 1);
+/* Inner wrapper — positioning comes from .shuffle-deck-mover (matches Deck tab stack visually). */
+.shuffle-deck {
+  position: relative;
   pointer-events: none;
 }
 
-.shuffle-deck-host--corner {
-  top: max(88px, env(safe-area-inset-top, 0px));
-  right: max(16px, env(safe-area-inset-right, 0px));
+.shuffle-deck-mover {
+  position: fixed;
+  z-index: 12;
+  pointer-events: none;
+  transition:
+    top 0.3s cubic-bezier(0.45, 0, 0.55, 1),
+    right 0.3s cubic-bezier(0.45, 0, 0.55, 1),
+    left 0.3s cubic-bezier(0.45, 0, 0.55, 1),
+    transform 0.3s cubic-bezier(0.45, 0, 0.55, 1);
+}
+
+/* Optional: top-right slot (unused by default — shuffle deck stays centered). */
+.shuffle-deck-mover--corner {
+  top: max(40px, env(safe-area-inset-top, 0px));
+  right: max(40px, env(safe-area-inset-right, 0px));
   left: auto;
   transform: none;
 }
 
-.shuffle-deck-host--center {
-  top: 38%;
+/* True viewport center; stack width scoped below so translate(-50%) aligns the cards. */
+.shuffle-deck-mover--center {
+  top: 50%;
   left: 50%;
   right: auto;
   transform: translate(-50%, -50%);
 }
 
-.shuffle-deck-host--busy {
+/*
+ * Same as riffle piles: tab deck uses a 100vw-wide stack; here we need a narrow
+ * stack so the fixed mover’s anchor matches the visible card column (no
+ * perceived shift from translateX stacking).
+ */
+.shuffle-view .shuffle-deck .deck-stack {
+  width: var(--card-w);
+  min-width: var(--card-w);
+  max-width: var(--card-w);
+  min-height: calc(var(--card-h) + 200px);
+  height: auto;
+  cursor: default;
+}
+
+.shuffle-deck-mover--merge .shuffle-deck .deck-stack {
+  animation: shuffle-merge-compress 0.3s cubic-bezier(0.45, 0, 0.55, 1);
+}
+
+@keyframes shuffle-merge-compress {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(0.965);
+  }
+  72% {
+    transform: scale(1.012);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Portaled to document.body — flex centers the pair on the real viewport (no ancestor transforms). */
+.shuffle-riffle-root {
+  --shuffle-band-top: clamp(72px, 22vh, 220px);
+  position: fixed;
+  inset: 0;
+  z-index: 9;
   pointer-events: none;
 }
 
-.shuffle-mini-stack {
-  position: relative;
+/*
+ * Main deck tab uses a wide .deck-stack (min(100vw, 1920px)) so fanned layouts
+ * have room. Card layers sit at left: 50% of *that* box. Riffle piles wrap a
+ * narrow column — without overriding width, 50% still meant “center of the
+ * full viewport-wide stack”, so cards rendered beside the centered shadow box.
+ */
+.shuffle-riffle-root .deck-stack {
   width: var(--card-w);
-  height: var(--card-h);
+  min-width: var(--card-w);
+  max-width: var(--card-w);
+  min-height: calc(var(--card-h) + 200px);
+  height: auto;
+  cursor: default;
 }
 
-.shuffle-mini-layer {
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  width: var(--card-w);
-  height: var(--card-h);
-  transform-origin: center bottom;
-  transition: transform 0.2s ease;
-}
-
-.shuffle-stage {
-  position: relative;
-  flex: 1;
-  min-height: 180px;
-  pointer-events: none;
-}
-
-.shuffle-split {
+.shuffle-riffle-band {
   display: flex;
   justify-content: center;
-  align-items: flex-end;
-  gap: min(14vw, 200px);
-  padding-top: 48px;
+  align-items: flex-start;
+  padding-top: var(--shuffle-band-top);
+  padding-left: max(12px, env(safe-area-inset-left, 0px));
+  padding-right: max(12px, env(safe-area-inset-right, 0px));
 }
 
-.shuffle-half {
+.shuffle-riffle-pair {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: flex-start;
+  gap: clamp(100px, 12vw, 170px);
+}
+
+.shuffle-riffle-pair--spread {
+  gap: clamp(132px, 16vw, 220px);
+}
+
+.shuffle-split-pile {
   position: relative;
-  width: calc(var(--card-w) + 8px);
-  height: calc(var(--card-h) + 40px);
-}
-
-.shuffle-half--left {
-  transform: translateX(-12px);
-}
-
-.shuffle-half--right {
-  transform: translateX(12px);
-}
-
-.shuffle-half-stack {
-  position: relative;
+  z-index: 10;
   width: var(--card-w);
-  height: var(--card-h);
+  min-height: var(--card-h);
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4);
 }
 
-.shuffle-center-pile {
-  position: absolute;
+.shuffle-riffle-center-wrap {
+  position: fixed;
   left: 50%;
-  bottom: 18%;
-  transform: translateX(-50%);
+  top: var(--shuffle-band-top);
+  z-index: 11;
   width: var(--card-w);
-  height: calc(var(--card-h) + 120px);
-  z-index: 6;
+  min-height: var(--card-h);
+  transform: translate(-50%, 0);
+  border-radius: 10px;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.42);
 }
 
-.shuffle-center-card {
-  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.35));
+.shuffle-riffle-center-stack .deck-card-layer:last-child .card-position {
+  animation: shuffle-card-drop 0.42s cubic-bezier(0.45, 0, 0.55, 1);
+}
+
+@keyframes shuffle-card-drop {
+  from {
+    opacity: 0.65;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .shuffle-options {
-  padding: 8px 0 0;
+  margin-top: auto;
+  margin-left: auto;
+  margin-right: auto;
+  padding: 24px 0 0;
   max-width: 720px;
-  margin: 0 auto;
   width: 100%;
 }
 
 .shuffle-options-title {
   margin: 0 0 14px;
+  padding-top: 8px;
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.12em;

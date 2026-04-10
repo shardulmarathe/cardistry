@@ -1,6 +1,5 @@
 import {
   forwardRef,
-  memo,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -10,15 +9,8 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { createDeck } from './deckModel'
-
-const RED = new Set(['hearts', 'diamonds'])
-
-const SUIT_SYMBOL = {
-  hearts: '♥',
-  diamonds: '♦',
-  clubs: '♣',
-  spades: '♠',
-}
+import PlayingCard from './PlayingCard'
+import DeckStack, { getDeckStackTransform } from './DeckStack'
 
 const DRAG_THRESHOLD_PX = 6
 const FLIP_MS = 350
@@ -37,79 +29,6 @@ function computeDropIndex(mouseX, deckLen, rect) {
   const index = Math.floor(relativeX / effectiveWidth)
   return Math.max(0, Math.min(deckLen, index))
 }
-
-const PlayingCard = memo(function PlayingCard({
-  card,
-  isFloating,
-  mouse = { x: 0, y: 0 },
-  onMouseDown,
-  onKeyDown,
-  flipStaggerMs = 0,
-}) {
-  const frontUrl = `/assets/card-fronts/${card.id}.png`
-  const flipped = !card.isFaceUp
-
-  const innerStyle = {
-    transitionDelay:
-      flipStaggerMs > 0 ? `${flipStaggerMs}ms` : '0ms',
-  }
-
-  const inner = (
-    <div className="card-inner" style={innerStyle}>
-      <div className="card-front">
-        <div className={`card-front-fallback ${RED.has(card.suit) ? 'red' : 'black'}`}>
-          <span className="card-front-corner tl">
-            {card.rank}
-            <span className="card-suit">{SUIT_SYMBOL[card.suit]}</span>
-          </span>
-          <span className="card-front-center">{SUIT_SYMBOL[card.suit]}</span>
-          <span className="card-front-corner br">
-            {card.rank}
-            <span className="card-suit">{SUIT_SYMBOL[card.suit]}</span>
-          </span>
-        </div>
-        <img
-          src={frontUrl}
-          alt=""
-          className="card-front-photo"
-          loading="lazy"
-          decoding="async"
-          onError={(e) => {
-            e.currentTarget.style.display = 'none'
-          }}
-        />
-      </div>
-      <div className="card-back" aria-hidden />
-    </div>
-  )
-
-  if (isFloating) {
-    return (
-      <div
-        className={`card floating${flipped ? ' flipped' : ''}`}
-        style={{
-          '--float-x': `${mouse.x}px`,
-          '--float-y': `${mouse.y - 100}px`,
-        }}
-      >
-        {inner}
-      </div>
-    )
-  }
-
-  return (
-    <div
-      className={`card${flipped ? ' flipped' : ''}`}
-      aria-label={`Flip or drag ${card.id}`}
-      onMouseDown={onMouseDown}
-      onKeyDown={onKeyDown}
-      role="button"
-      tabIndex={0}
-    >
-      {inner}
-    </div>
-  )
-})
 
 /**
  * Insert-mode adjustments ONLY (does not affect getFanTransform).
@@ -446,8 +365,7 @@ const Deck = forwardRef(function Deck({ deck, setDeck }, ref) {
     return `translate(${x}px, ${y}px) rotate(${angle}deg)`
   }
 
-  const getStackTransform = (i) =>
-    `translateY(${i * -3}px) translateX(${i * 1.2}px)`
+  const getStackTransform = getDeckStackTransform
 
   const nVisibleFan =
     isDraggingCard && draggedCardId ? deck.length - 1 : deck.length
@@ -494,78 +412,122 @@ const Deck = forwardRef(function Deck({ deck, setDeck }, ref) {
       }`}
     >
       <div className="deck-position-wrap">
-        <div
-          ref={deckStackRef}
-          className={`deck-stack${bulkFlipActive ? ' is-bulk-flip' : ''}`}
-          onClick={(e) => {
-            if (draggedCardId) return
-            if (e.target !== e.currentTarget) return
-            setIsFanned(!isFanned)
-          }}
-          role="presentation"
-        >
-        {deck.map((card, i) => {
-          if (isDragging && card.id === draggedCardId) {
-            return null
-          }
+        {!isFanned ? (
+          <DeckStack
+            ref={deckStackRef}
+            cards={deck}
+            className={bulkFlipActive ? ' is-bulk-flip' : ''}
+            omitCardId={isDragging ? draggedCardId : undefined}
+            isDragging={isDragging}
+            bulkFlipActive={bulkFlipActive}
+            flipStaggerMsStep={FLIP_STAGGER_MS}
+            onStackClick={(e) => {
+              if (draggedCardId) return
+              if (e.target !== e.currentTarget) return
+              setIsFanned(!isFanned)
+            }}
+            onCardMouseDown={(e, card, i) => {
+              e.stopPropagation()
+              e.preventDefault()
+              const x = e.clientX
+              const y = e.clientY
+              dragStartRef.current = { x, y }
+              setDragStart({ x, y })
+              isDraggingRef.current = false
+              setIsDragging(false)
+              setIsDraggingCard(false)
+              draggedCardIdRef.current = card.id
+              setDraggedCardId(card.id)
+              draggedIndexRef.current = i
+              setDraggedIndex(i)
+              dragSessionRef.current = true
+              mouseXRef.current = x
+              mouseYRef.current = y
+              setMouseX(x)
+              setMouseY(y)
+            }}
+            onCardKeyDown={(e, card) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                e.stopPropagation()
+                if (!isFlippingRef.current) flipCard(card.id)
+              }
+            }}
+          />
+        ) : (
+          <div
+            ref={deckStackRef}
+            className={`deck-stack${bulkFlipActive ? ' is-bulk-flip' : ''}`}
+            onClick={(e) => {
+              if (draggedCardId) return
+              if (e.target !== e.currentTarget) return
+              setIsFanned(!isFanned)
+            }}
+            role="presentation"
+          >
+            {deck.map((card, i) => {
+              if (isDragging && card.id === draggedCardId) {
+                return null
+              }
 
-          const slotIndex = deck
-            .slice(0, i)
-            .filter((c) => !(isDragging && c.id === draggedCardId)).length
+              const slotIndex = deck
+                .slice(0, i)
+                .filter((c) => !(isDragging && c.id === draggedCardId)).length
 
-          const positionTransform = resolvePositionTransform(i, slotIndex)
+              const positionTransform = resolvePositionTransform(i, slotIndex)
 
-          const staggerMs =
-            bulkFlipActive && !isDragging ? i * FLIP_STAGGER_MS : 0
+              const staggerMs =
+                bulkFlipActive && !isDragging ? i * FLIP_STAGGER_MS : 0
 
-          return (
-            <div
-              key={card.id}
-              className="deck-card-layer"
-              style={{ zIndex: i }}
-              data-deck-index={i}
-            >
-              <div
-                className="card-position"
-                style={{ transform: positionTransform }}
-              >
-                <PlayingCard
-                  card={card}
-                  isFloating={false}
-                  flipStaggerMs={staggerMs}
-                  onMouseDown={(e) => {
-                    e.stopPropagation()
-                    e.preventDefault()
-                    const x = e.clientX
-                    const y = e.clientY
-                    dragStartRef.current = { x, y }
-                    setDragStart({ x, y })
-                    isDraggingRef.current = false
-                    setIsDragging(false)
-                    setIsDraggingCard(false)
-                    draggedCardIdRef.current = card.id
-                    setDraggedCardId(card.id)
-                    draggedIndexRef.current = i
-                    setDraggedIndex(i)
-                    dragSessionRef.current = true
-                    mouseXRef.current = x
-                    mouseYRef.current = y
-                    setMouseX(x)
-                    setMouseY(y)
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      if (!isFlippingRef.current) flipCard(card.id)
-                    }
-                  }}
-                />
-              </div>
-            </div>
-          )
-        })}
-        </div>
+              return (
+                <div
+                  key={card.id}
+                  className="deck-card-layer"
+                  style={{ zIndex: i }}
+                  data-deck-index={i}
+                >
+                  <div
+                    className="card-position"
+                    style={{ transform: positionTransform }}
+                  >
+                    <PlayingCard
+                      card={card}
+                      isFloating={false}
+                      flipStaggerMs={staggerMs}
+                      onMouseDown={(e) => {
+                        e.stopPropagation()
+                        e.preventDefault()
+                        const x = e.clientX
+                        const y = e.clientY
+                        dragStartRef.current = { x, y }
+                        setDragStart({ x, y })
+                        isDraggingRef.current = false
+                        setIsDragging(false)
+                        setIsDraggingCard(false)
+                        draggedCardIdRef.current = card.id
+                        setDraggedCardId(card.id)
+                        draggedIndexRef.current = i
+                        setDraggedIndex(i)
+                        dragSessionRef.current = true
+                        mouseXRef.current = x
+                        mouseYRef.current = y
+                        setMouseX(x)
+                        setMouseY(y)
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          if (!isFlippingRef.current) flipCard(card.id)
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {isDragging &&
@@ -583,5 +545,5 @@ const Deck = forwardRef(function Deck({ deck, setDeck }, ref) {
   )
 })
 
-export { PlayingCard }
+export { default as PlayingCard } from './PlayingCard'
 export default Deck

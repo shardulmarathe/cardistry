@@ -1,56 +1,43 @@
 import { useCallback, useRef, useState } from 'react'
-import { PlayingCard } from './Deck'
+import { createPortal } from 'react-dom'
+import DeckStack from './DeckStack'
 
-const MOVE_MS = 420
-const SPLIT_PAUSE_MS = 380
-const CHUNK_MS = 88
-const RETURN_MS = 420
+const MOVE_MS = 300
+const SPLIT_PAUSE_MS = 300
+const SPREAD_MS = 320
+const MERGE_MS = 320
+const RETURN_MS = 320
+const STAGGER_MS = 15
 
 function wait(ms) {
   return new Promise((r) => window.setTimeout(r, ms))
 }
 
-function rand13() {
-  return 1 + Math.floor(Math.random() * 3)
-}
-
-/** Alternating chunks of 1–3 cards until both halves are consumed. */
-function buildRiffleChunks(left, right) {
+/** Strict alternating interleave */
+function alternateMerge(left, right) {
   const L = [...left]
   const R = [...right]
-  const chunks = []
-  let preferLeft = Math.random() > 0.5
-
-  while (L.length > 0 || R.length > 0) {
-    if (preferLeft && L.length > 0) {
-      const n = Math.min(L.length, rand13())
-      chunks.push({ side: 'left', cards: L.splice(0, n) })
-    } else if (!preferLeft && R.length > 0) {
-      const n = Math.min(R.length, rand13())
-      chunks.push({ side: 'right', cards: R.splice(0, n) })
-    } else if (L.length > 0) {
-      const n = Math.min(L.length, rand13())
-      chunks.push({ side: 'left', cards: L.splice(0, n) })
-    } else if (R.length > 0) {
-      const n = Math.min(R.length, rand13())
-      chunks.push({ side: 'right', cards: R.splice(0, n) })
-    }
-    preferLeft = !preferLeft
+  const out = []
+  while (L.length || R.length) {
+    if (L.length) out.push(L.shift())
+    if (R.length) out.push(R.shift())
   }
-
-  return chunks
+  return out
 }
 
-function mergedFromChunks(chunks) {
-  return chunks.flatMap((c) => c.cards)
+function randRot() {
+  return Math.random() * 6 - 3
 }
 
 export default function ShuffleView({ deck, setDeck }) {
   const [phase, setPhase] = useState('idle')
-  const [deckPos, setDeckPos] = useState('corner')
-  const [leftPack, setLeftPack] = useState([])
-  const [rightPack, setRightPack] = useState([])
-  const [centerPile, setCenterPile] = useState([])
+  const [moverSlot, setMoverSlot] = useState('center')
+  const [leftHalf, setLeftHalf] = useState([])
+  const [rightHalf, setRightHalf] = useState([])
+  const [centerBuild, setCenterBuild] = useState([])
+  const [landRot, setLandRot] = useState({})
+  const [mergePulse, setMergePulse] = useState(false)
+  const [splitSpread, setSplitSpread] = useState(false)
   const runningRef = useRef(false)
 
   const busy = phase !== 'idle'
@@ -58,51 +45,67 @@ export default function ShuffleView({ deck, setDeck }) {
   const runRiffle = useCallback(async () => {
     if (runningRef.current || deck.length < 2) return
     runningRef.current = true
+
     const snapshot = [...deck]
-    const half = Math.floor(snapshot.length / 2)
-    const L0 = snapshot.slice(0, half)
-    const R0 = snapshot.slice(half)
+    const mid = Math.floor(snapshot.length / 2)
+    const L0 = snapshot.slice(0, mid)
+    const R0 = snapshot.slice(mid)
+    const shuffled = alternateMerge(L0, R0)
 
     try {
-      setCenterPile([])
-      setLeftPack([])
-      setRightPack([])
-      setPhase('prep')
-      setDeckPos('center')
+      setCenterBuild([])
+      setLandRot({})
+      setMergePulse(false)
+      setSplitSpread(false)
+
+      setPhase('move-center')
+      setMoverSlot('center')
       await wait(MOVE_MS)
 
-      setLeftPack(L0)
-      setRightPack(R0)
+      setLeftHalf(L0)
+      setRightHalf(R0)
       setPhase('split')
       await wait(SPLIT_PAUSE_MS)
 
-      const chunks = buildRiffleChunks(L0, R0)
-      const merged = mergedFromChunks(chunks)
+      setSplitSpread(true)
+      await wait(SPREAD_MS)
 
-      let remL = [...L0]
-      let remR = [...R0]
-      let acc = []
       setPhase('riffling')
+      let dL = [...L0]
+      let dR = [...R0]
+      const rots = {}
 
-      for (const chunk of chunks) {
-        if (chunk.side === 'left') {
-          remL = remL.slice(chunk.cards.length)
-        } else {
-          remR = remR.slice(chunk.cards.length)
+      for (let k = 0; k < shuffled.length; k++) {
+        const card = shuffled[k]
+        rots[card.id] = randRot()
+        setLandRot({ ...rots })
+
+        if (dL.length && dL[0].id === card.id) {
+          dL.shift()
+        } else if (dR.length && dR[0].id === card.id) {
+          dR.shift()
         }
-        acc = acc.concat(chunk.cards)
-        setLeftPack([...remL])
-        setRightPack([...remR])
-        setCenterPile([...acc])
-        await wait(CHUNK_MS)
+        setLeftHalf([...dL])
+        setRightHalf([...dR])
+        setCenterBuild(shuffled.slice(0, k + 1))
+        await wait(STAGGER_MS)
       }
 
-      setDeck(merged)
-      setLeftPack([])
-      setRightPack([])
-      setCenterPile([])
+      setDeck(shuffled)
+      setLeftHalf([])
+      setRightHalf([])
+      setCenterBuild([])
+      setLandRot({})
+      setSplitSpread(false)
+
+      setPhase('merge')
+      setMoverSlot('center')
+      setMergePulse(true)
+      await wait(MERGE_MS)
+      setMergePulse(false)
+
       setPhase('returning')
-      setDeckPos('corner')
+      setMoverSlot('center')
       await wait(RETURN_MS)
     } finally {
       setPhase('idle')
@@ -119,112 +122,76 @@ export default function ShuffleView({ deck, setDeck }) {
     { id: 'random', label: 'Random', active: false },
   ]
 
+  const showFloatingDeck =
+    phase === 'idle' ||
+    phase === 'move-center' ||
+    phase === 'merge' ||
+    phase === 'returning'
+
   const showSplit = phase === 'split' || phase === 'riffling'
-  const showCenter = phase === 'riffling' && centerPile.length > 0
-  const showSingleStack =
-    phase === 'idle' || phase === 'prep' || phase === 'returning'
+  const showCenterRiffle = phase === 'riffling' && centerBuild.length > 0
+
+  const layerStyleForRiffle = (i, card, baseT) => {
+    const r = landRot[card.id]
+    const ease = 'cubic-bezier(0.45, 0, 0.55, 1)'
+    if (r == null) return { transform: baseT, transition: `transform 0.38s ${ease}` }
+    return {
+      transform: `${baseT} rotate(${r}deg)`,
+      transition: `transform 0.38s ${ease}`,
+    }
+  }
+
+  const riffleOverlay =
+    typeof document !== 'undefined' &&
+    (showSplit || showCenterRiffle) &&
+    createPortal(
+      <div className="shuffle-riffle-root">
+        {showSplit && (
+          <div className="shuffle-riffle-band">
+            <div
+              className={`shuffle-riffle-pair${
+                splitSpread ? ' shuffle-riffle-pair--spread' : ''
+              }`}
+            >
+              <div className="shuffle-split-pile">
+                <DeckStack cards={leftHalf} />
+              </div>
+              <div className="shuffle-split-pile">
+                <DeckStack cards={rightHalf} />
+              </div>
+            </div>
+          </div>
+        )}
+        {showCenterRiffle && (
+          <div className="shuffle-riffle-center-wrap">
+            <DeckStack
+              cards={centerBuild}
+              className="shuffle-riffle-center-stack"
+              getLayerStyle={(i, card, baseT) =>
+                layerStyleForRiffle(i, card, baseT)
+              }
+            />
+          </div>
+        )}
+      </div>,
+      document.body,
+    )
 
   return (
     <div className="shuffle-view">
-      <div
-        className={`shuffle-deck-host shuffle-deck-host--${deckPos}${
-          busy ? ' shuffle-deck-host--busy' : ''
-        }`}
-        aria-hidden={showSplit}
-      >
-        {showSingleStack && (
-          <div className="shuffle-mini-stack">
-            {deck.map((card, i) => (
-              <div
-                key={card.id}
-                className="shuffle-mini-layer"
-                style={{
-                  zIndex: i,
-                  transform: `translate(${i * 1.2}px, ${i * -2.5}px)`,
-                }}
-              >
-                <PlayingCard
-                  card={card}
-                  isFloating={false}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onKeyDown={(e) => e.preventDefault()}
-                />
-              </div>
-            ))}
+      {showFloatingDeck && (
+        <div
+          className={`shuffle-deck-mover shuffle-deck-mover--${moverSlot}${
+            mergePulse ? ' shuffle-deck-mover--merge' : ''
+          }`}
+        >
+          <div className="shuffle-deck">
+            <DeckStack cards={deck} />
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      <div className="shuffle-stage" aria-live="polite">
-        {showSplit && (
-          <div className="shuffle-split">
-            <div className="shuffle-half shuffle-half--left">
-              <div className="shuffle-half-stack">
-                {leftPack.map((card, i) => (
-                  <div
-                    key={`L-${card.id}`}
-                    className="shuffle-mini-layer"
-                    style={{
-                      zIndex: i,
-                      transform: `translate(${i * 1}px, ${i * -2}px)`,
-                    }}
-                  >
-                    <PlayingCard
-                      card={card}
-                      isFloating={false}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onKeyDown={(e) => e.preventDefault()}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="shuffle-half shuffle-half--right">
-              <div className="shuffle-half-stack">
-                {rightPack.map((card, i) => (
-                  <div
-                    key={`R-${card.id}`}
-                    className="shuffle-mini-layer"
-                    style={{
-                      zIndex: i,
-                      transform: `translate(${i * 1}px, ${i * -2}px)`,
-                    }}
-                  >
-                    <PlayingCard
-                      card={card}
-                      isFloating={false}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onKeyDown={(e) => e.preventDefault()}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {showCenter && centerPile.length > 0 && (
-          <div className="shuffle-center-pile">
-            {centerPile.map((card, i) => (
-              <div
-                key={`C-${card.id}-${i}`}
-                className="shuffle-mini-layer shuffle-center-card"
-                style={{
-                  zIndex: i,
-                  transform: `translate(${i * 0.4}px, ${i * -1.2}px)`,
-                }}
-              >
-                <PlayingCard
-                  card={card}
-                  isFloating={false}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onKeyDown={(e) => e.preventDefault()}
-                />
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      {riffleOverlay}
 
       <div className="shuffle-options">
         <h2 className="shuffle-options-title">Shuffle methods</h2>
