@@ -6,7 +6,6 @@ import './Table.css'
 
 const TABS = [
   { id: 'deck', label: 'Deck' },
-  { id: 'playing', label: 'Playing' },
   { id: 'shuffles', label: 'Shuffle' },
 ]
 
@@ -32,11 +31,6 @@ export default function Table() {
 
       {mode === 'deck' && (
         <Deck ref={deckRef} deck={deck} setDeck={setDeck} />
-      )}
-      {mode === 'playing' && (
-        <div className="table-mode-placeholder" role="status">
-          Playing mode — coming soon
-        </div>
       )}
       {mode === 'shuffles' && (
         <ShuffleView deck={deck} setDeck={setDeck} />

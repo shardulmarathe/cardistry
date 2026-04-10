@@ -383,7 +383,7 @@
 
 /* True viewport center; stack width scoped below so translate(-50%) aligns the cards. */
 .shuffle-deck-mover--center {
-  top: 50%;
+  top: 33%;
   left: 50%;
   right: auto;
   transform: translate(-50%, -50%);
@@ -441,8 +441,8 @@
   width: var(--card-w);
   min-width: var(--card-w);
   max-width: var(--card-w);
-  min-height: calc(var(--card-h) + 200px);
-  height: auto;
+  min-height: var(--card-h);
+  height: var(--card-h);
   cursor: default;
 }
 
@@ -486,6 +486,70 @@
   transform: translate(-50%, 0);
   border-radius: 10px;
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.42);
+}
+
+.shuffle-overhand-band {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: var(--shuffle-band-top);
+  padding-left: max(12px, env(safe-area-inset-left, 0px));
+  padding-right: max(12px, env(safe-area-inset-right, 0px));
+}
+
+.shuffle-overhand-row {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: clamp(36px, 6vw, 92px);
+}
+
+.shuffle-overhand-pile {
+  position: relative;
+  z-index: 10;
+  width: var(--card-w);
+  min-height: 0;
+  border-radius: 10px;
+  will-change: transform, opacity;
+}
+
+.shuffle-overhand-center-wrap {
+  position: fixed;
+  left: 50%;
+  top: calc(var(--shuffle-band-top) + 14px);
+  z-index: 11;
+  width: var(--card-w);
+  min-height: var(--card-h);
+  transform: translate(-50%, 0);
+  border-radius: 10px;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.42);
+}
+
+.shuffle-overhand-pile .card-position,
+.shuffle-overhand-center-wrap .card-position,
+.shuffle-riffle-center-wrap .card-position,
+.shuffle-split-pile .card-position {
+  transition: transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.shuffle-wash-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 13;
+  pointer-events: none;
+}
+
+.shuffle-wash-card {
+  position: fixed;
+  width: var(--card-w);
+  height: var(--card-h);
+  pointer-events: none;
+  transition:
+    left 0.62s ease-in-out,
+    top 0.62s ease-in-out,
+    transform 0.62s ease-in-out;
+  will-change: left, top, transform;
 }
 
 .shuffle-riffle-center-stack .deck-card-layer:last-child .card-position {
