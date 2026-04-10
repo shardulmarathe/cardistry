@@ -17,8 +17,6 @@ const WASH_SCATTER_MS = 620
 const WASH_HOLD_MS = 520
 const WASH_GATHER_STAGGER_MS = 26
 const WASH_FINAL_COMPRESS_MS = 360
-const CARD_W = 270
-const CARD_H = 390
 
 function wait(ms) {
   return new Promise((r) => window.setTimeout(r, ms))
@@ -52,6 +50,18 @@ function randInt(min, max) {
 
 function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v))
+}
+
+function readCardSize() {
+  if (typeof document === 'undefined') {
+    return { w: 235, h: 339 }
+  }
+  const rootStyle = window.getComputedStyle(document.documentElement)
+  const w = Number.parseFloat(rootStyle.getPropertyValue('--card-w'))
+  const h = Number.parseFloat(rootStyle.getPropertyValue('--card-h'))
+  const safeW = Number.isFinite(w) && w > 0 ? w : 235
+  const safeH = Number.isFinite(h) && h > 0 ? h : safeW * 1.444444
+  return { w: safeW, h: safeH }
 }
 
 function splitIntoRandomBlocks(cards, requestedBlocks) {
@@ -281,15 +291,16 @@ export default function ShuffleView({ deck, setDeck }) {
 
       const vw = window.innerWidth
       const vh = window.innerHeight
+      const { w: cardW, h: cardH } = readCardSize()
       const centerX = vw / 2
       const baseY = vh * 0.28
       const scatterWidth = Math.min(vw * 0.35, 350)
       const scatterHeight = randInt(120, 180)
       const margin = 60
-      const minX = margin + CARD_W / 2
-      const maxX = vw - margin - CARD_W / 2
-      const minY = margin + CARD_H / 2
-      const maxY = vh - margin - CARD_H / 2
+      const minX = margin + cardW / 2
+      const maxX = vw - margin - cardW / 2
+      const minY = margin + cardH / 2
+      const maxY = vh - margin - cardH / 2
 
       const scattered = snapshot.map((card, i) => {
         const rawX = centerX + randInt(-scatterWidth, scatterWidth)

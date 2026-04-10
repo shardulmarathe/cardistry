@@ -1,6 +1,6 @@
 :root {
-  --card-w: 270px;
-  --card-h: 390px;
+  --card-w: clamp(132px, 15.2vw, 188px);
+  --card-h: calc(var(--card-w) * 1.444444);
   --card-radius: 15px;
   --flip-duration: 350ms;
   --layout-transition: 0.26s cubic-bezier(0.42, 0, 0.58, 1);

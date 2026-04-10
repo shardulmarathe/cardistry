@@ -43,7 +43,20 @@ const INSERT_SHIFT_Y = 160
 
 /** Same numbers as getFanTransform — duplicate on purpose; do not change getFanTransform. */
 const NORMAL_FAN_SPREAD = 180
-const NORMAL_FAN_RADIUS = 630
+const NORMAL_FAN_RADIUS = 510
+const NORMAL_FAN_Y_FACTOR = 0.47
+const NORMAL_FAN_EDGE_BIAS = 1.6
+const NORMAL_FAN_EDGE_BLEND = 0.35
+
+function fanAngleFromIndex(i, total, spread) {
+  if (total <= 1) return 0
+  const t = i / (total - 1) // 0..1
+  const u = t * 2 - 1 // -1..1
+  const centerOpen = Math.sign(u) * Math.abs(u) ** NORMAL_FAN_EDGE_BIAS
+  const warped =
+    u * (1 - NORMAL_FAN_EDGE_BLEND) + centerOpen * NORMAL_FAN_EDGE_BLEND
+  return warped * (spread / 2)
+}
 
 /**
  * Normal-fan local slot (same math as getFanTransform) for locking insert mode X / rotation.
@@ -52,11 +65,10 @@ function getNormalFanSlotLocal(i, total) {
   if (total <= 0) {
     return { x: 0, y: 0, rotationDeg: 0 }
   }
-  const angleStep = total > 1 ? NORMAL_FAN_SPREAD / (total - 1) : 0
-  const angle = -NORMAL_FAN_SPREAD / 2 + i * angleStep
+  const angle = fanAngleFromIndex(i, total, NORMAL_FAN_SPREAD)
   const rad = (angle * Math.PI) / 180
   const x = Math.sin(rad) * NORMAL_FAN_RADIUS
-  const y = -Math.cos(rad) * NORMAL_FAN_RADIUS * 0.35
+  const y = -Math.cos(rad) * NORMAL_FAN_RADIUS * NORMAL_FAN_Y_FACTOR
   return { x, y, rotationDeg: angle }
 }
 
@@ -353,15 +365,14 @@ const Deck = forwardRef(function Deck({ deck, setDeck }, ref) {
   }, [flipCard, handleDrop])
 
   const total = deck.length
-  const spread = 180
-  const angleStep = total > 1 ? spread / (total - 1) : 0
-  const radius = 630
+  const spread = NORMAL_FAN_SPREAD
+  const radius = NORMAL_FAN_RADIUS
 
   const getFanTransform = (i) => {
-    const angle = -spread / 2 + i * angleStep
+    const angle = fanAngleFromIndex(i, total, spread)
     const rad = (angle * Math.PI) / 180
     const x = Math.sin(rad) * radius
-    const y = -Math.cos(rad) * radius * 0.35
+    const y = -Math.cos(rad) * radius * NORMAL_FAN_Y_FACTOR
     return `translate(${x}px, ${y}px) rotate(${angle}deg)`
   }
 
