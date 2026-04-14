@@ -6,6 +6,24 @@
   --layout-transition: 0.26s cubic-bezier(0.42, 0, 0.58, 1);
 }
 
+/*
+ * Smaller physical cards only on narrower viewports (half-window, small laptops).
+ * Wide / maximized windows still use the rule above (max 188px unchanged).
+ */
+@media (max-width: 1100px) {
+  :root {
+    --card-w: clamp(88px, 10.8vw, 188px);
+    --card-radius: 13px;
+  }
+}
+
+@media (max-width: 640px) {
+  :root {
+    --card-w: clamp(72px, 11.4vw, 188px);
+    --card-radius: 11px;
+  }
+}
+
 /* Shared glass pill — top tabs + bottom deck controls */
 .table-pill {
   appearance: none;
@@ -134,8 +152,8 @@
   position: relative;
   width: min(100vw, 1920px);
   min-width: min(100vw, 100%);
-  min-height: 520px;
-  height: min(58vh, 620px);
+  min-height: calc(520px * var(--deck-layout-scale, 1));
+  height: min(58vh, calc(620px * var(--deck-layout-scale, 1)));
   cursor: pointer;
   transition: min-height var(--layout-transition);
 }

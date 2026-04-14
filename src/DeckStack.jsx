@@ -2,8 +2,9 @@ import { forwardRef } from 'react'
 import PlayingCard from './PlayingCard'
 
 /** Matches Deck fan-off stack layout — keep in sync with fan stack branch. */
-export function getDeckStackTransform(i) {
-  return `translateY(${i * -3}px) translateX(${i * 1.2}px)`
+export function getDeckStackTransform(i, layoutScale = 1) {
+  const s = layoutScale
+  return `translateY(${i * -3 * s}px) translateX(${i * 1.2 * s}px)`
 }
 
 /**
@@ -21,6 +22,7 @@ const DeckStack = forwardRef(function DeckStack(
     onCardMouseDown,
     onCardKeyDown,
     getLayerStyle,
+    layoutScale = 1,
   },
   ref,
 ) {
@@ -36,7 +38,7 @@ const DeckStack = forwardRef(function DeckStack(
           return null
         }
 
-        const positionTransform = getDeckStackTransform(i)
+        const positionTransform = getDeckStackTransform(i, layoutScale)
         const layerStyle = getLayerStyle
           ? getLayerStyle(i, card, positionTransform)
           : { transform: positionTransform }

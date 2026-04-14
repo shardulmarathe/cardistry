@@ -4,6 +4,7 @@ import {
   useEffect,
   useImperativeHandle,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react'
@@ -18,13 +19,51 @@ const FLIP_STAGGER_MS = 7
 /** Position-based drop: matches spread math (card width − overlap step) */
 const DROP_CARD_WIDTH = 140
 const DROP_OVERLAP = 60
+/** Matches Table.css `clamp(..., 188px)` upper bound — layout math scales below this width only. */
+const DESIGN_CARD_W_PX = 188
+/** Usable area vs these baselines → extra shrink only below ~“comfortable” full layout (fan + chrome). */
+const DECK_VIEWPORT_PAD_X = 56
+const DECK_VIEWPORT_PAD_Y = 200
+/** ~min inner width where an unscaled 52-card fan fits; higher → more shrink on half-width (large desktops unchanged). */
+const DECK_BASELINE_INNER_WIDTH = 1320
+/** Loosened so common 768px-tall laptops stay at scale 1 when width is fine. */
+const DECK_BASELINE_INNER_HEIGHT = 540
+/** Below ratio 1, shrink more aggressively (half-window needs a stronger step than card clamp alone). */
+const DECK_VIEWPORT_TIGHT_EXPONENT = 1.62
+const DECK_VIEWPORT_TIGHT_FLOOR = 0.26
+/** When width is the tight dimension, pinch a bit more (fan is wide). */
+const DECK_WIDTH_LIMITED_BLEED = 0.86
 const BULK_FLIP_MS = FLIP_MS + 51 * FLIP_STAGGER_MS
 
+/** 1 when the window is roomy; <1 only when width or height is tight (full-size windows unchanged). */
+function viewportDeckFitScale(innerW, innerH) {
+  const uw = Math.max(260, innerW - DECK_VIEWPORT_PAD_X)
+  const uh = Math.max(220, innerH - DECK_VIEWPORT_PAD_Y)
+  const rw = uw / DECK_BASELINE_INNER_WIDTH
+  const rh = uh / DECK_BASELINE_INNER_HEIGHT
+
+  const tight = (r) => {
+    if (r >= 1) return 1
+    const x = Math.max(DECK_VIEWPORT_TIGHT_FLOOR, r)
+    return x ** DECK_VIEWPORT_TIGHT_EXPONENT
+  }
+
+  const sw = tight(rw)
+  const sh = tight(rh)
+  let out = Math.min(sw, sh)
+  if (out >= 1) return 1
+  if (rw < 1 && rw <= rh) {
+    out *= DECK_WIDTH_LIMITED_BLEED
+  }
+  return Math.min(1, out)
+}
+
 /** Drop index 0..deckLen from cursor X vs deck bounds (position-based, no hover) */
-function computeDropIndex(mouseX, deckLen, rect) {
+function computeDropIndex(mouseX, deckLen, rect, layoutScale = 1) {
   if (!rect || deckLen < 0) return 0
   const relativeX = mouseX - rect.left
-  const effectiveWidth = DROP_CARD_WIDTH - DROP_OVERLAP
+  const s = layoutScale
+  const effectiveWidth = (DROP_CARD_WIDTH - DROP_OVERLAP) * s
   if (effectiveWidth <= 0) return 0
   const index = Math.floor(relativeX / effectiveWidth)
   return Math.max(0, Math.min(deckLen, index))
@@ -34,7 +73,7 @@ function computeDropIndex(mouseX, deckLen, rect) {
  * Insert-mode adjustments ONLY (does not affect getFanTransform).
  * Horizontal layout must match normal fan endpoints — duplicate geometry below.
  */
-const INSERT_PEAK_HEIGHT = 150
+const INSERT_PEAK_HEIGHT = 100
 /** Gaussian hover spread (insert mode only). */
 const INSERT_HOVER_SIGMA = 150
 const INSERT_HOVER_SPREAD_AMOUNT = 30
@@ -43,7 +82,7 @@ const INSERT_SHIFT_Y = 160
 
 /** Same numbers as getFanTransform — duplicate on purpose; do not change getFanTransform. */
 const NORMAL_FAN_SPREAD = 180
-const NORMAL_FAN_RADIUS = 510
+const NORMAL_FAN_RADIUS = 570
 const NORMAL_FAN_Y_FACTOR = 0.47
 const NORMAL_FAN_EDGE_BIAS = 1.6
 const NORMAL_FAN_EDGE_BLEND = 0.35
@@ -58,31 +97,45 @@ function fanAngleFromIndex(i, total, spread) {
   return warped * (spread / 2)
 }
 
+/** Max |translateX| of fan slots at layout scale 1 (matches getFanTransform / getNormalFanSlotLocal). */
+function computeFanMaxAbsXAtUnitScale(totalCards) {
+  if (totalCards <= 1) return 0
+  let maxAbs = 0
+  for (let i = 0; i < totalCards; i++) {
+    const angle = fanAngleFromIndex(i, totalCards, NORMAL_FAN_SPREAD)
+    const rad = (angle * Math.PI) / 180
+    const x = Math.sin(rad) * NORMAL_FAN_RADIUS
+    maxAbs = Math.max(maxAbs, Math.abs(x))
+  }
+  return maxAbs
+}
+
 /**
  * Normal-fan local slot (same math as getFanTransform) for locking insert mode X / rotation.
  */
-function getNormalFanSlotLocal(i, total) {
+function getNormalFanSlotLocal(i, total, layoutScale = 1) {
   if (total <= 0) {
     return { x: 0, y: 0, rotationDeg: 0 }
   }
+  const radius = NORMAL_FAN_RADIUS * layoutScale
   const angle = fanAngleFromIndex(i, total, NORMAL_FAN_SPREAD)
   const rad = (angle * Math.PI) / 180
-  const x = Math.sin(rad) * NORMAL_FAN_RADIUS
-  const y = -Math.cos(rad) * NORMAL_FAN_RADIUS * NORMAL_FAN_Y_FACTOR
+  const x = Math.sin(rad) * radius
+  const y = -Math.cos(rad) * radius * NORMAL_FAN_Y_FACTOR
   return { x, y, rotationDeg: angle }
 }
 
 /** Horizontal nudge from cursor — gaussian falloff, no effect far from pointer. */
-function insertHoverSpreadDeltaX(baseLocalX, anchorCx, mouseX) {
+function insertHoverSpreadDeltaX(baseLocalX, anchorCx, mouseX, layoutScale = 1) {
   const cardX = anchorCx + baseLocalX
   const dx = cardX - mouseX
-  const sigma = INSERT_HOVER_SIGMA
+  const sigma = INSERT_HOVER_SIGMA * layoutScale
   const influence = Math.exp(-(dx * dx) / (2 * sigma * sigma))
   if (dx === 0) return 0
-  return influence * INSERT_HOVER_SPREAD_AMOUNT * Math.sign(dx)
+  return influence * INSERT_HOVER_SPREAD_AMOUNT * layoutScale * Math.sign(dx)
 }
 
-function getInsertLayoutForSlot(i, count, anchorCx, mouseX) {
+function getInsertLayoutForSlot(i, count, anchorCx, mouseX, layoutScale = 1) {
   if (count <= 0) {
     return {
       localX: 0,
@@ -91,20 +144,21 @@ function getInsertLayoutForSlot(i, count, anchorCx, mouseX) {
       screenX: anchorCx,
     }
   }
-  const { x: baseX, y: baseY, rotationDeg } = getNormalFanSlotLocal(i, count)
+  const s = layoutScale
+  const { x: baseX, y: baseY, rotationDeg } = getNormalFanSlotLocal(i, count, s)
   const t = count <= 1 ? 0 : i / (count - 1)
   const centerDist = Math.abs(t - 0.5) * 2
-  const lift = (1 - centerDist) ** 2 * INSERT_PEAK_HEIGHT
-  const localY = baseY - lift - INSERT_SHIFT_Y
-  const offsetX = insertHoverSpreadDeltaX(baseX, anchorCx, mouseX)
+  const lift = (1 - centerDist) ** 2 * INSERT_PEAK_HEIGHT * s
+  const localY = baseY - lift - INSERT_SHIFT_Y * s
+  const offsetX = insertHoverSpreadDeltaX(baseX, anchorCx, mouseX, s)
   const localX = baseX + offsetX
   const screenX = anchorCx + localX
   return { localX, localY, rotationDeg, screenX }
 }
 
-function getInsertFanTransform(i, count, anchorCx, mouseX) {
+function getInsertFanTransform(i, count, anchorCx, mouseX, layoutScale = 1) {
   if (count <= 0) return 'translate(0px, 0px) rotate(0deg)'
-  const p = getInsertLayoutForSlot(i, count, anchorCx, mouseX)
+  const p = getInsertLayoutForSlot(i, count, anchorCx, mouseX, layoutScale)
   return `translate(${p.localX}px, ${p.localY}px) rotate(${p.rotationDeg}deg)`
 }
 
@@ -134,6 +188,38 @@ const Deck = forwardRef(function Deck({ deck, setDeck }, ref) {
   const [layoutHeight, setLayoutHeight] = useState(
     typeof window !== 'undefined' ? window.innerHeight : 800,
   )
+
+  /**
+   * Card-size ratio (from CSS) × viewport fit — both are 1 on a large maximized window;
+   * half-screen gets a stronger combined shrink without changing full-size behavior.
+   */
+  const deckBaseLayoutScale = useMemo(() => {
+    if (typeof window === 'undefined') return 1
+    const rootStyle = window.getComputedStyle(document.documentElement)
+    const w = Number.parseFloat(rootStyle.getPropertyValue('--card-w'))
+    const cw = Number.isFinite(w) && w > 0 ? w : DESIGN_CARD_W_PX
+    const cardScale = Math.min(1, cw / DESIGN_CARD_W_PX)
+    const vp = viewportDeckFitScale(layoutWidth, layoutHeight)
+    return cardScale * vp
+  }, [layoutWidth, layoutHeight])
+
+  /**
+   * Hard cap from the real deck-stack width so the fanned arc cannot clip (Infinity = no cap).
+   * Large windows: raw >= 1 → Infinity → final scale equals deckBaseLayoutScale (unchanged).
+   */
+  const [fanWidthCapScale, setFanWidthCapScale] = useState(Number.POSITIVE_INFINITY)
+
+  const deckLayoutScale = useMemo(() => {
+    if (!isFanned) return deckBaseLayoutScale
+    if (
+      !Number.isFinite(fanWidthCapScale) ||
+      fanWidthCapScale === Number.POSITIVE_INFINITY
+    ) {
+      return deckBaseLayoutScale
+    }
+    return Math.min(deckBaseLayoutScale, fanWidthCapScale)
+  }, [isFanned, deckBaseLayoutScale, fanWidthCapScale])
+
   /** Pivot: stack center X and bottom Y (client coords) for screen → local insert transforms */
   const [stackAnchor, setStackAnchor] = useState(() =>
     typeof window !== 'undefined'
@@ -187,6 +273,37 @@ const Deck = forwardRef(function Deck({ deck, setDeck }, ref) {
       cx: r.left + r.width / 2,
       by: r.bottom,
     })
+
+    if (!isFanned) {
+      setFanWidthCapScale(Number.POSITIVE_INFINITY)
+      return
+    }
+
+    const rootStyle = window.getComputedStyle(document.documentElement)
+    const cwParsed = Number.parseFloat(rootStyle.getPropertyValue('--card-w'))
+    const cw =
+      Number.isFinite(cwParsed) && cwParsed > 0 ? cwParsed : DESIGN_CARD_W_PX
+
+    const n = deck.length
+    const maxFanX = computeFanMaxAbsXAtUnitScale(n)
+    if (n <= 1 || maxFanX <= 0) {
+      setFanWidthCapScale(Number.POSITIVE_INFINITY)
+      return
+    }
+
+    /** Margins inside the stack box + rotated card corners vs pure translateX. */
+    const horizontalBleedPx = 72
+    const cornerFudgePx = cw * 0.58
+    const usable = Math.max(72, r.width - horizontalBleedPx)
+    const halfFootprintAtScale1 = maxFanX + cornerFudgePx
+    let raw = (usable - cw) / (2 * halfFootprintAtScale1)
+    raw *= 0.9
+
+    if (!Number.isFinite(raw) || raw >= 1) {
+      setFanWidthCapScale(Number.POSITIVE_INFINITY)
+    } else {
+      setFanWidthCapScale(Math.max(0.12, raw))
+    }
   }, [
     isFanned,
     isDraggingCard,
@@ -194,6 +311,7 @@ const Deck = forwardRef(function Deck({ deck, setDeck }, ref) {
     layoutHeight,
     deck.length,
     bulkFlipActive,
+    deckBaseLayoutScale,
   ])
 
   useEffect(() => {
@@ -312,6 +430,7 @@ const Deck = forwardRef(function Deck({ deck, setDeck }, ref) {
           mouseXRef.current,
           prev.length,
           rect,
+          deckLayoutScale,
         )
         insertAt = d < dropIndex ? dropIndex - 1 : dropIndex
       }
@@ -320,7 +439,7 @@ const Deck = forwardRef(function Deck({ deck, setDeck }, ref) {
       next.splice(clamped, 0, movedCard)
       return next
     })
-  }, [])
+  }, [deckLayoutScale])
 
   const flipCard = useCallback((id) => {
     if (isFlippingRef.current) return
@@ -366,7 +485,7 @@ const Deck = forwardRef(function Deck({ deck, setDeck }, ref) {
 
   const total = deck.length
   const spread = NORMAL_FAN_SPREAD
-  const radius = NORMAL_FAN_RADIUS
+  const radius = NORMAL_FAN_RADIUS * deckLayoutScale
 
   const getFanTransform = (i) => {
     const angle = fanAngleFromIndex(i, total, spread)
@@ -376,7 +495,7 @@ const Deck = forwardRef(function Deck({ deck, setDeck }, ref) {
     return `translate(${x}px, ${y}px) rotate(${angle}deg)`
   }
 
-  const getStackTransform = getDeckStackTransform
+  const getStackTransform = (i) => getDeckStackTransform(i, deckLayoutScale)
 
   const nVisibleFan =
     isDraggingCard && draggedCardId ? deck.length - 1 : deck.length
@@ -390,8 +509,13 @@ const Deck = forwardRef(function Deck({ deck, setDeck }, ref) {
   const insertPositions =
     layoutMode === 'inserting'
       ? Array.from({ length: nVisibleFan }, (_, j) => ({
-          x: getInsertLayoutForSlot(j, nVisibleFan, stackAnchor.cx, mouseX)
-            .screenX,
+          x: getInsertLayoutForSlot(
+            j,
+            nVisibleFan,
+            stackAnchor.cx,
+            mouseX,
+            deckLayoutScale,
+          ).screenX,
         }))
       : []
 
@@ -404,6 +528,7 @@ const Deck = forwardRef(function Deck({ deck, setDeck }, ref) {
         nVisibleFan,
         stackAnchor.cx,
         mouseX,
+        deckLayoutScale,
       )
     }
     if (isFanned) return getFanTransform(deckIndex)
@@ -421,6 +546,7 @@ const Deck = forwardRef(function Deck({ deck, setDeck }, ref) {
       className={`deck-container${isDragging ? ' is-dragging' : ''}${
         layoutMode === 'inserting' ? ' is-insert-arc' : ''
       }`}
+      style={{ '--deck-layout-scale': String(deckLayoutScale) }}
     >
       <div className="deck-position-wrap">
         {!isFanned ? (
@@ -432,6 +558,7 @@ const Deck = forwardRef(function Deck({ deck, setDeck }, ref) {
             isDragging={isDragging}
             bulkFlipActive={bulkFlipActive}
             flipStaggerMsStep={FLIP_STAGGER_MS}
+            layoutScale={deckLayoutScale}
             onStackClick={(e) => {
               if (draggedCardId) return
               if (e.target !== e.currentTarget) return
