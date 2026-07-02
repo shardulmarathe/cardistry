@@ -1,0 +1,279 @@
+========================================================================
+CARDISTRY — BUILD HANDOFF / NEXT STEPS
+3D card visualizer + interactive shuffle-teaching app
+========================================================================
+
+WHAT THIS PROJECT IS
+--------------------
+Cardistry was a 2D CSS playing-card toy. It is being rebuilt into a FULL
+WebGL app (react-three-fiber) that is BOTH:
+  (1) a 3D card visualizer (spread the deck in different arrangements), and
+  (2) an interactive teacher for how to shuffle (riffle, overhand, wash,
+      hindu, faro...) as guided, scrubbable, step-by-step 3D lessons.
+
+Aesthetic: dark casino "oxblood felt under a gold spotlight." Bespoke CSS
+(NO Tailwind/shadcn). Fonts: Fraunces (display), Inter (body), JetBrains
+Mono (data/labels). Single accent color = gold. Suit glyphs (spade/heart/
+diamond/club) are the structural motif (difficulty tiers, brand).
+
+Stack: React 19 + Vite. three@0.183, @react-three/fiber@9, @react-three/
+drei@10, @react-three/rapier@2 (rapier still UNUSED — reserved for Phase 6).
+zustand@5 for state. Deploys to Vercel (@vercel/analytics wired in App.jsx).
+
+Full design doc / plan: /Users/shar/.claude/plans/glowing-puzzling-sky.md
+(Read it — it explains the architecture rationale in depth.)
+
+
+========================================================================
+CURRENT STATUS (what already works, verified)
+========================================================================
+DONE and verified (npm run lint + npm run build clean; a headless engine
+test confirmed determinism, deck integrity, and zero scrub-drift):
+
+Phase 1 — 3D foundation: single <Canvas>, oxblood felt (runtime gradient
+  texture), casino lighting rig (warm key w/ crisp shadows + overhead
+  spotlight + contact shadows), constrained OrbitControls that tween to
+  per-lesson camera presets, zustand store, DOM glass UI chrome.
+
+Phase 2 — 3D cards + visualizer: 52 real card meshes, ONE shared segmented
+  geometry, faces GENERATED AT RUNTIME to a canvas texture (the
+  public/assets/card-fronts folder is empty on purpose), a bend shader
+  (onBeforeCompile, uBend), and a two-sided face/back trick (flip = rotate
+  mesh Y by PI). Visualizer tab: tap a card to flip (lifts in an arc so it
+  clears the pile), 6 layouts (Fan / Ring / Ribbon / Spiral / Grid / Stack)
+  via the picker or clicking empty felt to cycle, plus Flip-all + Reset.
+
+Phase 3 — timeline engine: lessons compile ONCE into a deterministic
+  keyframe Track, sampled by a PURE function so the scrubber works BOTH
+  directions (backward + forward) to identical frames. Transport bar:
+  play/pause, scrub slider, 0.5x/1x/2x speed, prev/next step, per-step
+  camera moves, 3D annotation callouts.
+
+Phase 5 (partial): 5 lessons authored — Card Wash, Overhand, Hindu, Riffle
+  (with the bend bridge/cascade), Faro (tight controlled weave). Catalog is
+  grouped into Beginner/Intermediate/Advanced tiers. Each lesson shows
+  rotating "Did you know" facts (the ~7-riffles math, faro determinism...).
+
+IMPORTANT BUG ALREADY FIXED (don't reintroduce):
+  - cardMaterial.js MUST give each material a UNIQUE customProgramCacheKey
+    (`card-bend-${key}`). A shared/constant key makes three compile the bend
+    shader once and share it, so only ONE card gets its uBend uniform wired
+    and every other card stays flat.
+  - shuffleMath.js splitIntoRandomBlocks: the LAST block must consume ALL
+    remaining cards (remainingBlocks===1 => blockSize = remainingCards),
+    otherwise cards get dropped.
+
+
+========================================================================
+CODEBASE MAP + CONVENTIONS (read before building)
+========================================================================
+src/
+  main.jsx, App.jsx            App mounts <CanvasRoot/> + <UIChrome/> + Analytics
+  deckModel.js                 createDeck() -> 52 {id, suit, rank, isFaceUp}
+  lib/
+    constants.js               CARD_W/H/T, COLORS, CAMERA_PRESETS, ORBIT,
+                               SUIT_SYMBOL, RED_SUITS
+    ease.js                    named easings (getEase), clamp01
+    shuffleMath.js             PURE: alternateMerge, riffleOrder,
+                               splitIntoRandomBlocks, shuffleArray (seeded),
+                               hasSameCardSet
+  state/useAppStore.js         zustand: mode, deck, activeLessonId, vizLayout,
+                               camera, settings; actions (setMode, setDeck,
+                               setVizLayout, flipAll, openLesson, closeLesson,
+                               setCameraPreset, toggleHands...)
+  scene/
+    CanvasRoot.jsx             the <Canvas> (shadows, tone mapping, fog)
+    Stage.jsx                  lights + felt + contact shadows + camera + scene
+    FeltTable.jsx, LightingRig.jsx, CameraController.jsx
+    SceneController.jsx        picks the active driver by store.mode
+  card/
+    cardGeometry.js            shared PlaneGeometry(W,H,1,24) — segmented for bend
+    textureFactory.js          buildFaceTextures(cards) -> Map<id, CanvasTexture>
+    cardMaterial.js            createCardMaterial(front, back, key) + setMaterialBend
+    Card.jsx                   dumb mesh; imperative handle {setTransform,setPosition}
+    CardField.jsx              renders 52 Cards, owns textures/materials, registry
+    cardRegistry.js            plain Map<id, handle> — NOT reactive
+  visualizer/VisualizerDriver.jsx   free-play fan/flip/layout driver
+  lessons/
+    engine/
+      seededRng.js             mulberry32, randInt
+      layouts.js               pose primitives: stackLayout, twoHalvesLayout,
+                               fanLayout, blocksRowLayout, circleLayout,
+                               ribbonLayout, spiralLayout, gridLayout,
+                               faceQuat, toPoseMap, VISUALIZER_LAYOUTS,
+                               buildVizLayout
+      compileLesson.js         lesson def -> deterministic Track
+      sampleTrack.js           pure (Track, ms) -> {cards:Map, annotations}
+      player.js                zustand playback store (usePlayer)
+      LessonRunner.jsx         ONE useFrame; compiles, samples, writes registry
+    catalog/                   *.lesson.js + index.js (LESSONS, tiers, getLessonById)
+    annotations/AnnotationLayer.jsx   drei <Html> callouts
+  ui/
+    UIChrome.jsx, VisualizerControls.jsx, LessonCatalog.jsx, TransportBar.jsx
+    chrome.css                 all overlay styling (glass, gold, tiers, transport)
+
+THE CORE ARCHITECTURAL RULE (do not violate):
+  - Discrete/slow state (mode, deck order, camera preset, player step/speed)
+    -> zustand. Per-frame state (each card's position/rotation/bend) ->
+    imperative refs written through cardRegistry. NEVER call setState inside
+    useFrame (the player mirrors its time cursor to the store at ~12Hz only).
+  - Drivers (VisualizerDriver, LessonRunner, future PlaygroundDriver) each own
+    the cards via their own useFrame; only one is mounted at a time
+    (SceneController switches by store.mode). Cards never remount.
+  - All card/hand rotation uses QUATERNIONS (slerp), not Euler, to avoid
+    gimbal flips.
+
+HOW TO ADD A NEW LESSON (schema):
+  A lesson = { id, title, technique, difficulty:'beginner'|'intermediate'|
+  'advanced', randomizes:string, seed:number, cameraPreset, summary, facts:
+  [string], build(deck, ctx) -> steps[] }. ctx.rng is a seeded PRNG (use it
+  for ALL randomness so compilation stays deterministic).
+  Each step is one of:
+    { kind:'move', id, label, duration, ease, to:(deck)=>poses | poses,
+      bend?, midBend?, reorder?:(deck)=>newDeck, camera?, annotations? }
+    { kind:'riffle', id, label, duration, ease, midBend?, arcLift?,
+      camera?, annotations? }   // staggered interleave cascade (uses riffleOrder)
+    { kind:'hold', id, label, duration, annotations? }
+  A pose = { id, pos:THREE.Vector3, quat:THREE.Quaternion, bend:number }.
+  annotations: [{ text, at:[x,y,z], appearAt:0..1, until:0..1 }].
+  Register it in lessons/catalog/index.js LESSONS array.
+
+HOW THE BEND SHADER WORKS:
+  uBend is signed curvature (1/R). The card (long axis = local Y) bows into an
+  arc; normals are rotated so lighting stays correct. Bigger |uBend| = more
+  bow. Drivers set it via setMaterialBend(material, bend) or the sampled pose's
+  .bend. sampleTrack adds a sin() mid-flight curl (midBend) and vertical arc
+  (arcLift) during a riffle segment.
+
+
+========================================================================
+WHAT STILL NEEDS TO BE BUILT
+========================================================================
+
+------------------------------------------------------------------------
+PHASE 4 — STYLIZED 3D HANDS + MOTION-GUIDE FALLBACK  (highest visual risk)
+------------------------------------------------------------------------
+Goal: show translucent 3D hands performing each shuffle, with a safe fallback.
+This is the piece most likely to need visual iteration — build the fallback
+FIRST so lessons always look clean.
+
+1) Motion-guide layer (safe, build first): src/lessons/annotations/guides.jsx
+   Driven by the SAME compiled Track. For the active step, render IN-SCENE
+   meshes (not DOM): directional arrows (cone+cylinder) along a card's motion,
+   a faint tube/line tracing a card's path, and translucent "ghost" cards at
+   the step's target poses. Mount it from LessonRunner. Cheap and always clean.
+
+2) Procedural hands: src/hands/
+   - handRig.js: build an Object3D hierarchy from primitives — wrist -> palm
+     (RoundedBox) -> 5 fingers, each 3 capsule segments (thumb/index/middle/
+     ring/pinky). ~19 segments/hand.
+   - handPoses.js: named pose presets (relaxed, twoHandsSupport, pinchCut,
+     riffleArch, bridgeRelease, overhandPull, washFlat). A HandPose =
+     { wrist:{pos,quat}, fingers:{thumb:[a,b,c], index:[...], ... , spread} }.
+   - Hand.jsx: renders the rig; translucent material (opacity ~0.35,
+     depthWrite:false, warm color) + a cheap fresnel rim so it still reads 3D.
+   Interpolate hand poses EXACTLY like cards (slerp wrist, lerp joint angles).
+
+3) Integrate into the engine:
+   - Extend the lesson step schema with hands:{from:'poseName', to:'poseName'}.
+   - Extend compileLesson to build a HandTrack (left+right) alongside cards.
+   - Extend sampleTrack to also return hand poses; LessonRunner applies them.
+   - Author hand choreography for at least riffle + overhand + wash.
+
+4) Toggle: settings.showHands already exists in the store (toggleHands). Add a
+   UI toggle (in the transport bar or a small settings control). When OFF,
+   show motion guides instead. RECOMMEND defaulting hands OFF ("beta") until
+   they look good, so the default experience is the clean guide version.
+
+------------------------------------------------------------------------
+PHASE 5 (REMAINDER) — MORE TECHNIQUES + CONTENT
+------------------------------------------------------------------------
+Reuse the proven engine + layout primitives. Add these lessons in
+src/lessons/catalog/ and register them in index.js:
+
+  - Strip shuffle / running cuts (beginner/intermediate, weak): like overhand
+    but fewer, larger packets stripped off and dropped; reuse blocksRowLayout.
+  - Charlier cut (beginner cardistry, a CUT not a shuffle): one-handed cut —
+    bottom half pivots up and over to the top. Deterministic single cut.
+  - Thumb / pressure fan (beginner/intermediate, display flourish): bloom the
+    deck into a circular fan (reuse/extend circleLayout with a pivot corner).
+  - Spring / waterfall (intermediate, flourish): bend the deck into an arch and
+    release cards one at a time in a cascade between hands. GREAT bend showcase.
+  - Card-spring PRIMER lesson (educational, no shuffle): a single card (or the
+    whole stack) bending back and forth to teach elastic spring vs. crease.
+    Put it FIRST in the catalog as the conceptual foundation.
+  - Pile shuffle (beginner, deterministic): deal round-robin into N piles, then
+    restack — teach that it does NOT randomize by itself.
+
+Also add:
+  - Grip terminology mini-explainers (dealer's / mechanic's / biddle / end /
+    Z-grip) — could be a short intro screen or tooltips.
+  - A "randomness" explainer surfacing the load-bearing facts: riffle ~7,
+    overhand/hindu/strip weak, faro deterministic (8 out-faros restore), wash
+    strong. (Facts are already per-lesson; consider a dedicated info panel.)
+
+CONTENT ACCURACY (already researched — keep these correct):
+  - ~7 riffle shuffles randomize 52 cards (Bayer–Diaconis cutoff).
+  - Overhand/Hindu only transport blocks -> very weak (~thousands needed).
+  - Faro is deterministic/reversible; 8 perfect out-faros restore the deck.
+  - Card wash is one of the strongest physical randomizers.
+  - Card spring: elastic bend stores energy; past the yield point it creases
+    (permanent) and ruins the card.
+
+------------------------------------------------------------------------
+PHASE 6 — PHYSICS PLAYGROUND + PERF/POLISH
+------------------------------------------------------------------------
+  - Rapier playground (new mode 'playground', new PlaygroundDriver.jsx):
+    mount <Physics> ONLY in this mode; wrap each card in a thin cuboid
+    RigidBody; felt = fixed collider; enable body sleeping. Free-play: drop /
+    spring / card-wash / riffle-bridge-release where emergent physics looks
+    great. LESSONS STAY SCRIPTED (physics isn't scrubbable) — playground only.
+  - Perf: the bundle is ~1.1MB (three.js). Code-split with dynamic import();
+    clamp dpr on mobile (AdaptiveDpr already added); consider a single shared
+    ShaderMaterial + instancing and a face-texture ATLAS (currently 52 separate
+    CanvasTextures) instead of per-card materials/programs.
+  - Optional postprocessing (@react-three/postprocessing, NOT yet installed):
+    subtle bloom + vignette for the casino glow.
+
+------------------------------------------------------------------------
+KNOWN GAPS / POLISH TODO (smaller items)
+------------------------------------------------------------------------
+  - Visualizer DRAG-to-reorder is NOT implemented (the old 2D app let you drag
+    a card out and drop it back into the fan at an insert index). Only tap-to-
+    flip + layout switching exist now. Re-add drag/insert via raycaster if
+    desired.
+  - Card BACK texture loads from /public/assets/card-back-real.png (exists).
+    Card FRONTS are generated at runtime; if you want real art, drop PNGs in
+    /public/assets/card-fronts/{id}.png (e.g. "A-spades.png") and load them in
+    textureFactory.js instead of drawing.
+  - Reduced-motion: index.css disables transitions; consider also pausing/
+    simplifying 3D motion when prefers-reduced-motion.
+  - Mobile layout: catalog + transport are responsive but test on small
+    screens; the 3D camera framing may need per-breakpoint presets.
+  - Accessibility: the 3D canvas is not keyboard-navigable; lessons rely on the
+    transport bar (which IS keyboard-usable). Consider ARIA live regions for
+    step changes.
+
+
+========================================================================
+HOW TO RUN + VERIFY
+========================================================================
+  npm install        (deps already in package.json incl. zustand)
+  npm run dev        -> http://localhost:5173
+  npm run lint       (keep clean)
+  npm run build      (keep clean)
+
+Engine verification (recommended — this is the crux to protect):
+  For any new lesson, assert with the compiled Track:
+    - determinism: compile twice, finalDeck order identical
+    - deck integrity: hasSameCardSet(createDeck(), track.finalDeck) && len 52
+    - scrub fidelity: sample at time T, jump to end, sample T again -> identical
+      poses (zero drift) — this is what makes the scrubber trustworthy
+    - no NaN poses across the timeline
+  (These can be run with `npx vite-node <script.mjs>` since the engine modules
+  are pure and import three for math.)
+
+NOTE: the environment used so far had NO browser automation, so the 3D was
+verified by logic/build/math only — view it in a real browser and art-direct
+the felt/lighting/cards/hands there.
+========================================================================

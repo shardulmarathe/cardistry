@@ -1,11 +1,56 @@
+:root {
+  /* Casino oxblood felt under a warm gold spotlight */
+  --felt-core: #7c1122;
+  --felt-edge: #26050a;
+  --ink: #180d10;
+  --bone: #f7f1e6;
+  --bone-dim: rgba(247, 241, 230, 0.62);
+  --bone-faint: rgba(247, 241, 230, 0.4);
+  --gold: #d8a24a;
+  --gold-bright: #f0c67a;
+  --gold-soft: rgba(216, 162, 74, 0.5);
+
+  --glass: rgba(32, 8, 13, 0.56);
+  --glass-strong: rgba(44, 12, 19, 0.72);
+  --glass-brd: rgba(240, 198, 122, 0.22);
+  --glass-brd-strong: rgba(240, 198, 122, 0.42);
+
+  --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
+  --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
+
+  color-scheme: dark;
+}
+
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
 
-html, body, #root {
+html,
+body,
+#root {
   width: 100%;
   height: 100%;
   overflow: hidden;
+}
+
+body {
+  font-family: var(--font-body);
+  color: var(--bone);
+  background: var(--felt-edge);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button {
+  font-family: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
 }
