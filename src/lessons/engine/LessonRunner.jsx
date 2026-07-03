@@ -6,6 +6,8 @@ import { compileLesson } from './compileLesson'
 import { sampleTrack, stepIndexAt } from './sampleTrack'
 import { usePlayer } from './player'
 import { getCard } from '../../card/cardRegistry'
+import { getHand } from '../../hands/handRegistry'
+import Hand from '../../hands/Hand'
 import AnnotationLayer from '../annotations/AnnotationLayer'
 import MotionGuideLayer from '../annotations/guides'
 import { lessonTimeRef } from './lessonTime'
@@ -60,6 +62,11 @@ export default function LessonRunner() {
       if (handle) handle.setTransform(pose.pos, pose.quat, pose.bend)
     }
 
+    // Drive the procedural hands from the sampled hand poses (null hides them
+    // for lessons/sides with no authored hand).
+    getHand('left')?.setPose(scene.hands.left)
+    getHand('right')?.setPose(scene.hands.right)
+
     const activeCam = lastRelevantCamera(track, ms)
     if (activeCam && activeCam !== lastCameraRef.current) {
       lastCameraRef.current = activeCam
@@ -81,6 +88,8 @@ export default function LessonRunner() {
 
   return (
     <>
+      <Hand side="left" />
+      <Hand side="right" />
       <AnnotationLayer />
       <MotionGuideLayer />
     </>

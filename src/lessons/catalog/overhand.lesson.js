@@ -47,6 +47,10 @@ export const overhandLesson = {
         duration: 850,
         ease: 'easeOutCubic',
         to: () => blocksRowLayout(blocks),
+        hands: {
+          left: { to: 'twoHandsSupport' },
+          right: { to: 'pinchCut' }, // thumb + fingers pinch to peel a packet
+        },
       })
       const newOrder = shuffleArray(blocks, rng).flat()
       steps.push({
@@ -57,6 +61,10 @@ export const overhandLesson = {
         ease: 'easeInOutCubic',
         reorder: () => newOrder,
         to: (dk) => stackLayout(dk),
+        hands: {
+          left: { to: 'twoHandsSupport' },
+          right: { to: 'overhandPull' }, // release the packet back onto the pile
+        },
       })
       d = newOrder
     }
