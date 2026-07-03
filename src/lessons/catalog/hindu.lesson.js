@@ -43,6 +43,7 @@ export const hinduLesson = {
         duration: 900,
         ease: 'easeOutCubic',
         to: () => blocksRowLayout(blocks, { spacing: 0.8 }),
+        stagger: { by: 'packet' }, // draw each packet off in turn
       })
       const newOrder = shuffleArray(blocks, rng).flat()
       steps.push({

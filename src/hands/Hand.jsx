@@ -16,7 +16,7 @@ export default function Hand({ side }) {
           return
         }
         rig.root.visible = true
-        applyHandPose(rig, pose, side)
+        applyHandPose(rig, pose)
       },
     })
     return () => unregisterHand(side)

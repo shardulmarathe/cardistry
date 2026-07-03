@@ -29,6 +29,7 @@ const FLIP_Y = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0
 export default function VisualizerDriver() {
   const gl = useThree((s) => s.gl)
   const camera = useThree((s) => s.camera)
+  const controls = useThree((s) => s.controls)
   const deck = useAppStore((s) => s.deck)
   const setDeck = useAppStore((s) => s.setDeck)
   const vizLayout = useAppStore((s) => s.vizLayout)
@@ -50,6 +51,9 @@ export default function VisualizerDriver() {
   const clockRef = useRef(0)
   const flipsRef = useRef(new Map())
   const faceRef = useRef(new Map())
+  // Drag-to-reorder: candidate = card under the pointer on pointerdown; dragging
+  // = the card id currently being carried (also excluded from the ease loop).
+  const dragRef = useRef({ candidate: null, dragging: null })
   const scratch = useRef({
     R: new THREE.Quaternion(),
     peel: new THREE.Quaternion(),
@@ -113,6 +117,8 @@ export default function VisualizerDriver() {
     for (const [id, b] of base) {
       const h = getCard(id)
       if (!h) continue
+      // The dragged card is positioned directly by the pointer handler.
+      if (id === dragRef.current.dragging) continue
       const flip = flips.get(id)
 
       if (flip && now >= flip.start) {
@@ -166,30 +172,99 @@ export default function VisualizerDriver() {
     const el = gl.domElement
     const raycaster = new THREE.Raycaster()
     const ndc = new THREE.Vector2()
+    // Table plane at the deck's rest height, for projecting the drag target.
+    const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.02)
+    const hitPoint = new THREE.Vector3()
     let downX = 0
     let downY = 0
 
-    const onDown = (e) => {
-      downX = e.clientX
-      downY = e.clientY
-    }
-    const onUp = (e) => {
-      if (Math.hypot(e.clientX - downX, e.clientY - downY) > 6) return
-
+    const setNdc = (e) => {
       const rect = el.getBoundingClientRect()
       ndc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
       ndc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
       raycaster.setFromCamera(ndc, camera)
+    }
 
+    const pickCard = () => {
       const entries = [...getRegistry().entries()]
       const hits = raycaster.intersectObjects(
         entries.map(([, h]) => h.mesh),
         false,
       )
-      if (hits.length > 0) {
-        const id = entries.find(([, h]) => h.mesh === hits[0].object)?.[0]
-        // Single tap = one clean side flip; commit happens when it completes.
-        if (id) enqueueFlip(id, clockRef.current)
+      if (hits.length === 0) return null
+      return entries.find(([, h]) => h.mesh === hits[0].object)?.[0] ?? null
+    }
+
+    // Dragging is only meaningful in the ordered layouts (fan / stack), where a
+    // card's position maps to its index in the deck.
+    const dragLayout = () => {
+      const l = useAppStore.getState().vizLayout
+      return l === 'fan' || l === 'stack' ? l : null
+    }
+
+    const onDown = (e) => {
+      downX = e.clientX
+      downY = e.clientY
+      dragRef.current.candidate = null
+      if (!dragLayout()) return
+      setNdc(e)
+      dragRef.current.candidate = pickCard()
+    }
+
+    const onMove = (e) => {
+      const drag = dragRef.current
+      if (!drag.candidate && !drag.dragging) return
+      if (Math.hypot(e.clientX - downX, e.clientY - downY) <= 6) return
+      // Promote a candidate to an active drag on the first real movement.
+      if (!drag.dragging) {
+        drag.dragging = drag.candidate
+        if (controls) controls.enabled = false
+      }
+      setNdc(e)
+      if (raycaster.ray.intersectPlane(dragPlane, hitPoint)) {
+        const h = getCard(drag.dragging)
+        if (h) h.mesh.position.set(hitPoint.x, hitPoint.y + 0.35, hitPoint.z)
+      }
+    }
+
+    const endDrag = () => {
+      const drag = dragRef.current
+      const id = drag.dragging
+      drag.dragging = null
+      drag.candidate = null
+      if (controls) controls.enabled = true
+      if (!id) return
+      // Insertion index = how many other cards sort before the drop point along
+      // the layout's ordering axis (fan → world X, stack → world Y / depth).
+      const layout = useAppStore.getState().vizLayout
+      const key = (p) => (layout === 'stack' ? p.y : p.x)
+      const dropKey = key(hitPoint)
+      let target = 0
+      for (const [cid, b] of base) {
+        if (cid === id) continue
+        if (key(b.pos) < dropKey) target++
+      }
+      setDeck((prev) => {
+        const card = prev.find((c) => c.id === id)
+        if (!card) return prev
+        const without = prev.filter((c) => c.id !== id)
+        without.splice(Math.min(target, without.length), 0, card)
+        return without
+      })
+    }
+
+    const onUp = (e) => {
+      if (dragRef.current.dragging) {
+        endDrag()
+        return
+      }
+      dragRef.current.candidate = null
+      // A clean tap (little movement): flip the hit card, or cycle layouts.
+      if (Math.hypot(e.clientX - downX, e.clientY - downY) > 6) return
+      setNdc(e)
+      const id = pickCard()
+      if (id) {
+        enqueueFlip(id, clockRef.current)
       } else {
         const order = VISUALIZER_LAYOUTS.map((l) => l.id)
         const i = order.indexOf(useAppStore.getState().vizLayout)
@@ -198,13 +273,17 @@ export default function VisualizerDriver() {
     }
 
     el.addEventListener('pointerdown', onDown)
+    el.addEventListener('pointermove', onMove)
     el.addEventListener('pointerup', onUp)
+    el.addEventListener('pointercancel', endDrag)
     return () => {
       el.removeEventListener('pointerdown', onDown)
+      el.removeEventListener('pointermove', onMove)
       el.removeEventListener('pointerup', onUp)
+      el.removeEventListener('pointercancel', endDrag)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gl, camera, setVizLayout])
+  }, [gl, camera, controls, setVizLayout, setDeck, base])
 
   return null
 }

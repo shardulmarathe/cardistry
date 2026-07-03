@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { getEase, clamp01 } from '../../lib/ease'
 import { lerpHandPose } from '../../hands/handPoses'
+import { frameOf, applyGripFrame } from './grips'
 
 function poseFromSegments(segs, ms, out) {
   if (segs.length === 0) return null
@@ -56,9 +57,33 @@ function handFromSegments(segs, ms) {
   return lerpHandPose(seg.from, seg.to, e)
 }
 
+// Pure samplers the compiler needs to capture grip offsets at compile time.
+export function sampleHandSegments(segs, ms) {
+  return handFromSegments(segs, ms)
+}
+export function sampleCardSegments(segs, ms) {
+  const out = { pos: new THREE.Vector3(), quat: new THREE.Quaternion(), bend: 0 }
+  return poseFromSegments(segs, ms, out)
+}
+
 const outputCache = new Map()
 
 export function sampleTrack(track, ms) {
+  // Hands are sampled FIRST: held cards read the live grip frame from them.
+  const hands = {
+    left: handFromSegments(track.hands?.left ?? [], ms),
+    right: handFromSegments(track.hands?.right ?? [], ms),
+  }
+
+  // Which cards are attached to a hand right now (id -> {side, offset}).
+  const active = new Map()
+  if (track.holds) {
+    for (const h of track.holds) {
+      if (ms < h.tStart || ms > h.tEnd) continue
+      for (const [id, off] of h.offsets) if (off) active.set(id, { side: h.side, offset: off })
+    }
+  }
+
   const cards = new Map()
   for (const [id, segs] of track.cards) {
     let out = outputCache.get(id)
@@ -67,6 +92,13 @@ export function sampleTrack(track, ms) {
       outputCache.set(id, out)
     }
     poseFromSegments(segs, ms, out)
+    // If this card is gripped, override pos/quat from the hand frame ∘ offset.
+    // bend is left to the card's own track (the packet still bows in-hand).
+    const held = active.get(id)
+    if (held) {
+      const fr = frameOf(hands[held.side])
+      if (fr) applyGripFrame(fr, held.offset, out.pos, out.quat)
+    }
     cards.set(id, out)
   }
 
@@ -82,11 +114,6 @@ export function sampleTrack(track, ms) {
         opacity: Math.min(fadeIn, fadeOut),
       })
     }
-  }
-
-  const hands = {
-    left: handFromSegments(track.hands?.left ?? [], ms),
-    right: handFromSegments(track.hands?.right ?? [], ms),
   }
 
   return { cards, annotations, hands, stepIndex: stepIndexAt(track, ms) }

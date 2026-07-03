@@ -22,6 +22,7 @@ export const faroLesson = {
       duration: 1200,
       ease: 'easeInOutCubic',
       to: (dk) => twoHalvesLayout(dk, 0.9),
+      stagger: { by: 'card' }, // peel the two halves apart one card at a time
       annotations: [
         { text: 'A faro needs a perfect 26 / 26 cut', at: [0, 0.7, 0.8], appearAt: 0.2 },
       ],

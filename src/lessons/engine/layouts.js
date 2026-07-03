@@ -47,15 +47,49 @@ export function twoHalvesLayout(deck, gap = 0.95, baseY = 0.02) {
   })
 }
 
-// A dealer's arc spread flat on the table (the visualizer "fan").
-export function fanLayout(deck, { spread = Math.PI * 0.7, radius = 1.75 } = {}) {
+// On-edge orientations for a riffle grip: the card long axis (local Y) points
+// up (world +Y) and the FACE (local +Z normal) points to the side (world ±X)
+// toward each hand — a real bridge, not a flat pile facing the ceiling. Built
+// as a ±90° turn about world Y. With faces along ±X, the existing long-axis
+// bend bows the standing card so its arch profile faces the dealer (normal ≈
+// world Z) — the bow "faces the sides", per design.
+export const ON_EDGE = {
+  left: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2),
+  right: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2),
+}
+
+// Two on-edge half-decks, one per hand, ready to bow into a riffle bridge. Each
+// half is stacked along world X (its face-normal axis) so cards don't z-fight.
+export function riffleGripLayout(deck, { gap = 0.5, baseY = 0.5, lean = 0 } = {}) {
+  const mid = Math.floor(deck.length / 2)
+  return deck.map((card, i) => {
+    const inLeft = i < mid
+    const local = inLeft ? i : i - mid
+    const sign = inLeft ? -1 : 1
+    const quat = ON_EDGE[inLeft ? 'left' : 'right'].clone()
+    if (lean) {
+      quat.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -sign * lean))
+    }
+    return {
+      id: card.id,
+      pos: new THREE.Vector3(sign * gap + sign * local * CARD_GAP, baseY, 0),
+      quat,
+      bend: 0,
+    }
+  })
+}
+
+// A dealer's arc spread flat on the table (the visualizer "fan"). Wider spread +
+// larger radius + a stronger per-card lift so every card peeks out of the fan
+// instead of collapsing into one overlapping sliver.
+export function fanLayout(deck, { spread = Math.PI * 0.92, radius = 2.0 } = {}) {
   const n = deck.length
   return deck.map((card, i) => {
     const t = n <= 1 ? 0.5 : i / (n - 1)
     const ang = (t - 0.5) * spread
     const x = Math.sin(ang) * radius
     const z = -Math.cos(ang) * radius + radius * 0.72
-    const y = LIFT(i)
+    const y = 0.02 + i * CARD_GAP * 0.9
     return {
       id: card.id,
       pos: new THREE.Vector3(x, y, z),

@@ -25,8 +25,8 @@ export const overhandLesson = {
         duration: 800,
         to: (dk) => stackLayout(dk),
         hands: {
-          left: { from: 'relaxed', to: 'twoHandsSupport' },
-          right: { from: 'relaxed', to: 'overhandPull' },
+          left: { from: 'relaxed', to: 'twoHandsSupport', anchor: [0.14, 0.42, 0.08] },
+          right: { from: 'relaxed', to: 'overhandPull', anchor: [0.14, 0.46, 0.16] },
         },
         annotations: [
           {
@@ -47,9 +47,10 @@ export const overhandLesson = {
         duration: 850,
         ease: 'easeOutCubic',
         to: () => blocksRowLayout(blocks),
+        stagger: { by: 'packet' }, // peel packets off the top one at a time
         hands: {
-          left: { to: 'twoHandsSupport' },
-          right: { to: 'pinchCut' }, // thumb + fingers pinch to peel a packet
+          left: { to: 'twoHandsSupport', anchor: [0.14, 0.42, 0.08] },
+          right: { to: 'pinchCut', anchor: [0.2, 0.52, 0.2] }, // thumb + fingers pinch to peel a packet
         },
       })
       const newOrder = shuffleArray(blocks, rng).flat()
@@ -62,8 +63,8 @@ export const overhandLesson = {
         reorder: () => newOrder,
         to: (dk) => stackLayout(dk),
         hands: {
-          left: { to: 'twoHandsSupport' },
-          right: { to: 'overhandPull' }, // release the packet back onto the pile
+          left: { to: 'twoHandsSupport', anchor: [0.14, 0.42, 0.08] },
+          right: { to: 'overhandPull', anchor: [0.16, 0.46, 0.12] }, // release the packet back onto the pile
         },
       })
       d = newOrder

@@ -27,7 +27,17 @@ export default function VisualizerControls() {
         <p className="viz-hint">
           <span className="k">Tap a card</span> to flip
           <span className="dot">·</span>
-          <span className="k">Drag</span> to orbit
+          {vizLayout === 'fan' || vizLayout === 'stack' ? (
+            <>
+              <span className="k">Drag a card</span> to reorder
+              <span className="dot">·</span>
+              <span className="k">Drag felt</span> to orbit
+            </>
+          ) : (
+            <>
+              <span className="k">Drag</span> to orbit
+            </>
+          )}
         </p>
         <div className="viz-buttons">
           <button type="button" className="ghost-btn" onClick={flipAll}>
