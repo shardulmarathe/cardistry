@@ -9,6 +9,13 @@ export default function Hand({ side }) {
   useEffect(() => {
     registerHand(side, {
       setPose(pose) {
+        // A null pose means this lesson has no hand for this side — hide it
+        // rather than leaving a big hand parked at the origin.
+        if (!pose) {
+          rig.root.visible = false
+          return
+        }
+        rig.root.visible = true
         applyHandPose(rig, pose, side)
       },
     })

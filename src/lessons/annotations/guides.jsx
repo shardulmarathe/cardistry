@@ -32,28 +32,16 @@ const lineMat = new THREE.LineBasicMaterial({
   depthWrite: false,
 })
 
-const palmMat = new THREE.MeshStandardMaterial({
-  color: 0xf0c9a0,
-  transparent: true,
-  opacity: 0.2,
-  depthWrite: false,
-  roughness: 0.7,
-  metalness: 0,
-  emissive: 0xd8a24a,
-  emissiveIntensity: 0.12,
-})
-
-// Motion guides: ghost cards, arrows, path traces, and soft palm hints (no finger rig).
+// Motion guides: ghost cards, arrows and path traces. Hand placement is now
+// shown by the real procedural finger rig (see LessonRunner), not palm ovals.
 export default function MotionGuideLayer() {
   const track = usePlayer((s) => s.track)
   const groupRef = useRef()
   const ghostsRef = useRef([])
   const arrowsRef = useRef([])
   const linesRef = useRef([])
-  const palmsRef = useRef({ left: null, right: null })
 
   const cardGeo = useMemo(() => getCardGeometry(), [])
-  const palmGeo = useMemo(() => new THREE.SphereGeometry(1, 14, 10), [])
 
   useFrame(() => {
     const t = usePlayer.getState().track
@@ -115,33 +103,10 @@ export default function MotionGuideLayer() {
         if (linesRef.current[i]) linesRef.current[i].visible = false
       }
     }
-
-    // Soft palm ovals — suggest hand placement without a procedural finger rig.
-    const palmFade = guide ? fade : 0.6
-    updatePalm(groupRef.current, palmsRef.current, 'left', scene.hands?.left, palmGeo, palmFade)
-    updatePalm(groupRef.current, palmsRef.current, 'right', scene.hands?.right, palmGeo, palmFade)
   })
 
   if (!track) return null
   return <group ref={groupRef} />
-}
-
-function updatePalm(parent, store, side, pose, geo, fade) {
-  if (!pose) {
-    if (store[side]) store[side].visible = false
-    return
-  }
-  let mesh = store[side]
-  if (!mesh) {
-    mesh = new THREE.Mesh(geo, palmMat.clone())
-    mesh.scale.set(0.11, 0.04, 0.13)
-    parent.add(mesh)
-    store[side] = mesh
-  }
-  mesh.visible = true
-  mesh.position.copy(pose.wrist.pos)
-  mesh.quaternion.copy(pose.wrist.quat)
-  mesh.material.opacity = 0.22 * fade
 }
 
 function guideFade(track, ms, stepIdx) {

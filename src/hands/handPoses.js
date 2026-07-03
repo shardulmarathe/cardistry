@@ -112,7 +112,7 @@ export function mirrorPose(p) {
 
 export function getHandPose(name, side = 'right') {
   const base = HAND_POSES[name] || HAND_POSES.relaxed
-  const sideOffset = side === 'left' ? -0.42 : 0.42
+  const sideOffset = side === 'left' ? -0.66 : 0.66
   if (side === 'left') {
     const p = mirrorPose(base)
     p.wrist.pos.x += sideOffset

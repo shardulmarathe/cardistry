@@ -12,6 +12,9 @@ export const useAppStore = create((set) => ({
   activeLessonId: null,
   // Selected visualizer arrangement (see VISUALIZER_LAYOUTS).
   vizLayout: 'fan',
+  // Bumped by the "Flip all" button; VisualizerDriver watches this and runs a
+  // staggered flip wave (it owns the animation, so we don't toggle isFaceUp here).
+  flipAllNonce: 0,
   camera: { mode: 'orbit', preset: 'overview' },
   settings: { showHands: false, quality: 'high', reducedMotion: false },
 
@@ -19,8 +22,7 @@ export const useAppStore = create((set) => ({
   setDeck: (deck) =>
     set((s) => ({ deck: typeof deck === 'function' ? deck(s.deck) : deck })),
   setVizLayout: (vizLayout) => set({ vizLayout }),
-  flipAll: () =>
-    set((s) => ({ deck: s.deck.map((c) => ({ ...c, isFaceUp: !c.isFaceUp })) })),
+  flipAll: () => set((s) => ({ flipAllNonce: s.flipAllNonce + 1 })),
   openLesson: (activeLessonId) =>
     set({ mode: 'lesson', activeLessonId }),
   closeLesson: () => set({ mode: 'visualizer', activeLessonId: null }),

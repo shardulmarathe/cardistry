@@ -2,6 +2,9 @@ import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 
 const HAND_COLOR = 0xe8c4a0
+// Whole-rig scale: the base rig is authored in small units; a real hand is
+// roughly a card-and-a-half wide, so we scale it up to cradle a ~0.63-wide card.
+const HAND_SCALE = 4.6
 const SEG_LEN = [0.038, 0.032, 0.026]
 const SEG_RAD = [0.014, 0.012, 0.01]
 const FINGER_OFFSETS = {
@@ -12,14 +15,17 @@ const FINGER_OFFSETS = {
   pinky: [0.052, 0.015, -0.05],
 }
 const FINGER_SPREAD = { thumb: -0.35, index: -0.12, middle: 0, ring: 0.12, pinky: 0.28 }
+// The thumb sits off the side of the palm and opposes the fingers, so its base
+// is rotated across the palm — curling it then presses toward the deck edge.
+const THUMB_BASE_ROT = { z: 1.05, x: 0.35 }
 
 function makeSegmentMaterial() {
   return new THREE.MeshStandardMaterial({
     color: HAND_COLOR,
     transparent: true,
-    opacity: 0.35,
+    opacity: 0.52,
     depthWrite: false,
-    roughness: 0.55,
+    roughness: 0.5,
     metalness: 0,
     side: THREE.DoubleSide,
   })
@@ -85,7 +91,14 @@ export function buildHandRig(side = 'right') {
     wrist.add(fingers[name].group)
   }
 
-  if (side === 'left') root.scale.x = -1
+  // Opposable thumb: tilt its base across the palm so its curl presses inward.
+  fingers.thumb.group.rotation.z = THUMB_BASE_ROT.z
+  fingers.thumb.group.rotation.x = THUMB_BASE_ROT.x
+
+  // Scale the whole rig up (and mirror X for the left hand).
+  root.scale.set(side === 'left' ? -HAND_SCALE : HAND_SCALE, HAND_SCALE, HAND_SCALE)
+  // Stay hidden until a lesson supplies a pose for this side.
+  root.visible = false
 
   return { root, wrist, fingers, materials: collectMaterials(root) }
 }

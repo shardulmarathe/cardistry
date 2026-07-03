@@ -33,7 +33,10 @@ function buildRoundedCardGeometry(w, h, r, ySegs, xSegs) {
       const x = -xHalf + (i / xSegs) * 2 * xHalf
       const idx = positions.length / 3
       positions.push(x, y, 0)
-      uvs.push((x + w / 2) / w, 1 - (y + h / 2) / h)
+      // Standard convention (matches PlaneGeometry + CanvasTexture flipY): v
+      // increases with +y. An earlier `1 - ...` here rendered every card
+      // texture upside-down (invisible on symmetric art, obvious on the S/rank).
+      uvs.push((x + w / 2) / w, (y + h / 2) / h)
       row.push(idx)
     }
     rowVerts.push(row)
