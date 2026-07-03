@@ -40,6 +40,7 @@ export const stripLesson = {
         duration: 900,
         ease: 'easeOutCubic',
         to: () => blocksRowLayout(blocks, { spacing: 0.9 }),
+        stagger: { by: 'packet' }, // strip each packet off in turn
         hands: { right: { to: 'overhandPull' } },
       })
       const newOrder = shuffleArray(blocks, rng).flat()
