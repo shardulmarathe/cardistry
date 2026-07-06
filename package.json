@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "og": "node scripts/generate-og.mjs",
-    "build": "node scripts/generate-og.mjs && vite build",
+    "og": "node scripts/capture-og.mjs",
+    "build": "vite build && node scripts/capture-og.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -24,8 +24,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
-    "@resvg/resvg-js": "^2.6.2",
-    "satori": "^0.12.1",
+    "puppeteer": "^24.10.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
