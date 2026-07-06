@@ -22,7 +22,7 @@ export const hinduLesson = {
         kind: 'move',
         id: 'ready',
         label: 'Hold the deck by its ends',
-        duration: 800,
+        duration: 1300,
         to: (dk) => stackLayout(dk),
         annotations: [
           {
@@ -40,9 +40,9 @@ export const hinduLesson = {
         kind: 'move',
         id: `draw-${r}`,
         label: 'Draw packets off the top',
-        duration: 900,
+        duration: 1500,
         ease: 'easeOutCubic',
-        to: () => blocksRowLayout(blocks, { spacing: 0.8 }),
+        to: () => blocksRowLayout(blocks, { spacing: 1.05 }),
         stagger: { by: 'packet' }, // draw each packet off in turn
       })
       const newOrder = shuffleArray(blocks, rng).flat()
@@ -50,7 +50,7 @@ export const hinduLesson = {
         kind: 'move',
         id: `fall-${r}`,
         label: 'Let each packet fall onto the pile',
-        duration: 900,
+        duration: 1500,
         ease: 'easeInOutCubic',
         reorder: () => newOrder,
         to: (dk) => stackLayout(dk),

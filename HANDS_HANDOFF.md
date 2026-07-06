@@ -1,5 +1,34 @@
 # 3D Hands for Shuffle Techniques — Handoff
 
+## ⏩ Session 4 update — reorder-in-any-layout, slow hand-driven shuffles
+
+Plan: `~/.claude/plans/mellow-wandering-beacon.md`. Lint + build clean; a headless engine harness (`scratchpad/verifyHands.mjs`, run with `node --loader scratchpad/extLoader.mjs …`) passes 70/70 (determinism, scrub-reversibility, motion-zero-at-boundaries, far split, grip carry, circling hands). **Still needs the user's eyes** for pose/anchor/camera polish — all hand geometry is authored blind.
+
+**1. Visualizer: drag-to-reorder now works in EVERY layout; clicking felt no longer switches layouts.**
+- Root cause of the two reported bugs was ONE bug: `pickCard` raycast the registered card **groups** with `recursive=false`, and `Group.raycast` is a no-op — so taps never hit a card and always fell through to the "empty felt → cycle layout" branch. Fixed: `intersectObjects(meshes, true)` + walk `hit.object.parent` back to the registered group (`VisualizerDriver.jsx`).
+- Removed the felt-tap layout-cycling entirely (layouts change only via the buttons). Tap-a-card-to-flip stays.
+- Drag is no longer gated to fan/stack. Insertion index is now **nearest layout slot in screen space** (project each slot's base pos to pixels, pick closest to the drop point) — uniform for fan/ring/ribbon/spiral/grid/stack, and it fixes the old stack drag (the horizontal drag-plane made the stack's y-key constant → always index 0).
+- Hint text in `VisualizerControls.jsx` made unconditional.
+
+**2. Lessons are ~4× slower and the hands MOVE continuously.** Two engine additions (backward compatible — legacy `{from,to,anchor}` still compiles):
+- **Multi-keyframe hand tracks.** `step.hands.<side>` may now be an ARRAY of keyframes `{ at:0..1, pose?, anchor?, fingers?, ease?, motion? }`. `compileHandTracks` (`compileLesson.js`) normalizes both shapes, resolves each keyframe (a named pose, or clone-current + partial `fingers` override — the thumb-ratchet primitive), and emits one segment per keyframe pair (+ a travel segment if the first `at>0`). Poses chain: each side carries its last pose to the next step.
+- **Procedural motion overlays.** A keyframe/segment may carry `motion:{ type:'orbit'|'rock'|'jitter', amp, cycles, axis?, phase? }` — a wrist-**position** overlay evaluated in `sampleTrack.js` (`motionOffset`) as a pure function of the un-eased local t. **Every shape uses integer `cycles` so the offset is exactly 0 at t=0/t=1** → segment boundaries, step jumps, and reverse scrub stay pop-free. The left/right mirror is baked at compile as `motion.sx` (x negated for left) — **only wrist position, never quats/curls** (mirror invariant preserved). Negative `cycles` = reversed orbit.
+- **Riffle re-choreographed** (`riffle.lesson.js`, ~25s, 8 steps): split carries the halves FAR apart (`riffleGripLayout gap:1.6`), carry-in (grips), arch (bend + thumb-press + jitter), 7s weave with the thumbs **ratcheting open** in sync with the interlace while the hands inch together, square, then a real **bridge → cascade waterfall** (`springArchLayout` + new `bridgeCage` pose).
+- **Wash re-choreographed** (`wash.lesson.js`, ~19s): wider scatter, new `swirl()` layout rotates the spread the way the hands circle, both palms in new `washPress` pose doing counter-rotating `orbit` motion (fwd, reversed, cross-body), then a sweep-in gather. **All step-boundary anchors aligned to one center so the wrist path is continuous.**
+- **New poses** `bridgeCage` + `washPress` in `handPoses.js`.
+- **Transport** `SPEEDS = [0.25, 0.5, 1, 2]` (`TransportBar.jsx`) — 0.25× for frame-by-frame study.
+- **Other split lessons** (faro/overhand/hindu/strip) got wider split gaps + ~1.6–2× durations only (no hand choreography yet — reuse the keyframe/motion surface to add it).
+
+**Overhand rebuilt into a real pick-up-and-place (after user feedback).** The first slow pass still looked wrong — the hands sat in the center swapping poses while the packets slid on their own. Root causes found + fixed (`overhand.lesson.js`):
+- **Stale-closure bug (the big one):** step `to:` was authored as `() => twoPiles(src, dst, …)` — lazy closures over the MUTATING `src`/`dst` loop vars. The engine resolves `to` *after* `build()` returns, so every step saw the final mutated state; each grip captured its packet at the wrong place and welded it to the wrist at a ~1.8-unit offset (packet flew off to the side). Fix: **compute layout arrays eagerly at push-time with `.slice()` snapshots** (`to: twoPiles(src.slice(), dst.slice(), …)`), never a thunk over loop vars. General lesson: only use `to: (dk)=>…` as a PURE fn of the passed deck; never close over mutable outer state.
+- **Left-hand mirror:** a left "holder" anchored near the source landed at the *opposite* pile (rig negates left wrist x). Fix: **drop the second hand entirely** — omit all `left` declarations so `leftTracks` is empty and the left hand stays hidden (`setPose(null)`). One hand now does the whole shuffle, which is also clearer.
+- New `packetGrab` pose (palm-down, fingers curled to cage a packet from above). Each carry holds ONE wrist orientation so the gripped packet translates cleanly and lands flat with no snap. Choreography: deck as a pile on one side → hand reaches, grips the top packet (`grip:{right:ids}`), arcs it up/over, sets it on the growing far pile → repeat per packet → whole thing twice (piles swap sides each round). ~13s, 14 steps.
+- Verified headlessly (`scratchpad/verifyHands.mjs`, 79/79): gripped packet rides IN the hand (gap 0.3–0.7, drift <0.05 through each carry), no snap at release (<0.15), ends as one squared pile. **Harness gotcha:** `sampleTrack` reuses cached Vector3s per card id, so any check comparing two samples must `.pos.clone()` the first — else it silently reads 0 (a broken no-snap check passed trivially until fixed).
+
+**Not yet done:** apply the SAME pick-up-and-place grip-carry to hindu + strip (identical static-hands problem); hand choreography for faro/charlier/pile/pressureFan/spring/waterfall; fingertip contact dents.
+
+---
+
 ## ⏩ Session 3 update — hands grip & carry, on-edge riffle, one-by-one splits, viz drag
 
 Four features (plan: `~/.claude/plans/merry-bubbling-cookie.md`). Lint + build clean; a headless esbuild harness (`scratchpad/verifyPart3.mjs`) passes 12/12 assertions. Still needs the user's eyes for pose/camera polish.

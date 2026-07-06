@@ -96,6 +96,34 @@ export const HAND_POSES = {
     0.4,
   ),
 
+  // Packet grab: palm down, all fingers curled to cage a small packet from
+  // above with the thumb opposing — the overhand "pick it up and carry it" grip.
+  packetGrab: pose(
+    [0.5, 0.44, 0.05],
+    euler(PALM_DOWN, 0, 0),
+    f([0.5, 0.6, 0.45], [0.85, 0.85, 0.6], [0.9, 0.9, 0.62], [0.85, 0.85, 0.6], [0.76, 0.76, 0.54]),
+    0.12,
+  ),
+
+  // Bridge cage: both hands cup the squared, arched deck for the waterfall — the
+  // thumb presses down on the top edge while the four fingers curl well under
+  // the far edge, caging the spring so it can cascade out under control.
+  bridgeCage: pose(
+    [0.28, 0.5, 0.02],
+    euler(PALM_DOWN + 0.08, 0, 0),
+    f([0.45, 0.4, 0.28], [0.95, 0.78, 0.5], [1.0, 0.82, 0.52], [0.95, 0.78, 0.5], [0.86, 0.68, 0.44]),
+    0.2,
+  ),
+
+  // Wash press: palm laid FLAT on the spread cards (washFlat only hovers),
+  // fingers nearly straight so the whole hand slides the cards around.
+  washPress: pose(
+    [0.85, 0.2, 0.3],
+    euler(PALM_DOWN + 0.06, 0, 0),
+    f([0.12, 0.1, 0.06], [0.14, 0.1, 0.05], [0.16, 0.11, 0.06], [0.14, 0.1, 0.05], [0.12, 0.09, 0.05]),
+    0.46,
+  ),
+
   // Wide fan: fingers spread hard to bloom a pressure fan.
   fanSpread: pose(
     [0.45, 0.44, 0.15],

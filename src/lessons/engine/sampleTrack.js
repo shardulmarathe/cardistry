@@ -40,6 +40,36 @@ function poseFromSegments(segs, ms, out) {
   return out
 }
 
+// A procedural wrist-position overlay, evaluated as a pure function of the
+// segment-local, UN-eased t. Every shape uses integer `cycles`, so the offset
+// is exactly zero at t=0 and t=1 — segment boundaries, step jumps, gaps, and
+// reverse scrubbing all stay pop-free, and the whole pipeline stays a pure
+// function of ms. `sx` (baked at compile) mirrors x for the left hand.
+const _motionV = new THREE.Vector3()
+function motionOffset(m, t, out) {
+  out.set(0, 0, 0)
+  const amp = m.amp ?? 0
+  const cycles = m.cycles ?? 1
+  const sx = m.sx ?? 1
+  const phase = m.phase ?? 0
+  if (m.type === 'orbit') {
+    const ph = 2 * Math.PI * phase
+    const ang = 2 * Math.PI * (cycles * t + phase)
+    out.x = (Math.cos(ang) - Math.cos(ph)) * amp * sx
+    out.z = (Math.sin(ang) - Math.sin(ph)) * amp
+  } else if (m.type === 'rock') {
+    const s = Math.sin(2 * Math.PI * cycles * t) * amp
+    const axis = m.axis || 'y'
+    if (axis === 'x') out.x = s * sx
+    else if (axis === 'z') out.z = s
+    else out.y = s
+  } else if (m.type === 'jitter') {
+    out.x = (Math.sin(2 * Math.PI * cycles * t) * 0.6 + Math.sin(2 * Math.PI * 2 * cycles * t) * 0.4) * amp * sx
+    out.y = Math.sin(2 * Math.PI * (cycles + 1) * t) * amp * 0.5
+  }
+  return out
+}
+
 function handFromSegments(segs, ms) {
   if (segs.length === 0) return null
   if (ms <= segs[0].tStart) return segs[0].from
@@ -54,7 +84,11 @@ function handFromSegments(segs, ms) {
   const span = Math.max(1, seg.tEnd - seg.tStart)
   const localT = clamp01((ms - seg.tStart) / span)
   const e = getEase(seg.ease)(localT)
-  return lerpHandPose(seg.from, seg.to, e)
+  // lerpHandPose allocates a fresh pose, so adding the overlay here is safe —
+  // the early-return branches above return shared objects and must stay untouched.
+  const out = lerpHandPose(seg.from, seg.to, e)
+  if (seg.motion) out.wrist.pos.add(motionOffset(seg.motion, localT, _motionV))
+  return out
 }
 
 // Pure samplers the compiler needs to capture grip offsets at compile time.

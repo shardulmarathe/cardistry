@@ -22,7 +22,7 @@ export const stripLesson = {
         kind: 'move',
         id: 'ready',
         label: 'Hold the deck — strip grip',
-        duration: 700,
+        duration: 1200,
         to: (dk) => stackLayout(dk),
         hands: {
           left: { from: 'relaxed', to: 'twoHandsSupport' },
@@ -37,9 +37,9 @@ export const stripLesson = {
         kind: 'move',
         id: `strip-${r}`,
         label: 'Strip a large packet off the top',
-        duration: 900,
+        duration: 1500,
         ease: 'easeOutCubic',
-        to: () => blocksRowLayout(blocks, { spacing: 0.9 }),
+        to: () => blocksRowLayout(blocks, { spacing: 1.1 }),
         stagger: { by: 'packet' }, // strip each packet off in turn
         hands: { right: { to: 'overhandPull' } },
       })
@@ -48,7 +48,7 @@ export const stripLesson = {
         kind: 'move',
         id: `drop-${r}`,
         label: 'Drop the packet onto the pile',
-        duration: 850,
+        duration: 1400,
         ease: 'easeInOutCubic',
         reorder: () => newOrder,
         to: (dk) => stackLayout(dk),

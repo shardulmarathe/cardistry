@@ -3,15 +3,17 @@ import { useThree, useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useAppStore } from '../state/useAppStore'
 import { getCard, getRegistry } from '../card/cardRegistry'
-import { buildVizLayout, VISUALIZER_LAYOUTS } from '../lessons/engine/layouts'
+import { buildVizLayout } from '../lessons/engine/layouts'
 
 // Free-play "Visualizer": arrange the deck in a selectable layout (fan, ring,
 // ribbon, spiral, grid, stack). Tap a card to flip it — the card turns over
 // about its VERTICAL axis (a "side flip": the S♠ face mirrors to ♠S, as if a
 // hand grabbed one edge and laid it over), NOT a hinge toward the camera. It
 // lifts in a small arc so it clears its neighbours. "Flip all" runs the same
-// flip as a staggered wave that follows the layout's own card order. Click
-// empty felt to cycle layouts.
+// flip as a staggered wave that follows the layout's own card order. Drag a
+// card to any spot to reorder it — works in every layout. The layout itself is
+// changed only from the buttons in VisualizerControls; clicking felt does
+// nothing but orbit.
 const FLIP_DUR = 0.5
 const FLIP_LIFT = 0.4
 const STAGGER = 0.012 // per-card delay in the "Flip all" wave (seconds)
@@ -33,7 +35,6 @@ export default function VisualizerDriver() {
   const deck = useAppStore((s) => s.deck)
   const setDeck = useAppStore((s) => s.setDeck)
   const vizLayout = useAppStore((s) => s.vizLayout)
-  const setVizLayout = useAppStore((s) => s.setVizLayout)
   const flipAllNonce = useAppStore((s) => s.flipAllNonce)
   const reducedMotion = useAppStore((s) => s.settings.reducedMotion)
 
@@ -177,6 +178,8 @@ export default function VisualizerDriver() {
     const hitPoint = new THREE.Vector3()
     let downX = 0
     let downY = 0
+    let lastClientX = 0
+    let lastClientY = 0
 
     const setNdc = (e) => {
       const rect = el.getBoundingClientRect()
@@ -185,28 +188,31 @@ export default function VisualizerDriver() {
       raycaster.setFromCamera(ndc, camera)
     }
 
+    // Cards are registered as their outer <group>; the pickable geometry lives
+    // on two child meshes, and Group.raycast is a no-op — so we must recurse and
+    // walk the hit object's parent chain back up to the registered group.
     const pickCard = () => {
       const entries = [...getRegistry().entries()]
       const hits = raycaster.intersectObjects(
         entries.map(([, h]) => h.mesh),
-        false,
+        true,
       )
       if (hits.length === 0) return null
-      return entries.find(([, h]) => h.mesh === hits[0].object)?.[0] ?? null
-    }
-
-    // Dragging is only meaningful in the ordered layouts (fan / stack), where a
-    // card's position maps to its index in the deck.
-    const dragLayout = () => {
-      const l = useAppStore.getState().vizLayout
-      return l === 'fan' || l === 'stack' ? l : null
+      let obj = hits[0].object
+      while (obj) {
+        const found = entries.find(([, h]) => h.mesh === obj)
+        if (found) return found[0]
+        obj = obj.parent
+      }
+      return null
     }
 
     const onDown = (e) => {
       downX = e.clientX
       downY = e.clientY
+      lastClientX = e.clientX
+      lastClientY = e.clientY
       dragRef.current.candidate = null
-      if (!dragLayout()) return
       setNdc(e)
       dragRef.current.candidate = pickCard()
     }
@@ -214,6 +220,8 @@ export default function VisualizerDriver() {
     const onMove = (e) => {
       const drag = dragRef.current
       if (!drag.candidate && !drag.dragging) return
+      lastClientX = e.clientX
+      lastClientY = e.clientY
       if (Math.hypot(e.clientX - downX, e.clientY - downY) <= 6) return
       // Promote a candidate to an active drag on the first real movement.
       if (!drag.dragging) {
@@ -234,15 +242,24 @@ export default function VisualizerDriver() {
       drag.candidate = null
       if (controls) controls.enabled = true
       if (!id) return
-      // Insertion index = how many other cards sort before the drop point along
-      // the layout's ordering axis (fan → world X, stack → world Y / depth).
-      const layout = useAppStore.getState().vizLayout
-      const key = (p) => (layout === 'stack' ? p.y : p.x)
-      const dropKey = key(hitPoint)
+      // Insertion index = the layout slot whose on-screen position is closest to
+      // where the card was dropped. Projecting each slot to pixels makes this
+      // work uniformly for every layout (fan, ring, ribbon, spiral, grid, stack)
+      // — no per-layout ordering axis. The dragged card's own slot is included,
+      // so dropping it back near home is a no-op.
+      const rect = el.getBoundingClientRect()
+      const v = new THREE.Vector3()
       let target = 0
-      for (const [cid, b] of base) {
-        if (cid === id) continue
-        if (key(b.pos) < dropKey) target++
+      let bestD = Infinity
+      for (const [, b] of base) {
+        v.copy(b.pos).project(camera)
+        const sx = ((v.x + 1) / 2) * rect.width + rect.left
+        const sy = ((1 - v.y) / 2) * rect.height + rect.top
+        const d = Math.hypot(lastClientX - sx, lastClientY - sy)
+        if (d < bestD) {
+          bestD = d
+          target = b.index
+        }
       }
       setDeck((prev) => {
         const card = prev.find((c) => c.id === id)
@@ -259,17 +276,11 @@ export default function VisualizerDriver() {
         return
       }
       dragRef.current.candidate = null
-      // A clean tap (little movement): flip the hit card, or cycle layouts.
+      // A clean tap on a card flips it; a tap on empty felt does nothing.
       if (Math.hypot(e.clientX - downX, e.clientY - downY) > 6) return
       setNdc(e)
       const id = pickCard()
-      if (id) {
-        enqueueFlip(id, clockRef.current)
-      } else {
-        const order = VISUALIZER_LAYOUTS.map((l) => l.id)
-        const i = order.indexOf(useAppStore.getState().vizLayout)
-        setVizLayout(order[(i + 1) % order.length])
-      }
+      if (id) enqueueFlip(id, clockRef.current)
     }
 
     el.addEventListener('pointerdown', onDown)
@@ -283,7 +294,7 @@ export default function VisualizerDriver() {
       el.removeEventListener('pointercancel', endDrag)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gl, camera, controls, setVizLayout, setDeck, base])
+  }, [gl, camera, controls, setDeck, base])
 
   return null
 }
