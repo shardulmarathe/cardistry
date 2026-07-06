@@ -19,9 +19,9 @@ export const faroLesson = {
       kind: 'move',
       id: 'split',
       label: 'Cut exactly 26 and 26',
-      duration: 1200,
+      duration: 2400,
       ease: 'easeInOutCubic',
-      to: (dk) => twoHalvesLayout(dk, 0.9),
+      to: (dk) => twoHalvesLayout(dk, 1.5),
       stagger: { by: 'card' }, // peel the two halves apart one card at a time
       annotations: [
         { text: 'A faro needs a perfect 26 / 26 cut', at: [0, 0.7, 0.8], appearAt: 0.2 },
@@ -31,7 +31,7 @@ export const faroLesson = {
       kind: 'riffle',
       id: 'weave',
       label: 'Interlace one card at a time',
-      duration: 2600,
+      duration: 5200,
       ease: 'easeInOutCubic',
       midBend: 0.9, // tight, precise weave — barely any bow
       arcLift: 0.14,
@@ -47,7 +47,7 @@ export const faroLesson = {
       kind: 'move',
       id: 'square',
       label: 'Square the deck',
-      duration: 800,
+      duration: 1500,
       ease: 'easeOutCubic',
       to: (dk) => stackLayout(dk),
       bend: 0,

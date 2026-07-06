@@ -62,6 +62,103 @@ function cloneHandPose(p) {
   }
 }
 
+// A step's hands.<side> is either the legacy single-move shape
+//   { from?, to, anchor?, motion? }
+// or an ARRAY of keyframes, each { at:0..1, pose?, anchor?, fingers?, ease?, motion? }.
+// Both compile to the same per-side list of segments so a hand can travel
+// through several poses (and pick up procedural motion) within one step while
+// still being a pure function of time. Legacy → a 2-keyframe array at {0,1}.
+function normalizeHandKeyframes(spec) {
+  if (Array.isArray(spec)) {
+    return spec.slice().sort((a, b) => (a.at ?? 0) - (b.at ?? 0))
+  }
+  // Legacy: FROM keeps its own default position (no anchor); TO gets the anchor.
+  return [
+    { at: 0, pose: spec.from ?? null },
+    { at: 1, pose: spec.to ?? spec.from ?? null, anchor: spec.anchor, motion: spec.motion },
+  ]
+}
+
+// Resolve one keyframe to a full hand pose. A named `pose` is looked up (and
+// re-anchored); with no pose we clone the hand's current pose (optionally moved
+// to a new anchor) so a keyframe can just nudge the wrist or override fingers.
+// Partial `fingers` overrides are merged on top — the thumb-ratchet primitive.
+function resolveKeyframePose(kf, side, current) {
+  let base
+  if (kf.pose) {
+    base = getHandPose(kf.pose, side, kf.anchor)
+  } else {
+    base = cloneHandPose(current)
+    if (kf.anchor) {
+      base.wrist.pos.set(kf.anchor[0], kf.anchor[1], kf.anchor[2])
+      if (side === 'left') base.wrist.pos.x *= -1
+    }
+  }
+  if (kf.fingers) {
+    for (const name of ['thumb', 'index', 'middle', 'ring', 'pinky']) {
+      if (kf.fingers[name]) base.fingers[name] = [...kf.fingers[name]]
+    }
+  }
+  return base
+}
+
+// Bake the left/right mirror into a positional motion overlay: the x component
+// is negated for the left hand so one authored orbit circles symmetrically.
+// Only wrist POSITION is affected — never the quat or curls (mirror invariant).
+function mirrorMotion(motion, side) {
+  if (!motion) return undefined
+  return { ...motion, sx: side === 'left' ? -1 : 1 }
+}
+
+function compileSideTrack(step, side, tStart, dur, current) {
+  const kfs = normalizeHandKeyframes(step.hands[side])
+  const defaultEase = step.ease || 'easeInOutCubic'
+  // Resolve each keyframe sequentially so "clone current" keyframes chain off
+  // the previous keyframe's resolved pose.
+  const resolved = []
+  let prev = current
+  for (const kf of kfs) {
+    const p = resolveKeyframePose(kf, side, prev)
+    resolved.push(p)
+    prev = p
+  }
+
+  const segs = []
+  if (kfs.length === 1) {
+    // A lone keyframe = travel from the carried-forward pose over the whole step.
+    segs.push({
+      tStart,
+      tEnd: tStart + dur,
+      from: cloneHandPose(current),
+      to: cloneHandPose(resolved[0]),
+      ease: kfs[0].ease || defaultEase,
+      motion: mirrorMotion(kfs[0].motion, side),
+    })
+  } else {
+    // Travel in from the carried-forward pose if the first keyframe starts late.
+    if ((kfs[0].at ?? 0) > 0) {
+      segs.push({
+        tStart,
+        tEnd: tStart + (kfs[0].at ?? 0) * dur,
+        from: cloneHandPose(current),
+        to: cloneHandPose(resolved[0]),
+        ease: defaultEase,
+      })
+    }
+    for (let i = 0; i < kfs.length - 1; i++) {
+      segs.push({
+        tStart: tStart + (kfs[i].at ?? 0) * dur,
+        tEnd: tStart + (kfs[i + 1].at ?? 1) * dur,
+        from: cloneHandPose(resolved[i]),
+        to: cloneHandPose(resolved[i + 1]),
+        ease: kfs[i + 1].ease || defaultEase,
+        motion: mirrorMotion(kfs[i + 1].motion, side),
+      })
+    }
+  }
+  return { segs, last: resolved[resolved.length - 1] }
+}
+
 function compileHandTracks(steps, stepMeta) {
   const leftTracks = []
   const rightTracks = []
@@ -71,23 +168,19 @@ function compileHandTracks(steps, stepMeta) {
   for (let si = 0; si < steps.length; si++) {
     const step = steps[si]
     const { tStart, tEnd } = stepMeta[si]
+    const dur = tEnd - tStart
     const hands = step.hands
     if (!hands) continue
 
     if (hands.left) {
-      // anchor re-places the wrist for the pose the hand is moving TO; the FROM
-      // pose keeps its own position (a named preset's default, or wherever the
-      // hand already was) so the hand can travel in to the deck.
-      const to = getHandPose(hands.left.to || hands.left.from, 'left', hands.left.anchor)
-      const from = hands.left.from ? getHandPose(hands.left.from, 'left') : cloneHandPose(leftCurrent)
-      leftTracks.push({ tStart, tEnd, from: cloneHandPose(from), to: cloneHandPose(to), ease: step.ease || 'easeInOutCubic' })
-      leftCurrent = to
+      const { segs, last } = compileSideTrack(step, 'left', tStart, dur, leftCurrent)
+      leftTracks.push(...segs)
+      leftCurrent = last
     }
     if (hands.right) {
-      const to = getHandPose(hands.right.to || hands.right.from, 'right', hands.right.anchor)
-      const from = hands.right.from ? getHandPose(hands.right.from, 'right') : cloneHandPose(rightCurrent)
-      rightTracks.push({ tStart, tEnd, from: cloneHandPose(from), to: cloneHandPose(to), ease: step.ease || 'easeInOutCubic' })
-      rightCurrent = to
+      const { segs, last } = compileSideTrack(step, 'right', tStart, dur, rightCurrent)
+      rightTracks.push(...segs)
+      rightCurrent = last
     }
   }
 

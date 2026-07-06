@@ -2,7 +2,7 @@ import { usePlayer } from '../lessons/engine/player'
 import { useAppStore } from '../state/useAppStore'
 import { getLessonById } from '../lessons/catalog'
 
-const SPEEDS = [0.5, 1, 2]
+const SPEEDS = [0.25, 0.5, 1, 2]
 
 function fmt(ms) {
   const s = Math.max(0, ms) / 1000
