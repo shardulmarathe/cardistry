@@ -2,6 +2,7 @@ import { ContactShadows } from '@react-three/drei'
 import FeltTable from './FeltTable'
 import LightingRig from './LightingRig'
 import CameraController from './CameraController'
+import ResponsiveCamera from './ResponsiveCamera'
 import SceneController from './SceneController'
 
 // Everything inside the Canvas. Cards live in SceneController and never remount.
@@ -20,6 +21,7 @@ export default function Stage() {
         color="#2b060f"
       />
       <CameraController />
+      <ResponsiveCamera />
       <SceneController />
     </>
   )
