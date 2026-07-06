@@ -16,13 +16,19 @@
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  padding: 18px max(18px, env(safe-area-inset-left, 0px));
+  gap: 10px;
+  padding:
+    max(18px, calc(12px + env(safe-area-inset-top, 0px)))
+    max(18px, env(safe-area-inset-right, 0px))
+    18px
+    max(18px, env(safe-area-inset-left, 0px));
 }
 
 .brand {
   display: inline-flex;
   align-items: baseline;
   gap: 9px;
+  min-width: 0;
   pointer-events: auto;
   user-select: none;
 }
@@ -35,9 +41,12 @@
 .brand-word {
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: 22px;
+  font-size: clamp(18px, 4.5vw, 22px);
   letter-spacing: 0.01em;
   color: var(--bone);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .mode-tabs {
@@ -124,6 +133,7 @@
   left: 50%;
   bottom: max(24px, env(safe-area-inset-bottom, 0px));
   transform: translateX(-50%);
+  width: min(560px, calc(100vw - 24px));
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -132,9 +142,12 @@
 }
 .viz-layouts {
   display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: 100%;
   gap: 3px;
   padding: 5px;
-  border-radius: 999px;
+  border-radius: 22px;
   background: var(--glass);
   border: 1px solid var(--glass-brd);
   backdrop-filter: blur(14px);
@@ -182,6 +195,8 @@
   font-size: 13px;
   color: var(--bone-dim);
   letter-spacing: 0.01em;
+  text-align: center;
+  max-width: 100%;
 }
 .viz-hint .k {
   color: var(--bone);
@@ -310,7 +325,7 @@
 .catalog-title {
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: 20px;
+  font-size: clamp(18px, 4.6vw, 20px);
   color: var(--bone);
 }
 .catalog-scroll {
@@ -501,7 +516,7 @@
 .transport-title {
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: 19px;
+  font-size: clamp(16px, 4.4vw, 19px);
   color: var(--bone);
 }
 .transport-step {
@@ -683,10 +698,14 @@
 /* ---------- Responsive ---------- */
 @media (max-width: 760px) {
   .catalog {
-    width: min(320px, 88vw);
+    width: min(340px, 90vw);
   }
   .catalog-info {
     max-height: 28vh;
+  }
+  .transport {
+    width: min(880px, calc(100vw - 20px));
+    padding: 14px 16px 16px;
   }
   .transport-controls {
     flex-direction: column;
@@ -698,12 +717,68 @@
   }
 }
 
-@media (max-width: 420px) {
-  .brand-word {
-    font-size: 18px;
+/* Short landscape phones: keep the fixed panels from eating the whole height. */
+@media (max-height: 480px) {
+  .catalog-info {
+    max-height: 40vh;
   }
+  .transport {
+    gap: 8px;
+    padding: 10px 14px 12px;
+  }
+  .transport-fact {
+    display: none;
+  }
+}
+
+@media (max-width: 420px) {
   .tab {
-    padding: 7px 14px;
+    padding: 8px 14px;
     font-size: 12.5px;
+  }
+  .viz-hint {
+    font-size: 12px;
+  }
+}
+
+/* Finger-friendly hit targets on touch devices (>= ~44px) without changing the
+   denser look on mouse/desktop. */
+@media (pointer: coarse) {
+  .tab,
+  .viz-layout-btn,
+  .ghost-btn,
+  .info-toggle {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .t-btn {
+    width: 44px;
+    height: 44px;
+  }
+  .t-play {
+    width: 52px;
+    height: 52px;
+  }
+  .t-btn.speed {
+    width: auto;
+    min-width: 52px;
+  }
+  .back-link {
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .scrub input[type='range'] {
+    height: 10px;
+  }
+  .scrub input[type='range']::-webkit-slider-thumb {
+    width: 22px;
+    height: 22px;
+  }
+  .scrub input[type='range']::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
   }
 }
