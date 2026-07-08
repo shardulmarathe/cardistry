@@ -1,11 +1,16 @@
-import { stackLayout, riffleGripLayout, springArchLayout } from '../engine/layouts'
+import { stackLayout, tableRiffleLayout, springArchLayout } from '../engine/layouts'
+import { tableGrip, cageGrip, thumbRatchetKeyframes } from '../authoring/contacts'
 
-// Riffle shuffle + bridge — the showcase lesson (real card bending).
+// Riffle shuffle — authored as the REAL table riffle: the cards never leave
+// the felt. The right hand cuts the top half and sets it beside the other,
+// both palms settle on top of their halves, the THUMBS bend the inner-near
+// corners up to load the spring, then ratchet open card-by-card so the corners
+// weave together low over the table. Square, bridge, cascade to finish.
 //
-// Paced for teaching: ~25s at 1× (drop to 0.25× to study a phase frame by
-// frame). The hands never freeze — they reach in, carry the two halves FAR
-// apart, bring them back, bow them, ratchet the thumbs open in time with the
-// interlace, then cage the squared deck for the waterfall.
+// Hand-driven throughout: packets ride fingertip contact frames while carried,
+// every weave card releases from the thumb at its own moment, and the grip
+// poses are SOLVED at build time against the real half positions
+// (poseWithContacts) so fingertips actually rest on the cards.
 export const riffleLesson = {
   id: 'riffle',
   title: 'Riffle Shuffle',
@@ -15,209 +20,245 @@ export const riffleLesson = {
   seed: 7,
   cameraPreset: 'dealerPOV',
   summary:
-    'The gold-standard shuffle. Split the deck, carry the halves apart, bow each one, and let the cards interlace — then bridge and cascade them square.',
+    'The gold-standard shuffle, done flat on the table: cut, thumbs bend the corners up, and the cards interlace low as the thumbs release — then bridge and cascade square.',
   facts: [
     'About 7 riffle shuffles are enough to randomize a 52-card deck (the Bayer–Diaconis result).',
     'The bend stores elastic spring energy — release it evenly and the cards cascade; crease it and you ruin the card.',
   ],
-  // SPLIT_X: how far the two halves are carried apart on the initial cut (wide,
-  // so the split reads clearly). GRIP_X: where they come back to, on edge, to be
-  // bowed into the bridge. The hands anchor to the same x so each grips its half.
   build: () => {
-    const SPLIT_X = 1.6
-    const GRIP_X = 0.55
-    const GRIP_Y = 0.5
+    const G = 0.5 // half-deck center x
+    const YAW = 0.22 // halves angled so the inner-near corners face each other
+    const TILT = 0.35 // thumbs lift the near edge this far while loading
+
+    // Dealer table grips (solved at build time against the half geometry) and
+    // the bridge cage for the finish — shared builders in authoring/contacts.
+    const { pose: restGrip, anchor: REST_ANCHOR } = tableGrip({ gap: G })
+    const { pose: loadGrip, anchor: LOAD_ANCHOR } = tableGrip({ gap: G, tilt: TILT })
+    const { pose: cage, anchor: CAGE_ANCHOR } = cageGrip()
+
+    const halves = (dk, opts) => tableRiffleLayout(dk, { gap: G, yaw: YAW, ...opts })
+    const mid = (dk) => Math.floor(dk.length / 2)
+    const rightHalf = (dk, opts) => halves(dk, opts).filter((_, i) => i >= mid(dk))
+    const leftHalf = (dk, opts) => halves(dk, opts).filter((_, i) => i < mid(dk))
+    const NOTE_POS = [-1.35, 0.75, 0.2] // beside the action, never covering it
+
     return [
       {
-        kind: 'move',
-        id: 'split',
-        label: 'Cut the deck and carry the halves apart',
-        duration: 3500,
-        ease: 'easeInOutCubic',
-        to: (dk) => riffleGripLayout(dk, { gap: SPLIT_X, baseY: GRIP_Y }),
-        stagger: { by: 'card' }, // deal cards onto the two halves one by one
-        arcLift: 0.15,
+        kind: 'hold',
+        id: 'approach',
+        label: 'Reach in — fingers open, deck untouched',
+        duration: 1400,
         hands: {
-          left: [
-            { at: 0.15, pose: 'twoHandsSupport', anchor: [0.3, 0.48, 0.08] },
-            { at: 1, pose: 'twoHandsSupport', anchor: [SPLIT_X, 0.46, 0.05] },
-          ],
           right: [
-            { at: 0.15, pose: 'twoHandsSupport', anchor: [0.3, 0.48, 0.08] },
-            { at: 1, pose: 'twoHandsSupport', anchor: [SPLIT_X, 0.46, 0.05] },
+            { at: 0.25, pose: 'relaxed' },
+            { at: 1, pose: 'packetGrab', anchor: [0.1, 0.55, 0.0], ease: 'anticipate' },
           ],
+          left: [{ at: 0.5, pose: 'twoHandsSupport', anchor: [0.5, 0.4, 0.1], ease: 'anticipate' }],
         },
-        annotations: [
-          {
-            text: 'Cut roughly in half — about 26 cards each, one packet per hand',
-            at: [0, 0.95, 0.8],
-            appearAt: 0.35,
-          },
-        ],
+        annotations: [{ text: 'Hands first, then cards — everything starts from the grip', at: NOTE_POS, appearAt: 0.35 }],
       },
       {
         kind: 'move',
-        id: 'carry-in',
-        label: 'Bring the two halves together, on edge',
-        duration: 2500,
+        id: 'cut',
+        label: 'Cut the top half and set it down beside',
+        duration: 1600,
         ease: 'easeInOutCubic',
-        to: (dk) => riffleGripLayout(dk, { gap: GRIP_X, baseY: GRIP_Y, lean: 0.1 }),
-        grip: { left: 'firstHalf', right: 'secondHalf' }, // hands now carry the packets
-        hands: {
-          left: [{ at: 1, pose: 'riffleArch', anchor: [GRIP_X, 0.46, 0.02] }],
-          right: [{ at: 1, pose: 'riffleArch', anchor: [GRIP_X, 0.46, 0.02] }],
+        to: (dk) => rightHalf(dk, {}),
+        grip: {
+          right: { cards: 'secondHalf', frame: 'packet', pressure: [{ at: 0, v: 0.35 }, { at: 1, v: 0.5 }] },
         },
-        annotations: [
-          {
-            text: 'Corners almost touching — angle them slightly away from you',
-            at: [0, 1.0, 0.8],
-            appearAt: 0.4,
-          },
-        ],
+        hands: {
+          right: [
+            { at: 0.4, pose: 'packetGrab', anchor: [0.32, 0.42, 0.02] },
+            { at: 1, pose: restGrip, anchor: REST_ANCHOR, ease: 'easeOutBackSoft' },
+          ],
+          left: [{ at: 0.8, pose: 'packetGrab', anchor: [0.08, 0.42, 0.0] }],
+        },
+        annotations: [{ text: 'Cut roughly in half — the top 26 ride the right hand, flat', at: NOTE_POS, appearAt: 0.3, until: 0.95 }],
       },
       {
         kind: 'move',
-        id: 'arch',
-        label: 'Bow each half to load the spring',
-        duration: 3000,
+        id: 'slide',
+        label: 'Slide the bottom half into place',
+        duration: 1200,
+        ease: 'easeInOutCubic',
+        to: (dk) => leftHalf(dk, {}),
+        grip: {
+          left: { cards: 'firstHalf', frame: 'packet', pressure: [{ at: 0, v: 0.35 }, { at: 1, v: 0.5 }] },
+          right: { cards: 'secondHalf', frame: 'packet', pressure: [{ at: 0, v: 0.5 }, { at: 1, v: 0.5 }] },
+        },
+        hands: {
+          left: [{ at: 1, pose: restGrip, anchor: REST_ANCHOR, ease: 'easeOutBackSoft' }],
+        },
+        annotations: [{ text: 'Inner corners angled toward each other', at: NOTE_POS, appearAt: 0.35, until: 0.95 }],
+      },
+      {
+        kind: 'move',
+        id: 'bend',
+        label: 'Thumbs bend the corners up — load the spring',
+        duration: 2200,
         ease: 'easeOutCubic',
-        to: (dk) => riffleGripLayout(dk, { gap: GRIP_X, baseY: GRIP_Y, lean: 0.18 }),
-        bend: 2.6,
-        grip: { left: 'firstHalf', right: 'secondHalf' }, // keep carrying while it loads
+        to: (dk) => halves(dk, { tilt: TILT }),
+        bend: 1.6,
+        grip: {
+          left: { cards: 'firstHalf', frame: 'packet', bendGain: 0.5, pressure: [{ at: 0, v: 0.5 }, { at: 1, v: 1 }] },
+          right: { cards: 'secondHalf', frame: 'packet', bendGain: 0.5, pressure: [{ at: 0, v: 0.5 }, { at: 1, v: 1 }] },
+        },
         hands: {
           left: [
-            { at: 0.5, pose: 'riffleArch', anchor: [GRIP_X, 0.46, 0.02] },
-            { at: 1, fingers: { thumb: [0.55, 0.6, 0.42] }, anchor: [GRIP_X, 0.46, 0.02], motion: { type: 'jitter', amp: 0.006, cycles: 3 } },
+            { at: 0.4, pose: restGrip, anchor: REST_ANCHOR },
+            {
+              at: 1,
+              pose: loadGrip,
+              anchor: LOAD_ANCHOR,
+              motion: { type: 'jitter', amp: 0.004, cycles: 3 },
+              fingerMotion: [{ fingers: ['thumb', 'index', 'middle'], type: 'tremor', amp: 0.035, cycles: 3 }],
+            },
           ],
           right: [
-            { at: 0.5, pose: 'riffleArch', anchor: [GRIP_X, 0.46, 0.02] },
-            { at: 1, fingers: { thumb: [0.55, 0.6, 0.42] }, anchor: [GRIP_X, 0.46, 0.02], motion: { type: 'jitter', amp: 0.006, cycles: 3 } },
+            { at: 0.4, pose: restGrip, anchor: REST_ANCHOR },
+            {
+              at: 1,
+              pose: loadGrip,
+              anchor: LOAD_ANCHOR,
+              motion: { type: 'jitter', amp: 0.004, cycles: 3 },
+              fingerMotion: [{ fingers: ['thumb', 'index', 'middle'], type: 'tremor', amp: 0.035, cycles: 3 }],
+            },
           ],
         },
-        annotations: [
-          {
-            text: 'Bend firmly — but never crease. That stored spring drives the weave.',
-            at: [0, 1.05, 0.8],
-            appearAt: 0.2,
-          },
-        ],
+        annotations: [{ text: 'Bend firmly — never crease. That spring drives the weave.', at: NOTE_POS, appearAt: 0.25, until: 0.95 }],
       },
       {
         kind: 'riffle',
         id: 'weave',
-        label: 'Release the thumbs — let the cards interlace',
-        duration: 7000,
+        label: 'Ratchet the thumbs — the corners interlace on the felt',
+        duration: 5500,
         ease: 'easeInOutCubic',
-        // Thumbs ratchet progressively open (curl → straight) in step with the
-        // cards falling off the bottoms; the hands inch together as they empty.
+        midBend: 0.7,
+        arcLift: 0.05, // the cards stay LOW — they flick down onto the table
+        grip: {
+          left: { cards: 'firstHalf', frame: 'thumbPeel', release: 'stagger', pressure: [{ at: 0, v: 0.7 }, { at: 1, v: 0.15 }] },
+          right: { cards: 'secondHalf', frame: 'thumbPeel', release: 'stagger', pressure: [{ at: 0, v: 0.7 }, { at: 1, v: 0.15 }] },
+        },
         hands: {
           left: [
-            { at: 0, pose: 'riffleArch', anchor: [GRIP_X, 0.46, 0.02] },
-            { at: 0.25, fingers: { thumb: [0.42, 0.4, 0.3] }, anchor: [0.47, 0.46, 0.01] },
-            { at: 0.5, fingers: { thumb: [0.3, 0.26, 0.18] }, anchor: [0.4, 0.47, 0] },
-            { at: 0.75, fingers: { thumb: [0.2, 0.16, 0.1] }, anchor: [0.34, 0.46, 0], motion: { type: 'rock', axis: 'y', amp: 0.008, cycles: 5 } },
-            { at: 1, pose: 'bridgeRelease', anchor: [0.28, 0.46, 0] },
+            ...thumbRatchetKeyframes({
+              gripPose: loadGrip,
+              openThumb: [0.5, 0.1, 0.02],
+              anchorFrom: LOAD_ANCHOR,
+              anchorTo: [0.26, 0.34, 0.05],
+              steps: 6,
+              jitter: 0.03,
+              fingerMotion: [{ fingers: ['thumb'], type: 'tremor', amp: 0.018, cycles: 2 }],
+            }),
+            { at: 1, pose: 'twoHandsSupport', anchor: [0.24, 0.3, 0.06] },
           ],
           right: [
-            { at: 0, pose: 'riffleArch', anchor: [GRIP_X, 0.46, 0.02] },
-            { at: 0.25, fingers: { thumb: [0.42, 0.4, 0.3] }, anchor: [0.47, 0.46, 0.01] },
-            { at: 0.5, fingers: { thumb: [0.3, 0.26, 0.18] }, anchor: [0.4, 0.47, 0] },
-            { at: 0.75, fingers: { thumb: [0.2, 0.16, 0.1] }, anchor: [0.34, 0.46, 0], motion: { type: 'rock', axis: 'y', amp: 0.008, cycles: 5 } },
-            { at: 1, pose: 'bridgeRelease', anchor: [0.28, 0.46, 0] },
+            ...thumbRatchetKeyframes({
+              gripPose: loadGrip,
+              openThumb: [0.5, 0.1, 0.02],
+              anchorFrom: LOAD_ANCHOR,
+              anchorTo: [0.26, 0.34, 0.05],
+              steps: 6,
+              jitter: 0.03,
+              fingerMotion: [{ fingers: ['thumb'], type: 'tremor', amp: 0.018, cycles: 2 }],
+            }),
+            { at: 1, pose: 'twoHandsSupport', anchor: [0.24, 0.3, 0.06] },
           ],
         },
         annotations: [
-          {
-            text: 'Release slowly — the corners weave together one card at a time',
-            at: [0, 0.85, 0.8],
-            appearAt: 0.15,
-          },
-          {
-            text: 'About 7 riffles fully randomize a 52-card deck',
-            at: [0, 0.85, 0.8],
-            appearAt: 0.6,
-          },
+          { text: 'Release slowly — the corners weave one card at a time', at: NOTE_POS, appearAt: 0.12, until: 0.5 },
+          { text: 'About 7 riffles fully randomize a 52-card deck', at: NOTE_POS, appearAt: 0.58, until: 0.97 },
         ],
       },
       {
         kind: 'move',
         id: 'square',
-        label: 'Push the halves together and square up',
-        duration: 1800,
-        ease: 'easeOutCubic',
+        label: 'Push the halves home and square up',
+        duration: 1400,
+        ease: 'settle',
         to: (dk) => stackLayout(dk),
         bend: 0,
-        camera: 'overview',
         hands: {
-          left: [
-            { at: 0, pose: 'bridgeRelease', anchor: [0.28, 0.46, 0] },
-            { at: 1, pose: 'twoHandsSupport', anchor: [0.18, 0.42, 0.06] },
-          ],
-          right: [
-            { at: 0, pose: 'bridgeRelease', anchor: [0.28, 0.46, 0] },
-            { at: 1, pose: 'twoHandsSupport', anchor: [0.18, 0.42, 0.06] },
-          ],
+          left: [{ at: 1, pose: 'twoHandsSupport', anchor: [0.2, 0.36, 0.05], ease: 'settle' }],
+          right: [{ at: 1, pose: 'twoHandsSupport', anchor: [0.2, 0.36, 0.05], ease: 'settle' }],
+        },
+      },
+      {
+        kind: 'hold',
+        id: 'cage',
+        label: 'Cup the ends of the squared deck',
+        duration: 1100,
+        hands: {
+          left: [{ at: 1, pose: cage, anchor: CAGE_ANCHOR, ease: 'easeOutBackSoft' }],
+          right: [{ at: 1, pose: cage, anchor: CAGE_ANCHOR, ease: 'easeOutBackSoft' }],
         },
       },
       {
         kind: 'move',
         id: 'bridge',
-        label: 'Bow the whole deck into a bridge',
-        duration: 3000,
+        label: 'Squeeze — bow the deck between the hands',
+        duration: 1700,
         ease: 'easeInOutCubic',
-        to: (dk) => springArchLayout(dk, 2.8),
-        bend: 2.8,
-        hands: {
-          left: [{ at: 1, pose: 'bridgeCage', anchor: [0.26, 0.5, 0.02] }],
-          right: [{ at: 1, pose: 'bridgeCage', anchor: [0.26, 0.5, 0.02] }],
+        to: (dk) => springArchLayout(dk, 2.4),
+        bend: 2.4,
+        // Hands are ALREADY caging (same orientation throughout the hold), so
+        // the deck bows in place between the fingers instead of tipping over.
+        grip: {
+          right: { cards: 'all', frame: 'packet', bendGain: 0.4, pressure: [{ at: 0, v: 0.3 }, { at: 1, v: 0.9 }] },
         },
-        annotations: [
-          {
-            text: 'The bridge: cage the arched deck, thumbs on top, fingers underneath',
-            at: [0, 1.0, 0.8],
-            appearAt: 0.3,
-          },
-        ],
+        hands: {
+          left: [{ at: 1, pose: cage, anchor: CAGE_ANCHOR, fingerMotion: [{ fingers: ['thumb', 'index'], type: 'tighten', amp: 0.04 }] }],
+          right: [{ at: 1, pose: cage, anchor: CAGE_ANCHOR, fingerMotion: [{ fingers: ['thumb', 'index'], type: 'tighten', amp: 0.04 }] }],
+        },
+        annotations: [{ text: 'The bridge: thumbs on top, fingers cupping the ends', at: NOTE_POS, appearAt: 0.3, until: 0.95 }],
       },
       {
         kind: 'move',
         id: 'cascade',
-        label: 'Release the bridge — the cards cascade flat',
-        duration: 2800,
+        label: 'Let the bridge pour — card by card',
+        duration: 2200,
         ease: 'easeInOutCubic',
         to: (dk) => stackLayout(dk),
         bend: 0,
-        stagger: { by: 'card', spread: 0.7, span: 0.3 }, // waterfall, card by card
-        midBend: 1.2,
-        arcLift: 0.08,
+        stagger: { by: 'card', spread: 0.7, span: 0.3 },
+        midBend: 0.9,
+        arcLift: 0.05,
+        grip: {
+          right: { cards: 'all', frame: 'packet', release: 'stagger', pressure: [{ at: 0, v: 0.9 }, { at: 1, v: 0.1 }] },
+        },
         hands: {
           left: [
-            { at: 0, pose: 'bridgeCage', anchor: [0.26, 0.5, 0.02] },
-            { at: 0.5, fingers: { thumb: [0.15, 0.12, 0.08] }, anchor: [0.26, 0.49, 0.02] },
-            { at: 1, pose: 'twoHandsSupport', anchor: [0.24, 0.4, 0.05] },
+            { at: 0, pose: cage, anchor: CAGE_ANCHOR },
+            {
+              at: 0.6,
+              fingers: { thumb: [0.15, 0.12, 0.08] },
+              anchor: [CAGE_ANCHOR[0] - 0.02, CAGE_ANCHOR[1] - 0.05, CAGE_ANCHOR[2]],
+              fingerMotion: [{ fingers: ['index', 'middle', 'ring', 'pinky'], type: 'curlRipple', amp: 0.05, cycles: 3 }],
+            },
+            { at: 1, fingers: { index: [0.5, 0.4, 0.28], middle: [0.52, 0.42, 0.3] }, anchor: [0.6, 0.34, 0.0], ease: 'settle' },
           ],
           right: [
-            { at: 0, pose: 'bridgeCage', anchor: [0.26, 0.5, 0.02] },
-            { at: 0.5, fingers: { thumb: [0.15, 0.12, 0.08] }, anchor: [0.26, 0.49, 0.02] },
-            { at: 1, pose: 'twoHandsSupport', anchor: [0.24, 0.4, 0.05] },
+            { at: 0, pose: cage, anchor: CAGE_ANCHOR },
+            {
+              at: 0.6,
+              fingers: { thumb: [0.15, 0.12, 0.08] },
+              anchor: [CAGE_ANCHOR[0] - 0.02, CAGE_ANCHOR[1] - 0.05, CAGE_ANCHOR[2]],
+              fingerMotion: [{ fingers: ['index', 'middle', 'ring', 'pinky'], type: 'curlRipple', amp: 0.05, cycles: 3 }],
+            },
+            { at: 1, fingers: { index: [0.5, 0.4, 0.28], middle: [0.52, 0.42, 0.3] }, anchor: [0.6, 0.34, 0.0], ease: 'settle' },
           ],
         },
-        annotations: [
-          {
-            text: 'That stored spring flowing out under the bridge is the satisfying part',
-            at: [0, 0.9, 0.8],
-            appearAt: 0.1,
-          },
-        ],
+        annotations: [{ text: 'The stored spring flowing out under the fingers is the payoff', at: NOTE_POS, appearAt: 0.15, until: 0.9 }],
       },
       {
         kind: 'hold',
         id: 'rest',
         label: 'Squared and shuffled',
-        duration: 1400,
+        duration: 1300,
         hands: {
-          left: [{ at: 1, pose: 'relaxed' }],
-          right: [{ at: 1, pose: 'relaxed' }],
+          left: [{ at: 1, pose: 'relaxed', ease: 'easeInOutCubic' }],
+          right: [{ at: 1, pose: 'relaxed', ease: 'easeInOutCubic' }],
         },
       },
     ]

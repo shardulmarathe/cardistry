@@ -1,38 +1,13 @@
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
+import { HAND_SCALE, FINGERS, FINGER_NAMES, THUMB_BASE_ROT, jointPivotY } from './handRigSpec'
 
 const HAND_COLOR = 0xf0cba6
-// Whole-rig scale: the rig is authored in small "anatomical" units (a middle
-// finger is ~0.09 long, a palm ~0.10 tall); a real hand is roughly a card-and-
-// a-half wide, so we scale it up to cradle a ~0.63-wide card.
-const HAND_SCALE = 4.6
 
-// --- Local hand frame (before the wrist quaternion) --------------------------
-//   +y : the direction fingers extend from their knuckles (fingers point "up").
-//   +z : the PALMAR direction — the palm faces +z and fingers curl toward +z
-//        (a positive joint rotation about local X sweeps the tip toward +z).
-//   +x : toward the pinky (ulnar) side; the thumb sits on the -x (radial) side.
-// The wrist sits at the origin, knuckles near y≈+0.05, forearm trails to -y.
-// The left hand is produced by mirroring the whole rig on X (root.scale.x < 0).
-//
-//   base : knuckle position on the palm  [x across, y up, z palmar]
-//   len  : phalange lengths [proximal, middle, distal]  (middle finger longest)
-//   rad  : phalange radii   [proximal, middle, distal]  (tapers to the tip)
-//   splay: sideways knuckle splay weight (scaled by pose.spread)
-const FINGERS = {
-  // Thumb is short + thick and sits low on the radial side; a base rotation
-  // (THUMB_BASE_ROT) swings it across the palm so its curl opposes the fingers.
-  thumb: { base: [-0.046, -0.012, 0.008], len: [0.03, 0.022, 0.016], rad: [0.017, 0.0145, 0.011], splay: -0.35 },
-  index: { base: [-0.033, 0.049, 0.004], len: [0.04, 0.024, 0.018], rad: [0.0135, 0.0115, 0.0092], splay: -0.16 },
-  middle: { base: [-0.01, 0.052, 0.006], len: [0.046, 0.028, 0.019], rad: [0.0142, 0.012, 0.0095], splay: -0.03 },
-  ring: { base: [0.013, 0.049, 0.005], len: [0.041, 0.025, 0.019], rad: [0.0132, 0.0112, 0.009], splay: 0.11 },
-  pinky: { base: [0.034, 0.043, 0.0], len: [0.031, 0.019, 0.015], rad: [0.0112, 0.0096, 0.0078], splay: 0.26 },
-}
-const FINGER_NAMES = ['thumb', 'index', 'middle', 'ring', 'pinky']
-
-// Opposable thumb: swing the metacarpal across the palm (z) and forward (x) so
-// its curl presses toward the fingers — a real pinch/grip rather than a spike.
-const THUMB_BASE_ROT = { z: 1.2, x: -0.55 }
+// All rig dimensions (scale, finger table, thumb opposition, local-frame
+// conventions) live in handRigSpec.js — the single source of truth shared with
+// the pure FK module (handKinematics.js) and the verify harness. Keep this
+// file about geometry/material construction only.
 
 // One shared translucent material for the whole hand keeps the gold-fresnel rim
 // perfectly consistent across palm, fingers and forearm (and is cheaper).
@@ -64,6 +39,10 @@ function addFresnelRim(material) {
 
 // A finger is a kinematic chain of 3 tapered capsules (proximal→middle→distal),
 // each in its own joint group so applyHandPose can curl them about local X.
+// Each joint group PIVOTS AT ITS PHALANGE'S BASE (the end of the previous
+// phalange) — its capsule is centered len/2 up its own +y. Rotating a joint
+// therefore hinges the phalange at its own knuckle/PIP/DIP, so fingers curl
+// instead of fanning three capsules about the base knuckle.
 function buildFinger(name, spec, material) {
   const group = new THREE.Group()
   group.name = name
@@ -71,19 +50,18 @@ function buildFinger(name, spec, material) {
   group.rotation.y = spec.splay
 
   const joints = []
-  let y = 0
   for (let i = 0; i < 3; i++) {
     const len = spec.len[i]
     const geo = new THREE.CapsuleGeometry(spec.rad[i], len, 6, 12)
     const mesh = new THREE.Mesh(geo, material)
-    mesh.position.y = y + len / 2
+    mesh.position.y = len / 2
     mesh.castShadow = false
     const joint = new THREE.Group()
+    joint.position.y = jointPivotY(spec, i)
     joint.add(mesh)
     if (i === 0) group.add(joint)
     else joints[i - 1].add(joint)
     joints.push(joint)
-    y += len
   }
   return { group, joints, splay: spec.splay }
 }
@@ -150,8 +128,18 @@ export function applyHandPose(rig, pose) {
   for (const name of FINGER_NAMES) {
     const { group, joints, splay } = fingers[name]
     const angles = pose.fingers[name]
-    // Spread only fans the four fingers; the thumb keeps its opposed base yaw.
-    if (name !== 'thumb') group.rotation.y = splay * pose.spread
+    // Optional pose-v2 fields: per-finger additive splay and a 2-DOF animatable
+    // thumb opposition on top of the rig's base constants. Absent fields are
+    // zeros, so legacy poses render exactly as before.
+    const extraSplay = pose.splay?.[name] ?? 0
+    if (name === 'thumb') {
+      // Spread never fans the thumb; it keeps its opposed base yaw.
+      group.rotation.y = splay + extraSplay
+      group.rotation.x = THUMB_BASE_ROT.x + (pose.thumbOpp?.x ?? 0)
+      group.rotation.z = THUMB_BASE_ROT.z + (pose.thumbOpp?.z ?? 0)
+    } else {
+      group.rotation.y = splay * pose.spread + extraSplay
+    }
     for (let i = 0; i < joints.length; i++) {
       // No per-side sign flip: the left rig is mirrored by root.scale.x < 0,
       // which already reverses the sense of a curl about local X.

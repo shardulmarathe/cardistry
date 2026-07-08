@@ -150,7 +150,7 @@ export function getHandPose(name, side = 'right', anchor = null) {
     ? new THREE.Vector3(anchor[0], anchor[1], anchor[2])
     : base.wrist.pos.clone()
   if (side === 'left') pos.x *= -1
-  return {
+  const out = {
     wrist: { pos, quat: base.wrist.quat.clone() },
     fingers: {
       thumb: [...base.fingers.thumb],
@@ -161,6 +161,42 @@ export function getHandPose(name, side = 'right', anchor = null) {
     },
     spread: base.spread,
   }
+  // Optional pose-v2 fields (per-finger splay, animatable thumb opposition):
+  // absent = zeros, so legacy presets stay byte-compatible.
+  if (base.splay) out.splay = { ...base.splay }
+  if (base.thumbOpp) out.thumbOpp = { ...base.thumbOpp }
+  return out
+}
+
+// Deep-clone a pose (v2 fields included). Shared by the compiler and the
+// sampler's idle overlay (which must never mutate a track's segment poses).
+export function cloneHandPose(p) {
+  const out = {
+    wrist: { pos: p.wrist.pos.clone(), quat: p.wrist.quat.clone() },
+    fingers: {
+      thumb: [...p.fingers.thumb],
+      index: [...p.fingers.index],
+      middle: [...p.fingers.middle],
+      ring: [...p.fingers.ring],
+      pinky: [...p.fingers.pinky],
+    },
+    spread: p.spread,
+  }
+  if (p.splay) out.splay = { ...p.splay }
+  if (p.thumbOpp) out.thumbOpp = { ...p.thumbOpp }
+  return out
+}
+
+// Lerp two optional sparse-number records (missing key = 0). Returns undefined
+// when both sides are absent so legacy poses stay lean.
+function lerpSparse(a, b, t, keys) {
+  if (!a && !b) return undefined
+  const out = {}
+  for (const k of keys) {
+    const va = a?.[k] ?? 0
+    out[k] = va + ((b?.[k] ?? 0) - va) * t
+  }
+  return out
 }
 
 // Interpolate two poses — slerp wrist, lerp joint angles.
@@ -176,5 +212,9 @@ export function lerpHandPose(a, b, t) {
   for (const name of ['thumb', 'index', 'middle', 'ring', 'pinky']) {
     out.fingers[name] = a.fingers[name].map((v, i) => v + (b.fingers[name][i] - v) * t)
   }
+  const splay = lerpSparse(a.splay, b.splay, t, ['thumb', 'index', 'middle', 'ring', 'pinky'])
+  if (splay) out.splay = splay
+  const thumbOpp = lerpSparse(a.thumbOpp, b.thumbOpp, t, ['x', 'z'])
+  if (thumbOpp) out.thumbOpp = thumbOpp
   return out
 }

@@ -8,6 +8,7 @@
     "og": "node scripts/capture-og.mjs",
     "build": "vite build && node scripts/capture-og.mjs",
     "lint": "eslint .",
+    "verify": "node --import ./scripts/verify/register.mjs scripts/verify/fkParity.test.mjs && node --import ./scripts/verify/register.mjs scripts/verify/verifyTracks.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

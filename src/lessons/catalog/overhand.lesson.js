@@ -124,7 +124,9 @@ export const overhandLesson = {
           label: 'Carry it over and drop it on the new pile',
           duration: 1150,
           ease: 'easeInOutCubic',
-          grip: { right: ids },
+          // The packet rides the fingertip contact frame with a visible
+          // squeeze at pickup that relaxes into the drop.
+          grip: { right: { cards: ids, frame: 'packet', pressure: [{ at: 0, v: 0.6 }, { at: 1, v: 0.35 }] } },
           to: twoPiles(newSrc.slice(), newDst.slice(), SRC, DST),
           hands: {
             right: [
