@@ -3,8 +3,9 @@ import { mulberry32 } from './seededRng'
 import { stackLayout, toPoseMap } from './layouts'
 import { riffleOrder } from '../../lib/shuffleMath'
 import { CARD_GAP } from '../../lib/constants'
-import { getHandPose } from '../../hands/handPoses'
-import { resolveGripCards, frameOf, captureGripOffset } from './grips'
+import { getHandPose, cloneHandPose } from '../../hands/handPoses'
+import { resolveGripCards, frameOf, captureGripOffset, applyGripFrame, pressureAt } from './grips'
+import { applyGripPressure } from '../../hands/handKinematics'
 import { sampleHandSegments, sampleCardSegments } from './sampleTrack'
 import { buildGuideArrows, buildGuideGhosts, buildGuidePath } from '../annotations/guideUtils'
 
@@ -48,19 +49,6 @@ function packetIndexer(arr) {
   return { count: index.size, kOf: (e) => index.get(keyOf(e)) }
 }
 
-function cloneHandPose(p) {
-  return {
-    wrist: { pos: p.wrist.pos.clone(), quat: p.wrist.quat.clone() },
-    fingers: {
-      thumb: [...p.fingers.thumb],
-      index: [...p.fingers.index],
-      middle: [...p.fingers.middle],
-      ring: [...p.fingers.ring],
-      pinky: [...p.fingers.pinky],
-    },
-    spread: p.spread,
-  }
-}
 
 // A step's hands.<side> is either the legacy single-move shape
 //   { from?, to, anchor?, motion? }
@@ -85,8 +73,16 @@ function normalizeHandKeyframes(spec) {
 // Partial `fingers` overrides are merged on top — the thumb-ratchet primitive.
 function resolveKeyframePose(kf, side, current) {
   let base
-  if (kf.pose) {
+  if (typeof kf.pose === 'string') {
     base = getHandPose(kf.pose, side, kf.anchor)
+  } else if (kf.pose) {
+    // A pose OBJECT (e.g. from the contact-solving authoring helpers) is used
+    // as-is; an anchor still re-places the wrist in right-hand coords.
+    base = cloneHandPose(kf.pose)
+    if (kf.anchor) {
+      base.wrist.pos.set(kf.anchor[0], kf.anchor[1], kf.anchor[2])
+      if (side === 'left') base.wrist.pos.x *= -1
+    }
   } else {
     base = cloneHandPose(current)
     if (kf.anchor) {
@@ -99,6 +95,10 @@ function resolveKeyframePose(kf, side, current) {
       if (kf.fingers[name]) base.fingers[name] = [...kf.fingers[name]]
     }
   }
+  // Pose-v2 partial overrides, merged like `fingers` (the ratchet primitive
+  // extended to abduction and thumb opposition).
+  if (kf.splay) base.splay = { ...(base.splay ?? {}), ...kf.splay }
+  if (kf.thumbOpp) base.thumbOpp = { ...(base.thumbOpp ?? {}), ...kf.thumbOpp }
   return base
 }
 
@@ -133,6 +133,8 @@ function compileSideTrack(step, side, tStart, dur, current) {
       to: cloneHandPose(resolved[0]),
       ease: kfs[0].ease || defaultEase,
       motion: mirrorMotion(kfs[0].motion, side),
+      fingerMotion: kfs[0].fingerMotion,
+      idleScale: kfs[0].idleScale,
     })
   } else {
     // Travel in from the carried-forward pose if the first keyframe starts late.
@@ -143,6 +145,7 @@ function compileSideTrack(step, side, tStart, dur, current) {
         from: cloneHandPose(current),
         to: cloneHandPose(resolved[0]),
         ease: defaultEase,
+        idleScale: kfs[0].idleScale,
       })
     }
     for (let i = 0; i < kfs.length - 1; i++) {
@@ -153,6 +156,8 @@ function compileSideTrack(step, side, tStart, dur, current) {
         to: cloneHandPose(resolved[i + 1]),
         ease: kfs[i + 1].ease || defaultEase,
         motion: mirrorMotion(kfs[i + 1].motion, side),
+        fingerMotion: kfs[i + 1].fingerMotion,
+        idleScale: kfs[i + 1].idleScale,
       })
     }
   }
@@ -193,7 +198,7 @@ function compileHandTracks(steps, stepMeta) {
 function buildHolds(decls, hands, cardTracks) {
   const byKey = new Map()
   for (const d of decls) {
-    const key = `${d.side}|${[...d.cardIds].sort().join(',')}`
+    const key = `${d.side}|${d.frame}|${[...d.cardIds].sort().join(',')}`
     if (!byKey.has(key)) byKey.set(key, [])
     byKey.get(key).push(d)
   }
@@ -205,26 +210,116 @@ function buildHolds(decls, hands, cardTracks) {
     for (const d of list) {
       if (cur && d.tStart <= cur.tEnd + 1) {
         cur.tEnd = Math.max(cur.tEnd, d.tEnd)
+        cur.bendGain = Math.max(cur.bendGain, d.bendGain)
+        cur.pressurePts.push(...d.pressurePts)
+        if (d.release) cur.releaseDecls.push(d)
       } else {
-        cur = { side: d.side, cardIds: d.cardIds, tStart: d.tStart, tEnd: d.tEnd }
+        cur = {
+          side: d.side,
+          cardIds: d.cardIds,
+          tStart: d.tStart,
+          tEnd: d.tEnd,
+          frame: d.frame,
+          bendGain: d.bendGain,
+          pressurePts: [...d.pressurePts],
+          releaseDecls: d.release ? [d] : [],
+        }
         merged.push(cur)
       }
     }
   }
+  merged.sort((a, b) => a.tStart - b.tStart)
 
   const holds = []
+  // A card's pose at ms as it will actually RENDER: if a previously-built hold
+  // still carries it, project through that hold's frame — otherwise its track.
+  // This lets one grip hand a packet to the next (arch → weave) seamlessly.
+  const renderedCardPose = (id, ms) => {
+    for (let i = holds.length - 1; i >= 0; i--) {
+      const h = holds[i]
+      if (ms < h.tStart) continue
+      const rel = h.releases?.get(id) ?? h.tEnd
+      if (ms > rel) continue
+      const offset = h.offsets.get(id)
+      if (!offset) continue
+      const fr = holdFrameAt(h, hands, ms)
+      if (!fr) continue
+      const pos = new THREE.Vector3()
+      const quat = new THREE.Quaternion()
+      applyGripFrame(fr, offset, pos, quat)
+      return { pos, quat }
+    }
+    return sampleCardSegments(cardTracks.get(id) ?? [], ms)
+  }
+
   for (const m of merged) {
-    const frame = frameOf(sampleHandSegments(hands[m.side] ?? [], m.tStart))
-    const offsets = new Map()
+    m.pressurePts.sort((a, b) => a.t - b.t)
+    // Per-card release times: with release:'stagger', a card leaves the hand
+    // the moment its own travel segment inside the declaring step begins.
+    const releases = new Map()
+    for (const d of m.releaseDecls) {
+      if (d.release !== 'stagger') continue
+      for (const id of d.cardIds) {
+        const seg = (cardTracks.get(id) ?? []).find((s) => s.tStart >= d.tStart - 1 && s.tStart < d.tEnd)
+        if (seg) releases.set(id, seg.tStart)
+      }
+    }
+    const hold = {
+      side: m.side,
+      tStart: m.tStart,
+      tEnd: m.tEnd,
+      frame: m.frame,
+      bendGain: m.bendGain,
+      pressurePts: m.pressurePts,
+      releases: releases.size ? releases : undefined,
+      offsets: new Map(),
+    }
+    const frame = holdFrameAt(hold, hands, m.tStart)
     for (const id of m.cardIds) {
-      const cp = sampleCardSegments(cardTracks.get(id) ?? [], m.tStart)
-      offsets.set(id, frame && cp ? captureGripOffset(frame, cp) : null)
+      const cp = renderedCardPose(id, m.tStart)
+      hold.offsets.set(id, frame && cp ? captureGripOffset(frame, cp) : null)
     }
-    if ([...offsets.values()].some(Boolean)) {
-      holds.push({ side: m.side, tStart: m.tStart, tEnd: m.tEnd, offsets })
-    }
+    if ([...hold.offsets.values()].some(Boolean)) holds.push(hold)
   }
   return holds
+}
+
+// The hold's grip frame at an absolute ms, via the SAME pipeline the runtime
+// sampler uses (idle overlay included, pressure curl included) — capture,
+// release baking, and rendering can never disagree.
+function holdFrameAt(hold, hands, ms) {
+  const pose = sampleHandSegments(hands[hold.side] ?? [], ms, hold.side)
+  if (!pose) return null
+  applyGripPressure(pose, hold.frame, pressureAt(hold, ms))
+  return frameOf(pose, hold.side, hold.frame)
+}
+
+// Snap-killer: a held card leaves the hand exactly where the grip frame put
+// it. For every hold, project each card through frame(t_release) ∘ offset and
+// overwrite the `from` pose of the card's segment that begins at that release
+// — the card's post-release travel then starts at its true in-hand position,
+// so the handoff is seamless by construction (both scrub directions). Cards
+// that hand off INTO a following hold have no segment at the boundary and are
+// skipped here; the next hold's capture projects through this one instead.
+function bakeHoldReleases(holds, hands, cardTracks, trackDuration) {
+  const _p = new THREE.Vector3()
+  const _q = new THREE.Quaternion()
+  for (const h of holds) {
+    for (const [id, offset] of h.offsets) {
+      if (!offset) continue
+      const tRel = h.releases?.get(id) ?? h.tEnd
+      if (tRel >= trackDuration - 1) continue // released at the very end: nothing follows
+      const segs = cardTracks.get(id)
+      if (!segs) continue
+      const next = segs.find((s) => Math.abs(s.tStart - tRel) <= 1)
+      if (!next) continue
+      const frame = holdFrameAt(h, hands, tRel)
+      if (!frame) continue
+      applyGripFrame(frame, offset, _p, _q)
+      next.from.pos.copy(_p)
+      next.from.quat.copy(_q)
+    }
+  }
 }
 
 function pickGuideCards(deck, count = 6) {
@@ -265,10 +360,29 @@ export function compileLesson(lessonDef, initialDeck) {
 
     // Grip declarations resolve against the deck order BEFORE this step's
     // reorder, so 'firstHalf'/'secondHalf' name the packet currently in hand.
+    // Two shapes: legacy `grip: { left: 'firstHalf' }` (wrist weld) and v2
+    // `grip: { left: { cards, frame?, pressure?, bendGain? } }` where `frame`
+    // picks a fingertip contact frame and `pressure` ([{at,v},…] over the
+    // step) tightens the grip and (scaled by bendGain) bows the held packet.
     if (step.grip) {
       for (const side of ['left', 'right']) {
-        if (!step.grip[side]) continue
-        gripDecls.push({ side, cardIds: resolveGripCards(step.grip[side], currentDeck), tStart, tEnd })
+        const g = step.grip[side]
+        if (!g) continue
+        const isV2 = typeof g === 'object' && !Array.isArray(g) && typeof g !== 'function'
+        const cardsSpec = isV2 ? g.cards : g
+        gripDecls.push({
+          side,
+          cardIds: resolveGripCards(cardsSpec, currentDeck),
+          tStart,
+          tEnd,
+          frame: (isV2 ? g.frame : null) ?? 'wrist',
+          bendGain: (isV2 ? g.bendGain : 0) ?? 0,
+          // release:'stagger' — each card leaves the hand at ITS OWN moment:
+          // when its staggered travel segment inside this step begins. The
+          // riffle weave peels cards off the thumb one by one this way.
+          release: isV2 ? g.release : undefined,
+          pressurePts: isV2 && g.pressure ? g.pressure.map((p) => ({ t: tStart + (p.at ?? 0) * dur, v: p.v ?? 0 })) : [],
+        })
       }
     }
 
@@ -359,7 +473,15 @@ export function compileLesson(lessonDef, initialDeck) {
       if (typeof step.bend === 'number') {
         for (const pose of endPoses.values()) pose.bend = step.bend
       }
-      currentPoses = endPoses
+      // A partial `to` array moves only the listed cards (e.g. cutting the top
+      // half off a stack) — carry every unlisted card's pose forward.
+      if (endPoses.size < currentDeck.length) {
+        const merged = new Map(fromPoses)
+        for (const [id, p] of endPoses) merged.set(id, p)
+        currentPoses = merged
+      } else {
+        currentPoses = endPoses
+      }
     }
 
     // Motion-guide hints for this step.
@@ -399,6 +521,7 @@ export function compileLesson(lessonDef, initialDeck) {
 
   const hands = compileHandTracks(steps, stepMeta)
   const holds = buildHolds(gripDecls, hands, cardTracks)
+  bakeHoldReleases(holds, hands, cardTracks, cursor)
 
   return {
     duration: cursor,

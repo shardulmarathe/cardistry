@@ -1,7 +1,9 @@
 import * as THREE from 'three'
 import { getEase, clamp01 } from '../../lib/ease'
-import { lerpHandPose } from '../../hands/handPoses'
-import { frameOf, applyGripFrame } from './grips'
+import { lerpHandPose, cloneHandPose } from '../../hands/handPoses'
+import { applyIdle, applyFingerMotion } from '../../hands/handMotion'
+import { applyGripPressure } from '../../hands/handKinematics'
+import { frameOf, applyGripFrame, pressureAt } from './grips'
 
 function poseFromSegments(segs, ms, out) {
   if (segs.length === 0) return null
@@ -70,30 +72,37 @@ function motionOffset(m, t, out) {
   return out
 }
 
-function handFromSegments(segs, ms) {
+// The global idle overlay runs on ABSOLUTE ms (continuous everywhere — no
+// boundary pops possible) and is applied to EVERY returned pose, including the
+// clamped before/after branches, so hands breathe even while "holding still".
+// Those branches must clone: segment poses are shared track data and the idle
+// mutates. Grip capture goes through this same function (sampleHandSegments),
+// so offsets are always captured against the exact pose the viewer sees.
+function handFromSegments(segs, ms, side) {
   if (segs.length === 0) return null
-  if (ms <= segs[0].tStart) return segs[0].from
+  if (ms <= segs[0].tStart) {
+    return applyIdle(cloneHandPose(segs[0].from), ms, side, segs[0].idleScale ?? 1)
+  }
   const last = segs[segs.length - 1]
-  if (ms >= last.tEnd) return last.to
+  if (ms >= last.tEnd) return applyIdle(cloneHandPose(last.to), ms, side, last.idleScale ?? 1)
   let seg = segs[0]
   for (let i = 0; i < segs.length; i++) {
     if (ms >= segs[i].tStart) seg = segs[i]
     else break
   }
-  if (ms >= seg.tEnd) return seg.to
+  if (ms >= seg.tEnd) return applyIdle(cloneHandPose(seg.to), ms, side, seg.idleScale ?? 1)
   const span = Math.max(1, seg.tEnd - seg.tStart)
   const localT = clamp01((ms - seg.tStart) / span)
   const e = getEase(seg.ease)(localT)
-  // lerpHandPose allocates a fresh pose, so adding the overlay here is safe —
-  // the early-return branches above return shared objects and must stay untouched.
   const out = lerpHandPose(seg.from, seg.to, e)
   if (seg.motion) out.wrist.pos.add(motionOffset(seg.motion, localT, _motionV))
-  return out
+  if (seg.fingerMotion) applyFingerMotion(out, seg.fingerMotion, localT)
+  return applyIdle(out, ms, side, seg.idleScale ?? 1)
 }
 
 // Pure samplers the compiler needs to capture grip offsets at compile time.
-export function sampleHandSegments(segs, ms) {
-  return handFromSegments(segs, ms)
+export function sampleHandSegments(segs, ms, side = 'right') {
+  return handFromSegments(segs, ms, side)
 }
 export function sampleCardSegments(segs, ms) {
   const out = { pos: new THREE.Vector3(), quat: new THREE.Quaternion(), bend: 0 }
@@ -105,17 +114,52 @@ const outputCache = new Map()
 export function sampleTrack(track, ms) {
   // Hands are sampled FIRST: held cards read the live grip frame from them.
   const hands = {
-    left: handFromSegments(track.hands?.left ?? [], ms),
-    right: handFromSegments(track.hands?.right ?? [], ms),
+    left: handFromSegments(track.hands?.left ?? [], ms, 'left'),
+    right: handFromSegments(track.hands?.right ?? [], ms, 'right'),
   }
 
-  // Which cards are attached to a hand right now (id -> {side, offset}).
+  // Which cards are attached to a hand right now (id -> {hold, offset}), plus
+  // grip pressure per side. Pressure visibly tightens the rendered hand's
+  // gripping fingers BEFORE contact frames are computed — the same order the
+  // compiler used at capture time (holdFrameAt), so the weld stays exact.
   const active = new Map()
+  const sidePressure = { left: 0, right: 0 }
   if (track.holds) {
     for (const h of track.holds) {
       if (ms < h.tStart || ms > h.tEnd) continue
-      for (const [id, off] of h.offsets) if (off) active.set(id, { side: h.side, offset: off })
+      const p = pressureAt(h, ms)
+      if (p > sidePressure[h.side]) sidePressure[h.side] = p
+      for (const [id, off] of h.offsets) {
+        // Per-card release: after its own moment, the card has left this hand.
+        if (ms > (h.releases?.get(id) ?? h.tEnd)) continue
+        if (off) active.set(id, { hold: h, offset: off, pressure: p })
+      }
     }
+  }
+  for (const side of ['left', 'right']) {
+    if (hands[side] && sidePressure[side]) {
+      // find the pressured frame type of this side's most-pressured hold
+      let type = null
+      for (const h of track.holds) {
+        if (ms >= h.tStart && ms <= h.tEnd && h.side === side && pressureAt(h, ms) === sidePressure[side]) {
+          type = h.frame
+          break
+        }
+      }
+      if (type) applyGripPressure(hands[side], type, sidePressure[side])
+    }
+  }
+
+  // One contact frame per (side, frameType) per sample — not per card.
+  const frameCache = new Map()
+  const gripFrame = (hold) => {
+    const key = `${hold.side}|${hold.frame}`
+    let fr = frameCache.get(key)
+    if (fr === undefined) {
+      fr = frameOf(hands[hold.side], hold.side, hold.frame)
+      frameCache.set(key, fr)
+    }
+    return fr
   }
 
   const cards = new Map()
@@ -127,11 +171,14 @@ export function sampleTrack(track, ms) {
     }
     poseFromSegments(segs, ms, out)
     // If this card is gripped, override pos/quat from the hand frame ∘ offset.
-    // bend is left to the card's own track (the packet still bows in-hand).
+    // bend stays with the card's own track, plus the grip's pressure bow.
     const held = active.get(id)
     if (held) {
-      const fr = frameOf(hands[held.side])
-      if (fr) applyGripFrame(fr, held.offset, out.pos, out.quat)
+      const fr = gripFrame(held.hold)
+      if (fr) {
+        applyGripFrame(fr, held.offset, out.pos, out.quat)
+        if (held.hold.bendGain) out.bend += held.pressure * held.hold.bendGain
+      }
     }
     cards.set(id, out)
   }

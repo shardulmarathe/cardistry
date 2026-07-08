@@ -79,6 +79,30 @@ export function riffleGripLayout(deck, { gap = 0.5, baseY = 0.5, lean = 0 } = {}
   })
 }
 
+// TABLE riffle: two face-down halves FLAT on the felt, side by side, inner
+// corners angled toward each other — the real casino grip. `tilt` lifts each
+// half's NEAR (+z, dealer-side) edge as the thumbs bend the cards up to load
+// the spring; the far edge stays on the table (position compensates the pivot).
+export function tableRiffleLayout(deck, { gap = 0.5, yaw = 0.22, baseY = 0.02, tilt = 0 } = {}) {
+  const mid = Math.floor(deck.length / 2)
+  const tiltQ = tilt ? new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -tilt) : null
+  return deck.map((card, i) => {
+    const inLeft = i < mid
+    const local = inLeft ? i : i - mid
+    const s = inLeft ? -1 : 1
+    const quat = faceQuat(card.isFaceUp, s * yaw)
+    let y = baseY + local * CARD_GAP
+    let z = 0
+    if (tiltQ) {
+      quat.premultiply(tiltQ)
+      // pivot at the far edge: center rises by half the lifted-edge height
+      y += (CARD_H / 2) * Math.sin(tilt)
+      z -= (CARD_H / 2) * (1 - Math.cos(tilt)) * 0.5
+    }
+    return { id: card.id, pos: new THREE.Vector3(s * gap, y, z), quat, bend: 0 }
+  })
+}
+
 // A dealer's arc spread flat on the table (the visualizer "fan"). Wider spread +
 // larger radius + a stronger per-card lift so every card peeks out of the fan
 // instead of collapsing into one overlapping sliver.
