@@ -35,8 +35,18 @@ export const usePlayer = create((set, get) => ({
 
   // Called by the transport slider — pauses and snaps to an absolute time.
   scrubTo: (ms) => {
-    const { durationMs } = get()
-    set({ globalMs: Math.max(0, Math.min(durationMs, ms)), playing: false })
+    const { durationMs, track } = get()
+    const globalMs = Math.max(0, Math.min(durationMs, ms))
+    let stepIndex = 0
+    if (track) {
+      for (let i = track.steps.length - 1; i >= 0; i--) {
+        if (globalMs >= track.steps[i].tStart) {
+          stepIndex = i
+          break
+        }
+      }
+    }
+    set({ globalMs, stepIndex, playing: false })
   },
 
   jumpToStep: (i) => {

@@ -115,6 +115,16 @@ export const HAND_POSES = {
     0.2,
   ),
 
+  // Palm cradle: palm UP, fingers curling gently upward to cup a packet that
+  // rests on the palm — the hindu/strip receiving hand. Fingers point away
+  // from the dealer (-z) so the cupped pile faces the camera.
+  palmCradle: pose(
+    [0.62, 0.13, 0.12],
+    euler(-PALM_DOWN + 0.12, 0, 0),
+    f([0.3, 0.25, 0.15], [0.5, 0.45, 0.28], [0.55, 0.5, 0.3], [0.5, 0.45, 0.28], [0.44, 0.38, 0.24]),
+    0.3,
+  ),
+
   // Wash press: palm laid FLAT on the spread cards (washFlat only hovers),
   // fingers nearly straight so the whole hand slides the cards around.
   washPress: pose(

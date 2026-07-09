@@ -34,7 +34,12 @@ export const charlierLesson = {
     const PALM_Y = DY - 0.13
 
     // Palm-up pinch: fingers reach across to the deck's far (+x) long edge,
-    // thumb owns the near edge — solved so the tips land ON the edges.
+    // thumb owns the near edge — solved so the tips land ON the edges. The
+    // finger targets sit at the deck's TOP far corner (not its base): the deck
+    // is ~0.21 thick, and tips solved at the base made every finger pass
+    // THROUGH the stack. The thumb grips at the top half's base so the bottom
+    // half can drop out from under it.
+    const DECK_TOP = DY + deck.length * CARD_GAP
     const PINCH_ANCHOR = [DX - 0.33, DY - 0.12, DZ]
     const PINCH_QUAT = eulerQuat(-Math.PI / 2, 0, -Math.PI / 2)
     const pinch = poseWithContacts(
@@ -42,11 +47,11 @@ export const charlierLesson = {
       'right',
       { anchor: PINCH_ANCHOR, quat: PINCH_QUAT },
       {
-        thumb: [DX - 0.32, DY + 0.02, DZ + 0.03],
-        index: [DX + 0.32, DY + 0.03, DZ + 0.14],
-        middle: [DX + 0.33, DY + 0.03, DZ + 0.02],
-        ring: [DX + 0.32, DY + 0.03, DZ - 0.1],
-        pinky: [DX + 0.3, DY + 0.02, DZ - 0.2],
+        thumb: [DX - 0.32, DY + mid * CARD_GAP + 0.02, DZ + 0.03],
+        index: [DX + 0.31, DECK_TOP - 0.02, DZ + 0.14],
+        middle: [DX + 0.32, DECK_TOP - 0.02, DZ + 0.02],
+        ring: [DX + 0.31, DECK_TOP - 0.02, DZ - 0.1],
+        pinky: [DX + 0.29, DECK_TOP - 0.04, DZ - 0.2],
       },
     )
 
@@ -94,12 +99,38 @@ export const charlierLesson = {
         duration: 1600,
         ease: 'easeInOutCubic',
         to: (dk) => raised(dk),
-        // The whole deck rides the thumb+index pinch as the wrist turns over.
-        grip: { right: { cards: 'all', frame: 'pinch', pressure: [{ at: 0, v: 0.3 }, { at: 1, v: 0.6 }] } },
+        // NO grip here: the wrist swings ~180° from the palm-down grab to the
+        // palm-up pinch, and a rigid grip through that turn would tip the deck
+        // onto its edge and impale it on the fingers (screenshot-caught). The
+        // deck rises FLAT on its own track while the hand rotates around it
+        // and the fingertips land on the edges; the pinch grips NEXT step,
+        // after the orientation change (see HANDS_HANDOFF watch-outs).
         hands: {
-          right: [{ at: 1, pose: pinch, anchor: PINCH_ANCHOR, ease: 'easeOutBackSoft' }],
+          right: [
+            { at: 0.4, pose: 'packetGrab', anchor: [0.06, 0.72, 0.02] },
+            { at: 1, pose: pinch, anchor: PINCH_ANCHOR, ease: 'easeOutBackSoft' },
+          ],
         },
         annotations: [{ text: 'Thumb on one long edge, fingertips on the other', at: [0, 1.2, 0.6], appearAt: 0.5 }],
+      },
+      {
+        kind: 'hold',
+        id: 'settle-grip',
+        label: 'Settle the pinch',
+        duration: 500,
+        // The hand is already in its final palm-up orientation — gripping now
+        // captures the deck FLAT, so it stays flat for the whole cut.
+        grip: { right: { cards: 'all', frame: 'pinch', pressure: [{ at: 0, v: 0.25 }, { at: 1, v: 0.6 }] } },
+        hands: {
+          right: [
+            {
+              at: 1,
+              pose: pinch,
+              anchor: PINCH_ANCHOR,
+              fingerMotion: [{ fingers: ['thumb', 'index'], type: 'tighten', amp: 0.04 }],
+            },
+          ],
+        },
       },
       {
         kind: 'move',

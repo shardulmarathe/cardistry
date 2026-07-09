@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { getEase, clamp01 } from '../../lib/ease'
+import { CARD_W, CARD_H } from '../../lib/constants'
 import { lerpHandPose, cloneHandPose } from '../../hands/handPoses'
 import { applyIdle, applyFingerMotion } from '../../hands/handMotion'
 import { applyGripPressure } from '../../hands/handKinematics'
@@ -109,6 +110,23 @@ export function sampleCardSegments(segs, ms) {
   return poseFromSegments(segs, ms, out)
 }
 
+// The felt is a plane at y=0 and cards may NEVER poke through it. This is the
+// engine-level guarantee: given the card's orientation, find how far its
+// lowest corner hangs below its center (the y-reach of the rotated width and
+// length axes) and push the card up if that corner would dip under the felt.
+// Pure and continuous in the pose, so scrub purity and boundary continuity
+// are preserved; flat resting cards (drop = 0) are untouched.
+const FELT_Y = 0.012
+const _axW = new THREE.Vector3()
+const _axL = new THREE.Vector3()
+function clampAboveFelt(out) {
+  _axW.set(1, 0, 0).applyQuaternion(out.quat)
+  _axL.set(0, 1, 0).applyQuaternion(out.quat) // card local Y = long axis
+  const drop = Math.abs(_axW.y) * (CARD_W / 2) + Math.abs(_axL.y) * (CARD_H / 2)
+  const lowest = out.pos.y - drop
+  if (lowest < FELT_Y) out.pos.y += FELT_Y - lowest
+}
+
 const outputCache = new Map()
 
 export function sampleTrack(track, ms) {
@@ -180,6 +198,7 @@ export function sampleTrack(track, ms) {
         if (held.hold.bendGain) out.bend += held.pressure * held.hold.bendGain
       }
     }
+    clampAboveFelt(out)
     cards.set(id, out)
   }
 

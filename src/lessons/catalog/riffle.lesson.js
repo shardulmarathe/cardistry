@@ -1,4 +1,4 @@
-import { stackLayout, tableRiffleLayout, springArchLayout } from '../engine/layouts'
+import { tableRiffleLayout, landscapeStackLayout } from '../engine/layouts'
 import { tableGrip, cageGrip, thumbRatchetKeyframes } from '../authoring/contacts'
 
 // Riffle shuffle — authored as the REAL table riffle: the cards never leave
@@ -26,9 +26,9 @@ export const riffleLesson = {
     'The bend stores elastic spring energy — release it evenly and the cards cascade; crease it and you ruin the card.',
   ],
   build: () => {
-    const G = 0.5 // half-deck center x
-    const YAW = 0.22 // halves angled so the inner-near corners face each other
-    const TILT = 0.35 // thumbs lift the near edge this far while loading
+    const G = 0.5 // half-deck center x — landscape halves, inner ends at ±0.06
+    const YAW = 0.12 // inward angle off 90°: inner short ends point at each other
+    const TILT = 0.3 // thumbs lift the INNER end this far while loading
 
     // Dealer table grips (solved at build time against the half geometry) and
     // the bridge cage for the finish — shared builders in authoring/contacts.
@@ -99,7 +99,7 @@ export const riffleLesson = {
         duration: 2200,
         ease: 'easeOutCubic',
         to: (dk) => halves(dk, { tilt: TILT }),
-        bend: 1.6,
+        bend: 1.1,
         grip: {
           left: { cards: 'firstHalf', frame: 'packet', bendGain: 0.5, pressure: [{ at: 0, v: 0.5 }, { at: 1, v: 1 }] },
           right: { cards: 'secondHalf', frame: 'packet', bendGain: 0.5, pressure: [{ at: 0, v: 0.5 }, { at: 1, v: 1 }] },
@@ -136,6 +136,9 @@ export const riffleLesson = {
         ease: 'easeInOutCubic',
         midBend: 0.7,
         arcLift: 0.05, // the cards stay LOW — they flick down onto the table
+        // The weave lands as a LANDSCAPE stack between the hands (short ends
+        // toward the palms), the way a real table riffle squares up.
+        toLayout: (order) => landscapeStackLayout(order),
         grip: {
           left: { cards: 'firstHalf', frame: 'thumbPeel', release: 'stagger', pressure: [{ at: 0, v: 0.7 }, { at: 1, v: 0.15 }] },
           right: { cards: 'secondHalf', frame: 'thumbPeel', release: 'stagger', pressure: [{ at: 0, v: 0.7 }, { at: 1, v: 0.15 }] },
@@ -146,24 +149,24 @@ export const riffleLesson = {
               gripPose: loadGrip,
               openThumb: [0.5, 0.1, 0.02],
               anchorFrom: LOAD_ANCHOR,
-              anchorTo: [0.26, 0.34, 0.05],
+              anchorTo: [0.56, 0.32, -0.02],
               steps: 6,
               jitter: 0.03,
               fingerMotion: [{ fingers: ['thumb'], type: 'tremor', amp: 0.018, cycles: 2 }],
             }),
-            { at: 1, pose: 'twoHandsSupport', anchor: [0.24, 0.3, 0.06] },
+            { at: 1, pose: 'twoHandsSupport', anchor: [0.54, 0.3, 0.0] },
           ],
           right: [
             ...thumbRatchetKeyframes({
               gripPose: loadGrip,
               openThumb: [0.5, 0.1, 0.02],
               anchorFrom: LOAD_ANCHOR,
-              anchorTo: [0.26, 0.34, 0.05],
+              anchorTo: [0.56, 0.32, -0.02],
               steps: 6,
               jitter: 0.03,
               fingerMotion: [{ fingers: ['thumb'], type: 'tremor', amp: 0.018, cycles: 2 }],
             }),
-            { at: 1, pose: 'twoHandsSupport', anchor: [0.24, 0.3, 0.06] },
+            { at: 1, pose: 'twoHandsSupport', anchor: [0.54, 0.3, 0.0] },
           ],
         },
         annotations: [
@@ -177,11 +180,11 @@ export const riffleLesson = {
         label: 'Push the halves home and square up',
         duration: 1400,
         ease: 'settle',
-        to: (dk) => stackLayout(dk),
+        to: (dk) => landscapeStackLayout(dk),
         bend: 0,
         hands: {
-          left: [{ at: 1, pose: 'twoHandsSupport', anchor: [0.2, 0.36, 0.05], ease: 'settle' }],
-          right: [{ at: 1, pose: 'twoHandsSupport', anchor: [0.2, 0.36, 0.05], ease: 'settle' }],
+          left: [{ at: 1, pose: 'twoHandsSupport', anchor: [0.52, 0.3, 0.0], ease: 'settle' }],
+          right: [{ at: 1, pose: 'twoHandsSupport', anchor: [0.52, 0.3, 0.0], ease: 'settle' }],
         },
       },
       {
@@ -200,7 +203,7 @@ export const riffleLesson = {
         label: 'Squeeze — bow the deck between the hands',
         duration: 1700,
         ease: 'easeInOutCubic',
-        to: (dk) => springArchLayout(dk, 2.4),
+        to: (dk) => landscapeStackLayout(dk, { bend: 2.4 }),
         bend: 2.4,
         // Hands are ALREADY caging (same orientation throughout the hold), so
         // the deck bows in place between the fingers instead of tipping over.
@@ -219,7 +222,7 @@ export const riffleLesson = {
         label: 'Let the bridge pour — card by card',
         duration: 2200,
         ease: 'easeInOutCubic',
-        to: (dk) => stackLayout(dk),
+        to: (dk) => landscapeStackLayout(dk),
         bend: 0,
         stagger: { by: 'card', spread: 0.7, span: 0.3 },
         midBend: 0.9,

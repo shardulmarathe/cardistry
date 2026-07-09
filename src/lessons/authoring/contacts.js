@@ -59,35 +59,51 @@ export function wristAnchorForContact(base, side, finger, target) {
 // --- Shared solved grips for the standard table scene ------------------------
 // (52-card deck on the felt; halves at ±gap; camera dealerPOV.)
 
-// Dealer table grip: palm flat over a face-down half at x=+gap, fingertips
-// resting on top, thumb owning the inner-near corner. `tilt` follows
-// tableRiffleLayout's near-edge lift so the thumb stays ON the rising corner.
+// Dealer table grip for the LANDSCAPE halves: the hand is turned 90° to lie
+// along its half — fingers pointing inward toward the weave, forearm trailing
+// off the OUTER end — palm flat on the cards, thumb reaching for the
+// inner-near corner where the cards release. `tilt` follows
+// tableRiffleLayout's inner-end lift (pivot at the outer end) so the wrist and
+// fingertips ride the rising cards. The left hand is the engine's x-mirror of
+// this pose, so it points inward from the other side automatically.
 export function tableGrip({ gap = 0.5, tilt = 0 } = {}) {
-  const anchor = [gap - 0.05, 0.38 + 0.06 * tilt, 0.03]
-  const quat = eulerQuat(Math.PI / 2, 0.15, -0.3)
-  const ty = 0.05 + 0.34 * tilt
-  const fy = 0.04 + 0.23 * tilt
+  const anchor = [gap + 0.24, 0.34 + 0.1 * tilt, -0.02]
+  // Palm down (Rx 90°), then yawed so the fingers point at the table center;
+  // when the half tilts, roll the hand up with the inner end (world-z rotation
+  // matching the cards' pivot).
+  let quat = new THREE.Quaternion().setFromEuler(
+    new THREE.Euler(Math.PI / 2, -Math.PI / 2 + 0.12, 0, 'YXZ'),
+  )
+  if (tilt) {
+    quat = new THREE.Quaternion()
+      .setFromAxisAngle(new THREE.Vector3(0, 0, 1), -tilt * 0.85)
+      .multiply(quat)
+  }
+  // Contact heights follow the tilted card plane (pivot at x = gap + 0.44).
+  const liftAt = (x) => Math.sin(tilt) * Math.max(0, gap + 0.44 - x)
+  const ty = 0.05 + liftAt(gap - 0.28)
+  const fy = 0.04 + liftAt(gap - 0.16)
   const pose = poseWithContacts('twoHandsSupport', 'right', { anchor, quat }, {
-    thumb: [gap - 0.26, ty, 0.36],
-    index: [gap - 0.18, fy, 0.18],
-    middle: [gap - 0.04, fy, 0.2],
-    ring: [gap + 0.1, fy, 0.18],
-    pinky: [gap + 0.23, fy, 0.14],
+    thumb: [gap - 0.28, ty, 0.24],
+    index: [gap - 0.16, fy, 0.2],
+    middle: [gap - 0.18, fy, 0.07],
+    ring: [gap - 0.16, fy, -0.06],
+    pinky: [gap - 0.12, fy, -0.18],
   })
   return { pose, anchor }
 }
 
-// Bridge/spring cage: hand cups the squared center deck's short end, thumb on
-// top of the arch, fingers low against the end face.
+// Bridge/spring cage: hand cups the squared LANDSCAPE deck's short end
+// (x ≈ ±0.44), thumb on top of the arch, fingers low against the end face.
 export function cageGrip({ topY = 0.3 } = {}) {
-  const anchor = [0.66, 0.42, -0.02]
+  const anchor = [0.72, 0.4, -0.02]
   const quat = eulerQuat(Math.PI / 2, -Math.PI / 2, 0.18)
   const pose = poseWithContacts('bridgeCage', 'right', { anchor, quat }, {
-    thumb: [0.2, topY, 0.02],
-    index: [0.34, 0.12, 0.12],
-    middle: [0.35, 0.1, 0.0],
-    ring: [0.34, 0.12, -0.12],
-    pinky: [0.32, 0.15, -0.22],
+    thumb: [0.3, topY, 0.02],
+    index: [0.46, 0.12, 0.12],
+    middle: [0.47, 0.1, 0.0],
+    ring: [0.46, 0.12, -0.12],
+    pinky: [0.44, 0.15, -0.22],
   })
   return { pose, anchor }
 }
