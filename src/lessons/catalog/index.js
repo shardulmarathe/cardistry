@@ -1,26 +1,20 @@
-import { springPrimerLesson } from './springPrimer.lesson'
 import { washLesson } from './wash.lesson'
 import { overhandLesson } from './overhand.lesson'
 import { hinduLesson } from './hindu.lesson'
 import { stripLesson } from './strip.lesson'
-import { pileShuffleLesson } from './pileShuffle.lesson'
 import { charlierLesson } from './charlier.lesson'
 import { riffleLesson } from './riffle.lesson'
-import { pressureFanLesson } from './pressureFan.lesson'
 import { waterfallLesson } from './waterfall.lesson'
 import { faroLesson } from './faro.lesson'
 
-// Spring primer first (conceptual foundation), then beginner → advanced.
+// Beginner → advanced.
 export const LESSONS = [
-  springPrimerLesson,
   washLesson,
   overhandLesson,
   hinduLesson,
   stripLesson,
-  pileShuffleLesson,
   charlierLesson,
   riffleLesson,
-  pressureFanLesson,
   waterfallLesson,
   faroLesson,
 ]

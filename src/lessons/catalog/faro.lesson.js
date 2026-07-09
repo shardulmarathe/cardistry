@@ -1,4 +1,4 @@
-import { stackLayout, tableRiffleLayout } from '../engine/layouts'
+import { tableRiffleLayout, landscapeStackLayout } from '../engine/layouts'
 import { tableGrip, thumbRatchetKeyframes } from '../authoring/contacts'
 
 // Faro shuffle — the precision cousin of the table riffle: an exact 26/26 cut,
@@ -21,8 +21,8 @@ export const faroLesson = {
   ],
   build: () => {
     const G = 0.5
-    const YAW = 0.16 // tighter angle than the riffle — precision, not flourish
-    const TILT = 0.18 // barely any lift; a faro is a push-through, not a spring
+    const YAW = 0.07 // near-square landscape halves — precision, not flourish
+    const TILT = 0.14 // barely any lift; a faro is a push-through, not a spring
 
     const { pose: restGrip, anchor: REST_ANCHOR } = tableGrip({ gap: G })
     const { pose: seatGrip, anchor: SEAT_ANCHOR } = tableGrip({ gap: G, tilt: TILT })
@@ -105,6 +105,7 @@ export const faroLesson = {
         ease: 'easeInOutCubic',
         midBend: 0.4,
         arcLift: 0.03, // dead low — the cards slide together on the felt
+        toLayout: (order) => landscapeStackLayout(order),
         grip: {
           left: { cards: 'firstHalf', frame: 'thumbPeel', release: 'stagger', pressure: [{ at: 0, v: 0.6 }, { at: 1, v: 0.1 }] },
           right: { cards: 'secondHalf', frame: 'thumbPeel', release: 'stagger', pressure: [{ at: 0, v: 0.6 }, { at: 1, v: 0.1 }] },
@@ -115,22 +116,22 @@ export const faroLesson = {
               gripPose: seatGrip,
               openThumb: [0.5, 0.1, 0.02],
               anchorFrom: SEAT_ANCHOR,
-              anchorTo: [0.26, 0.34, 0.05],
+              anchorTo: [0.56, 0.32, -0.02],
               steps: 7,
               jitter: 0.015, // precise — almost no ratchet noise
             }),
-            { at: 1, pose: 'twoHandsSupport', anchor: [0.24, 0.3, 0.06] },
+            { at: 1, pose: 'twoHandsSupport', anchor: [0.54, 0.3, 0.0] },
           ],
           right: [
             ...thumbRatchetKeyframes({
               gripPose: seatGrip,
               openThumb: [0.5, 0.1, 0.02],
               anchorFrom: SEAT_ANCHOR,
-              anchorTo: [0.26, 0.34, 0.05],
+              anchorTo: [0.56, 0.32, -0.02],
               steps: 7,
               jitter: 0.015,
             }),
-            { at: 1, pose: 'twoHandsSupport', anchor: [0.24, 0.3, 0.06] },
+            { at: 1, pose: 'twoHandsSupport', anchor: [0.54, 0.3, 0.0] },
           ],
         },
         annotations: [
@@ -143,12 +144,12 @@ export const faroLesson = {
         label: 'Square the deck',
         duration: 1400,
         ease: 'settle',
-        to: (dk) => stackLayout(dk),
+        to: (dk) => landscapeStackLayout(dk),
         bend: 0,
         camera: 'overview',
         hands: {
-          left: [{ at: 1, pose: 'twoHandsSupport', anchor: [0.2, 0.36, 0.05], ease: 'settle' }],
-          right: [{ at: 1, pose: 'twoHandsSupport', anchor: [0.2, 0.36, 0.05], ease: 'settle' }],
+          left: [{ at: 1, pose: 'twoHandsSupport', anchor: [0.52, 0.3, 0.0], ease: 'settle' }],
+          right: [{ at: 1, pose: 'twoHandsSupport', anchor: [0.52, 0.3, 0.0], ease: 'settle' }],
         },
       },
     ]

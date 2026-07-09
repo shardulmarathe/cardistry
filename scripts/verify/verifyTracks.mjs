@@ -11,6 +11,7 @@ import { sampleTrack } from '../../src/lessons/engine/sampleTrack.js'
 import { createDeck } from '../../src/deckModel.js'
 import { FINGER_NAMES } from '../../src/hands/handRigSpec.js'
 import { fingertipWorld } from '../../src/hands/handKinematics.js'
+import { CARD_W, CARD_H } from '../../src/lib/constants.js'
 
 let failures = 0
 let checks = 0
@@ -73,6 +74,19 @@ function assertFinite(scene, label) {
   }
 }
 
+// The felt is the plane y=0 and no card corner may ever poke through it
+// (sampleTrack's clampAboveFelt guarantees ≥0.012; assert with float slop).
+const _aw = new THREE.Vector3()
+const _al = new THREE.Vector3()
+function assertAboveFelt(scene, label) {
+  for (const [id, c] of scene.cards) {
+    _aw.set(1, 0, 0).applyQuaternion(c.quat)
+    _al.set(0, 1, 0).applyQuaternion(c.quat)
+    const lowest = c.pos.y - (Math.abs(_aw.y) * (CARD_W / 2) + Math.abs(_al.y) * (CARD_H / 2))
+    check(lowest > 0.0115, `${label}: card ${id} pokes through the felt (lowest ${lowest.toFixed(4)})`)
+  }
+}
+
 // Boundary times where pops would hide: card/hand segment edges + hold edges.
 function boundaryTimes(track) {
   const ts = new Set()
@@ -117,6 +131,7 @@ for (const lesson of LESSONS) {
   for (const t of ordered) {
     const scene = sampleTrack(track, t)
     assertFinite(scene, `${lesson.id}@${t.toFixed(1)}`)
+    assertAboveFelt(scene, `${lesson.id}@${t.toFixed(1)}`)
     snaps.set(t, JSON.stringify(snapshot(scene)))
   }
 
@@ -198,8 +213,11 @@ for (const lesson of LESSONS) {
       for (const finger of ['thumb', 'index']) {
         fingertipWorld(pose, h.side, finger, tipV)
         const d = nearestCard(scene, heldNow, tipV)
+        // Distance is tip → nearest card CENTER. The deck is LANDSCAPE in the
+        // bridge/cascade (cards 0.88 long, short ends toward the hands), so a
+        // fingertip cupping an end face is ~0.45 from the nearest center.
         check(
-          d < 0.6,
+          d < 0.7,
           `riffle-grip: ${h.side} ${finger} tip ${d.toFixed(3)} from its ${h.frame} packet @${ms.toFixed(0)}ms`,
         )
       }
@@ -279,6 +297,19 @@ for (const lesson of LESSONS) {
   }
   check(minTipDist < 0.45, `charlier: bottom packet never near the index tip (min ${minTipDist.toFixed(3)})`)
   check(crossed, 'charlier: bottom packet never swung above the top half')
+}
+
+// ---------------------------------------------------------------------------
+// Regression: a deck left FACE-UP by the visualizer must not somersault cards
+// through the felt — compileLesson normalizes faces down, so the riffle track
+// must stay flat and above the table exactly like a face-down deck's.
+{
+  const deck = createDeck().map((c) => ({ ...c, isFaceUp: true }))
+  const track = compileLesson(LESSONS.find((l) => l.id === 'riffle'), deck)
+  check(track.finalDeck.every((c) => !c.isFaceUp), 'riffle-faceup: final deck not normalized face-down')
+  for (let i = 0; i <= 150; i++) {
+    assertAboveFelt(sampleTrack(track, (track.duration * i) / 150), `riffle-faceup@${i}`)
+  }
 }
 
 if (failures > 0) {

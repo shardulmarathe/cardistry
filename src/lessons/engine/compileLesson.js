@@ -332,6 +332,14 @@ function pickGuideCards(deck, count = 6) {
 }
 
 export function compileLesson(lessonDef, initialDeck) {
+  // Lessons teach on a squared FACE-DOWN deck. If the visualizer left cards
+  // flipped over, honoring that here made every face-down target a 180° flip —
+  // cards somersaulting on edge through the felt mid-weave (screenshot-caught).
+  // Entering a lesson already teleports the cards into the start stack, so
+  // normalizing faces in that same jump is free.
+  if (initialDeck.some((c) => c.isFaceUp)) {
+    initialDeck = initialDeck.map((c) => (c.isFaceUp ? { ...c, isFaceUp: false } : c))
+  }
   const rng = mulberry32(lessonDef.seed ?? 1)
   const ctx = { rng }
   const steps = lessonDef.build(initialDeck, ctx)
@@ -392,7 +400,9 @@ export function compileLesson(lessonDef, initialDeck) {
     if (step.kind === 'riffle') {
       const finalOrder = riffleOrder(currentDeck)
       const n = finalOrder.length
-      endPoses = toPoseMap(stackLayout(finalOrder))
+      // Optional custom landing layout (e.g. the table riffle weaves into a
+      // LANDSCAPE stack); default stays the plain squared stack.
+      endPoses = toPoseMap(step.toLayout ? step.toLayout(finalOrder) : stackLayout(finalOrder))
       finalOrder.forEach((card, k) => {
         const from = clonePose(currentPoses.get(card.id))
         const to = clonePose(endPoses.get(card.id))

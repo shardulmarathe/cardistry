@@ -1,6 +1,7 @@
 import { useAppStore } from '../state/useAppStore'
 import LessonCatalog from './LessonCatalog'
 import TransportBar from './TransportBar'
+import LessonInstructions from './LessonInstructions'
 import VisualizerControls from './VisualizerControls'
 import './chrome.css'
 
@@ -39,6 +40,7 @@ export default function UIChrome() {
 
       {mode === 'visualizer' && <VisualizerControls />}
       {mode === 'lesson' && !activeLessonId && <LessonCatalog />}
+      {mode === 'lesson' && activeLessonId && <LessonInstructions />}
       {mode === 'lesson' && activeLessonId && <TransportBar />}
     </div>
   )

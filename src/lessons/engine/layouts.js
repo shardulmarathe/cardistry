@@ -79,28 +79,43 @@ export function riffleGripLayout(deck, { gap = 0.5, baseY = 0.5, lean = 0 } = {}
   })
 }
 
-// TABLE riffle: two face-down halves FLAT on the felt, side by side, inner
-// corners angled toward each other — the real casino grip. `tilt` lifts each
-// half's NEAR (+z, dealer-side) edge as the thumbs bend the cards up to load
-// the spring; the far edge stays on the table (position compensates the pivot).
-export function tableRiffleLayout(deck, { gap = 0.5, yaw = 0.22, baseY = 0.02, tilt = 0 } = {}) {
+// TABLE riffle: two halves FLAT on the felt, turned LANDSCAPE (long axis
+// left-right, the way riffles look in videos), one half moved left and the
+// other right so their inner short ends meet at the center. `yaw` is the small
+// inward angle off 90° that points the inner ends at each other. `tilt` lifts
+// each half's INNER end as the thumbs load the spring, pivoting on the OUTER
+// end — which stays exactly on the felt, so no corner can dip under the table.
+// Always face-down: a riffle is dealt face-down however the deck arrived.
+export function tableRiffleLayout(deck, { gap = 0.5, yaw = 0.12, baseY = 0.03, tilt = 0 } = {}) {
   const mid = Math.floor(deck.length / 2)
-  const tiltQ = tilt ? new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -tilt) : null
   return deck.map((card, i) => {
     const inLeft = i < mid
     const local = inLeft ? i : i - mid
     const s = inLeft ? -1 : 1
-    const quat = faceQuat(card.isFaceUp, s * yaw)
+    const quat = faceQuat(false, s * (Math.PI / 2 - yaw))
     let y = baseY + local * CARD_GAP
-    let z = 0
-    if (tiltQ) {
-      quat.premultiply(tiltQ)
-      // pivot at the far edge: center rises by half the lifted-edge height
+    let x = s * gap
+    if (tilt) {
+      // rotZ lifts the +x side for a positive angle; the inner end of each
+      // half faces the center (-s·x), so lift it with -s·tilt and compensate
+      // the center so the outer end keeps sitting on the table.
+      quat.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -s * tilt))
       y += (CARD_H / 2) * Math.sin(tilt)
-      z -= (CARD_H / 2) * (1 - Math.cos(tilt)) * 0.5
+      x += s * (CARD_H / 2) * (1 - Math.cos(tilt)) * 0.5
     }
-    return { id: card.id, pos: new THREE.Vector3(s * gap, y, z), quat, bend: 0 }
+    return { id: card.id, pos: new THREE.Vector3(x, y, 0), quat, bend: 0 }
   })
+}
+
+// A squared landscape stack at center — where a table riffle's weave lands and
+// the bridge/cascade finish happens (short ends facing the hands at ±x).
+export function landscapeStackLayout(deck, { baseY = 0.02, bend = 0 } = {}) {
+  return deck.map((card, i) => ({
+    id: card.id,
+    pos: new THREE.Vector3(0, baseY + i * CARD_GAP, 0),
+    quat: faceQuat(false, Math.PI / 2),
+    bend,
+  }))
 }
 
 // A dealer's arc spread flat on the table (the visualizer "fan"). Wider spread +
@@ -236,24 +251,6 @@ export function charlierLayout(deck, progress = 1, baseY = 0.02) {
       id: card.id,
       pos: new THREE.Vector3(0.08, baseY + localIndex * CARD_GAP, 0),
       quat: faceQuat(card.isFaceUp),
-      bend: 0,
-    }
-  })
-}
-
-// Pressure fan: cards bloom from a pivot corner into a tight arc.
-export function pressureFanLayout(deck, { spread = Math.PI * 0.55, radius = 1.4, progress = 1 } = {}) {
-  const n = deck.length
-  return deck.map((card, i) => {
-    const t = n <= 1 ? 0.5 : i / (n - 1)
-    const ang = t * spread * progress
-    const x = Math.sin(ang) * radius * progress + 0.35
-    const z = -Math.cos(ang) * radius * 0.5 * progress
-    const y = 0.02 + i * CARD_GAP * 0.4
-    return {
-      id: card.id,
-      pos: new THREE.Vector3(x, y, z),
-      quat: faceQuat(card.isFaceUp, -ang + 0.2),
       bend: 0,
     }
   })

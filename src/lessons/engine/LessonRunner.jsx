@@ -8,7 +8,6 @@ import { usePlayer } from './player'
 import { getCard } from '../../card/cardRegistry'
 import { getHand } from '../../hands/handRegistry'
 import Hand from '../../hands/Hand'
-import AnnotationLayer from '../annotations/AnnotationLayer'
 import MotionGuideLayer from '../annotations/guides'
 import { lessonTimeRef } from './lessonTime'
 
@@ -90,7 +89,6 @@ export default function LessonRunner() {
     <>
       <Hand side="left" />
       <Hand side="right" />
-      <AnnotationLayer />
       <MotionGuideLayer />
     </>
   )
