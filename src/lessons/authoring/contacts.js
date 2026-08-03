@@ -1,11 +1,13 @@
 import * as THREE from 'three'
 import { getHandPose, cloneHandPose } from '../../hands/handPoses'
 import {
+  applyGripPressure,
   contactFrame,
   fingerJointsWorld,
   fingertipWorld,
   solveFingerTo,
   solveThumbTo,
+  GRIP_FRAME_TYPES,
 } from '../../hands/handKinematics'
 import { FINGERS, FINGER_NAMES, HAND_SCALE } from '../../hands/handRigSpec'
 import { CARD_W, CARD_H, CARD_T, CARD_GAP } from '../../lib/constants'
@@ -92,7 +94,7 @@ const _target = new THREE.Vector3()
 //                                                for THAT finger's radius.
 // Pass `cards` (world card poses for this side) to run resolvePenetration on
 // the solved pose in the same call.
-export function poseWithContacts(base, side, { anchor, quat, cards, clearance } = {}, contacts = {}) {
+export function poseWithContacts(base, side, { anchor, quat, cards, clearance, splay = false } = {}, contacts = {}) {
   const pose = typeof base === 'string' ? getHandPose(base, side, anchor) : cloneHandPose(base)
   if (typeof base !== 'string' && anchor) {
     pose.wrist.pos.set(anchor[0], anchor[1], anchor[2])
@@ -110,7 +112,12 @@ export function poseWithContacts(base, side, { anchor, quat, cards, clearance } 
       pose.fingers.thumb = s.angles
       pose.thumbOpp = { ...(pose.thumbOpp ?? {}), ...s.thumbOpp }
     } else {
-      pose.fingers[name] = solveFingerTo(pose, side, name, _target).angles
+      // The solver picks a knuckle yaw as well as the curls (solveSplayFor);
+      // it only reaches the target if that yaw is written back into the pose,
+      // which is what knuckleEuler and applyHandPose read.
+      const s = solveFingerTo(pose, side, name, _target, { splay })
+      pose.fingers[name] = s.angles
+      if (splay) pose.splay = { ...(pose.splay ?? {}), [name]: s.splay }
     }
   }
   if (cards) resolvePenetration(pose, side, cards, { clearance })
@@ -131,16 +138,60 @@ const HALF = [CARD_W / 2, CARD_H / 2, CARD_T / 2]
 const _local = new THREE.Vector3()
 const _invQ = new THREE.Quaternion()
 
-// Penetration depth of a sphere (p, r) into one card's oriented box: 0 when
-// clear, else how far the finger's surface has sunk past the nearest face.
-// Depth 0 = exactly tangent, which is the goal.
+// --- Where a card's surface actually IS --------------------------------------
+// A BOWED card is not the flat rectangle every collision test in this project
+// used to assume. The bend shader (cardMaterial.js) maps local (x, y, 0) to
+//
+//     (x,  sin(y·b)/b,  (1 − cos(y·b))/b)
+//
+// and that is exactly a CIRCULAR ARC: with R = 1/b, the image point minus the
+// centre (Y=0, Z=R) is R·(sin θ, −cos θ) for θ = y·b — constant length R. So a
+// bowed card is a cylindrical shell of radius |R| about an axis parallel to
+// local X, spanning |θ| ≤ (CARD_H/2)·|b|.
+//
+// `assertAboveFelt` learned this once already (it was reporting the riffle
+// bridge flush with the table while it sat 0.22 below it). Every finger-vs-card
+// test had the same bug and nobody had noticed, because the only assertion was
+// one-sided: a flat-box model of a card that is really an arc reports
+// penetration where there is air and air where there is penetration, and only
+// the penetration half was ever checked.
+//
+// Returns the three signed "how far outside" extents in the card's own frame —
+// across the width, along the surface, and through the thickness — which the
+// flat case (dx, dy, dz) is the b → 0 limit of.
+const _ext = { x: 0, u: 0, n: 0 }
+function surfaceExtents(local, bend) {
+  _ext.x = Math.abs(local.x) - HALF[0]
+  if (Math.abs(bend) <= 1e-4) {
+    _ext.u = Math.abs(local.y) - HALF[1]
+    _ext.n = Math.abs(local.z) - HALF[2]
+    return _ext
+  }
+  const R = 1 / bend
+  // Angle of `local` about the arc's centre, measured the same way as θ above.
+  const theta = Math.atan2(local.y, R - local.z)
+  const halfTheta = HALF[1] * Math.abs(bend)
+  // Along the surface: arc length past the card's own end (0 while inside).
+  _ext.u = (Math.abs(theta) - halfTheta) * Math.abs(R)
+  // Through the thickness: distance off the shell of radius |R|.
+  const r = Math.hypot(local.y, local.z - R)
+  _ext.n = Math.abs(r - Math.abs(R)) - HALF[2]
+  return _ext
+}
+
+// Penetration depth of a sphere (p, r) into one card: 0 when clear, else how
+// far the finger's surface has sunk past the nearest face. Depth 0 = exactly
+// tangent, which is the goal. `card.bend` (default 0) bows it.
 function cardDepth(p, r, card) {
   _local.copy(p).sub(cardPosOf(card)).applyQuaternion(_invQ.copy(card.quat).invert())
-  const dx = Math.abs(_local.x) - HALF[0]
-  const dy = Math.abs(_local.y) - HALF[1]
-  const dz = Math.abs(_local.z) - HALF[2]
-  if (dx > r || dy > r || dz > r) return 0
-  return Math.min(-dx, -dy, -dz) + r
+  const e = surfaceExtents(_local, card.bend ?? 0)
+  if (e.x > r || e.u > r || e.n > r) return 0
+  return Math.min(-e.x, -e.u, -e.n) + r
+}
+
+// Same geometry, for the verify harness (which needs the extents, not a depth).
+export function cardSurfaceExtents(local, bend) {
+  return surfaceExtents(local, bend)
 }
 
 const _joints = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()]
@@ -311,11 +362,22 @@ export function rigMetrics(base, quat = null) {
   return { knuckle, tip, drop, span: knuckle.pinky.distanceTo(knuckle.index) }
 }
 
-// Breathing room a solved contact needs so the idle overlay, the ease into the
-// pose and a grip's runtime `pressure` cannot push a pad through a card. A
-// bigger hand breathes bigger, so this is hand-sized too (handPoses.js carries
-// the same constant for the DECK_* drops).
-const CONTACT_AIR = 0.003 * HAND_SCALE
+// Breathing room a solved contact needs so the idle overlay and the ease into
+// the pose cannot push a pad through a card. A bigger hand breathes bigger, so
+// this is hand-sized (handPoses.js carries the same constant for the DECK_*
+// drops).
+//
+// HALVED, from 0.003: at HAND_SCALE 11 the old value was 0.033 of permanent
+// air — 5% of a card width — under EVERY pad in the catalog, on its own more
+// than the 0.025 band anything could call "contact". The idle overlay's own pad
+// travel is ~0.017 (IDLE_CURL_AMP 0.021 rad over a half-chain), so this still
+// covers it, and the price of the rest is a graze rather than a hover. Contact
+// grazes; that is what contact is.
+const CONTACT_AIR = 0.0015 * HAND_SCALE
+
+// The felt plane the engine clamps every card above (sampleTrack's FELT_Y) —
+// i.e. the bottom of any column of cards a grip could be standing on.
+const FELT_Y = 0.012
 
 // --- Shared solved grips for the standard table scene ------------------------
 // (52-card deck on the felt; halves at ±gap; camera dealerPOV.)
@@ -384,23 +446,97 @@ const chainLen = (name) =>
   (FINGERS[name].len[0] + FINGERS[name].len[1] + FINGERS[name].len[2]) * HAND_SCALE
 
 // --- Squeeze air -------------------------------------------------------------
-// A solved contact is TANGENT, and tangent is not where a pad can be left. Both
-// the runtime sampler and the compile-time grip capture add up to PRESSURE_CURL
-// of extra curl to a gripping finger AFTER the solve (handKinematics'
-// applyGripPressure, weighted 1 / 0.7 / 0.45 down the chain), which swings the
-// pad through an arc about its own knuckle — hand-sized, so it grew 2.83x with
-// the rig. Measured on the riffle's cut, a `pressure` of 0.42 drove a tangent
-// thumb 0.056 into the packet it was carrying.
+// A solved contact is TANGENT, and tangent is not quite where a pad can be
+// left: both the runtime sampler and the compile-time grip capture add curl to
+// a gripping finger AFTER the solve (handKinematics' applyGripPressure). So a
+// pad is authored a little OFF its surface and the squeeze presses it home.
 //
-// So every pad below is authored this far OFF its surface instead of on it, and
-// the squeeze presses it home. `squeeze` is the peak `pressure` the lesson will
-// apply to that grip; pass 0 for a grip that is never squeezed.
-const PRESSURE_CURL = 0.14
-const PRESSURE_JOINT_SUM = 1 + 0.7 + 0.45
-// The pad sits roughly half a chain from its knuckle in these closed grips, and
-// arc = radius x angle.
-const squeezeAir = (name, squeeze) =>
-  CONTACT_AIR + chainLen(name) * 0.5 * PRESSURE_CURL * PRESSURE_JOINT_SUM * squeeze
+// HOW FAR off is the whole question, and the answer this file used to give — a
+// fixed ANGLE times an assumed half-chain radius — was wrong twice over. It is
+// worth writing both down, because between them they were the entire reason the
+// hands hovered:
+//
+//  1. A fixed angle is not a fixed distance. `PRESSURE_CURL` is an angle, so
+//     the world travel it implies scales with the rig: 0.064 at HAND_SCALE 4.6,
+//     0.154 at 11. Every future scale change re-inflates it silently. MEASURE
+//     the travel on the rig instead and a scale change costs nothing.
+//
+//  2. It reserved a full squeeze's travel for a pad that barely travels
+//     relative to the thing it is holding. A gripped packet rides the hand's
+//     CONTACT FRAME — a weighted fingertip centroid (GRIP_FRAME_TYPES) — so
+//     when the squeeze curls the fingers, THE CARDS CURL WITH THEM. What a held
+//     card sees is only each pad's motion relative to that centroid, roughly
+//     half the world travel; and even that is mostly normalized away, because
+//     compileLesson captures the card→frame offset at the grip's first frame.
+//     The true residual is the pressure VARIATION across a hold.
+//
+//     Measured on the riffle's `packet` grip at HAND_SCALE 11: the old formula
+//     reserved 0.185 for every finger at squeeze 1.2, while the real
+//     frame-relative travel is 0.070–0.086 and the pressure swing inside any
+//     one hold costs under 0.02. That reservation WAS the hover — it is most of
+//     why every pad in the riffle and the faro sat 0.19 off cards it was
+//     supposedly gripping.
+//
+// So: MEASURE the frame-relative travel (squeezeTravel, below) and reserve a
+// multiple of it — and for the four fingers that multiple is ZERO. A pad on a
+// packet that rides the frame does not need to be authored off the surface at
+// all; the capture already puts it where the squeeze will keep it. Measured
+// across the catalog, going from the old formula to zero here takes the riffle
+// from 0% of gripping fingertips in contact to 31% and the faro from 0% to 45%.
+const SQUEEZE_RESERVE = 0
+
+const _sqPose = { pos: new THREE.Vector3(), quat: new THREE.Quaternion() }
+const _sqA = new THREE.Vector3()
+const _sqB = new THREE.Vector3()
+const _sqInv = new THREE.Quaternion()
+
+// Per-finger distance each pad moves ACROSS a card riding `frameType` when the
+// grip's pressure goes 0 → `squeeze`. Pure: clones before it perturbs.
+export function squeezeTravel(base, side, frameType, squeeze) {
+  const out = {}
+  for (const name of FINGER_NAMES) out[name] = 0
+  if (!squeeze || !GRIP_FRAME_TYPES[frameType]) return out
+  const slack = cloneHandPose(base)
+  const tight = applyGripPressure(cloneHandPose(base), frameType, squeeze)
+  for (const [pose, key] of [[slack, 'a'], [tight, 'b']]) {
+    contactFrame(pose, side, frameType, _sqPose)
+    _sqInv.copy(_sqPose.quat).invert()
+    for (const name of FINGER_NAMES) {
+      const v = fingertipWorld(pose, side, name, key === 'a' ? _sqA : _sqB)
+        .sub(_sqPose.pos)
+        .applyQuaternion(_sqInv)
+      if (key === 'a') out[name] = v.clone()
+      else out[name] = out[name].distanceTo(v)
+    }
+  }
+  return out
+}
+
+// THE THUMB IS NOT LIKE THE FOUR FINGERS and keeps a real reservation.
+// Three reasons, all measured on this rig:
+//   * it is the frame's dominant weight (0.5 of `packet`, 0.75 of `thumbPeel`),
+//     so it is the one pad whose own motion mostly MOVES the frame instead of
+//     moving across it — the capture-normalization argument above is weakest
+//     exactly here;
+//   * its world travel under a squeeze is 0.164 at squeeze 1.2, two to three
+//     times any finger's (0.049–0.108), because applyGripPressure weights it 1.0
+//     everywhere and its chain is short and fat (proximal radius 0.187);
+//   * it is the joint that meets the NEIGHBOURING pile. A dealer's table grip
+//     puts the thumb on the pile's inner long edge, which during the riffle's
+//     and faro's `cut`/`slide` is a thumb's width from the half still sitting at
+//     the table centre. Nothing about pad clearance can fix that collision — it
+//     is a trajectory — but reserving here keeps it off the ceiling.
+// Swept at HAND_SCALE 11 against the whole suite (riffle/faro contact% and
+// worst finger-in-card): 1.2 → 30%/59%, 0.044/0.057 — and it is the largest
+// value at which the riffle's own thumb-near-its-packet fidelity check still
+// passes, because more reservation pushes the thumb back OFF the packet.
+//   1.2 → 30/59%  1.5 → 27/48%  2.0 → 31/50% (fidelity check fails at ≥1.5)
+const THUMB_RESERVE = 1.2
+
+// Clearance for one pad, given the travel table `squeezeTravel` measured for
+// this grip.
+const squeezeAir = (name, travel) =>
+  CONTACT_AIR + (name === 'thumb' ? THUMB_RESERVE : SQUEEZE_RESERVE) * (travel?.[name] ?? 0)
 
 // --- Dealer table / carry grip -----------------------------------------------
 // Palm down over its own pile, yawed to lie ALONG it: the four knuckles arch
@@ -476,6 +612,9 @@ export function tableGrip({
   // Every hand-sized offset below comes from HERE, under this grip's own
   // orientation — nothing about the wrist placement is typed by hand.
   const M = rigMetrics(seeded('twoHandsSupport', TABLE_SEED, 0.3), quat)
+  // How far each pad really slides across the packet when the squeeze closes —
+  // measured on this grip's own seed, not estimated from an angle.
+  const travel = squeezeTravel(seeded('twoHandsSupport', TABLE_SEED, 0.3), 'right', 'packet', squeeze)
   // The pile is a STACK whose cards share one footprint and differ only in
   // height, so a representative card at height h describes every surface the
   // hand can touch there.
@@ -516,7 +655,7 @@ export function tableGrip({
     finger: 'thumb',
     face: '+x',
     u: -THUMB_PAD_V,
-    clearance: squeezeAir('thumb', squeeze),
+    clearance: squeezeAir('thumb', travel),
   })
   // y: a comfortable fraction of the thumb's own length above the pad it has to
   // reach — the one axis where the SHORT chain, not the long ones, is binding.
@@ -538,19 +677,31 @@ export function tableGrip({
       finger: name,
       u: FINGER_PAD_U,
       v: _k.dot(_long) / ((CARD_H / 2) * Math.cos(tilt)),
-      clearance: squeezeAir(name, squeeze),
+      clearance: squeezeAir(name, travel),
     })
   }
   const pose = poseWithContacts(
     seeded('twoHandsSupport', TABLE_SEED, 0.3),
     'right',
-    { anchor, quat },
+    { anchor, quat, splay: true },
     contacts,
   )
   // Tips alone are not enough — a PIP can still sit inside the stack. Back every
   // finger off representative cards spanning the pile, so a capsule reaching in
   // UNDER the top card is caught too.
-  resolvePenetration(pose, 'right', [topCard, cardAt(deckH * 0.5), cardAt(0)])
+  //
+  // And span the WHOLE COLUMN, from the felt up, not just this pile: a pile
+  // whose `baseY` is off the table is standing on ANOTHER pile, and the thumb —
+  // which holds the far edge half way up and hangs its distal capsule below
+  // that pad — reaches straight into it. Nothing in this grip ever wants to go
+  // UNDER the cards (the thumb takes the far edge, the four pads press the near
+  // edge from above), so a solid column is both safe and the truth. This is
+  // what the old, hugely over-sized squeeze air was silently paying for: with
+  // the reservation measured honestly, the riffle's and faro's carry thumbs
+  // went 0.10 into the half they had just cut away from.
+  const column = [topCard, cardAt(deckH * 0.5), cardAt(0)]
+  for (let h = -CARD_GAP * 4; baseY + h > FELT_Y; h -= CARD_GAP * 4) column.push(cardAt(h))
+  resolvePenetration(pose, 'right', column)
   if (!tilt) return { pose, anchor }
   // TILT MOVES THE SOLVED HAND, it does not re-solve it, and by default it does
   // not ROTATE it either.
@@ -606,6 +757,7 @@ export function cageGrip({ topY = 0.3, squeeze = 0 } = {}) {
   const quat = eulerYXZ(PALM_DOWN, 0, 0)
   const seed = seeded('bridgeCage', CAGE_SEED, 0.2)
   const M = rigMetrics(seed, quat)
+  const travel = squeezeTravel(seed, 'right', 'packet', squeeze)
   const top = { pos: [0, topY, 0], quat: landscapeFaceQuat() }
   const end = CARD_H / 2
   // Thumb knuckle a fixed fraction of the deck IN from the end it is holding,
@@ -616,7 +768,7 @@ export function cageGrip({ topY = 0.3, squeeze = 0 } = {}) {
     finger: 'thumb',
     u: CAGE_THUMB_U,
     v: (end - (CARD_H / 2) * CAGE_THUMB_V) / (CARD_H / 2),
-    clearance: squeezeAir('thumb', squeeze),
+    clearance: squeezeAir('thumb', travel),
   })
   const ay = thumb.y - M.knuckle.thumb.y + chainLen('thumb') * CAGE_DROP
   const anchor = [ax, ay, az]
@@ -627,10 +779,10 @@ export function cageGrip({ topY = 0.3, squeeze = 0 } = {}) {
       finger: name,
       u: CAGE_PAD_U,
       v: (ax + M.knuckle[name].x) / (CARD_H / 2),
-      clearance: squeezeAir(name, squeeze),
+      clearance: squeezeAir(name, travel),
     })
   }
-  const pose = poseWithContacts(seed, 'right', { anchor, quat }, contacts)
+  const pose = poseWithContacts(seed, 'right', { anchor, quat, splay: true }, contacts)
   return { pose, anchor }
 }
 

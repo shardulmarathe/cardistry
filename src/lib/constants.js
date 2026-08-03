@@ -51,6 +51,31 @@ export const CAMERA_PRESETS = {
   // cards but crops the hands off the sides, while overview clips the deck
   // against the header. 6.4 out, aimed at the cradle.
   handsCradle: { position: [0, 4.8, 6.4], target: [0, 1.05, 0.05], fov: 38 },
+  // A one-handed spring is a PROFILE: the deck bows in the plane that faces the
+  // dealer, so the only view that shows the bow at all is a low, near-level one.
+  // Every table preset looks DOWN at 28-40° — from up there you see the back of
+  // the hand holding the deck and none of the arc under it, which is exactly how
+  // the waterfall's squeeze beat came to render as an opaque blob of fingers
+  // with the deck invisible inside. 12° of elevation instead, and aimed at the
+  // hand rather than the felt (the action lives at y≈0.6-1.4 here, not 0.3).
+  // Off-centre to the LEFT because the pour is: this keeps the falling ribbon
+  // and the catching hand inside the frame, and the lesson panel covers the
+  // bottom ~40% of it, so the subject is aimed a little above the middle.
+  springProfile: { position: [0.45, 2.5, 7.3], target: [-0.5, 0.86, 0.05], fov: 34 },
+  // The SQUEEZE, which is a different shot from the pour even though it is the
+  // same scene. It has no waterfall to frame — only the arch and the hand
+  // bowing it, about a hand's width of subject — so springProfile's distance
+  // renders it as a thumbnail in one corner. Closer, aimed at the arch itself,
+  // and crossed to the LEFT of centre: the caging hand is at +x, so from over
+  // there you look straight down the deck's long axis and the bow flattens to
+  // an edge. From this side the arc runs across the frame with the hand behind
+  // it, which is the only view in which "bowed" is visible at all.
+  // The squeeze has TWO subjects: the caging hand bowing the deck (wrist x≈0.2)
+  // and the catch hand waiting open beneath it (wrist x≈−1.8). Aiming at the
+  // deck alone put the frame centre two units right of the action and pushed
+  // the catch hand off the left edge. Centred between them and pulled back far
+  // enough to hold both whole.
+  springArch: { position: [-0.55, 2.0, 6.2], target: [-0.55, 0.8, 0.0], fov: 34 },
 }
 
 // OrbitControls constraints so users never go under the table or behind the cards.

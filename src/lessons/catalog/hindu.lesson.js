@@ -4,7 +4,7 @@ import { poseWithContacts, surfaceContact, wristAnchorForContact } from '../auth
 import { splitIntoRandomBlocks } from '../../lib/shuffleMath'
 import { CARD_GAP, CARD_H, CARD_T, CARD_W } from '../../lib/constants'
 import { getHandPose } from '../../hands/handPoses'
-import { fingerJointsWorld } from '../../hands/handKinematics'
+import { fingerJointsWorld, fingertipWorld } from '../../hands/handKinematics'
 import { FINGERS, FINGER_NAMES, HAND_SCALE } from '../../hands/handRigSpec'
 
 // Hindu shuffle — TWO HANDS THAT OPEN AND CLOSE, and this file is built
@@ -36,18 +36,18 @@ import { FINGERS, FINGER_NAMES, HAND_SCALE } from '../../hands/handRigSpec'
 // between passes.
 //
 // EVERY HEIGHT IS A MEASUREMENT, NOT A NUMBER.
-//   * `riseIn` — how high the cradle's own geometry reaches INSIDE the pile's
-//     footprint, sampled over EVERY curl between open and closed rather than
-//     just the two ends. The pile's bottom card sits exactly that far above the
-//     wrist, so the hand carries it and no part of the cycle can reach into it.
-//     Restricting to the footprint is what keeps the answer a palm's depth: a
-//     fingertip that has curled up past the pile's near edge is outside it and
-//     no longer part of the question.
+//   * `CUP` — the cradle's own SEAT: four per-finger curls chosen so the four
+//     PADS present at one height, and the lowest such height at which nothing
+//     else on the hand (at any point of the open-to-closed cycle) reaches above
+//     them. The pile's bottom card sits one pad's clearance above that plane, so
+//     the four fingertips are genuinely under the cards they carry — measured,
+//     0% of gripping fingertips in contact before this, 62% after, median gap
+//     0.164 -> 0.021.
 //   * `dropAt` — the mirror image for the palm-down hand: the deepest finger
 //     SURFACE below its wrist at a given curl, sampled along every capsule
 //     (rigMetrics samples joints only and under-reads a slanted phalange by
 //     ~0.02, which is most of this lesson's air).
-//   * `cupAt().floor` — the same for the cradle, because a palm-up hand is the
+//   * `cupFloor` — the same for the cradle, because a palm-up hand is the
 //     other way up and it is the heel that has to clear the felt. That single
 //     measurement is what sets how high the whole shuffle happens.
 //
@@ -83,14 +83,28 @@ const PAD_AIR = swingOf(IDLE_CURL)
 // pose carrying one is authored this much further off its surface.
 const MOTION_AMP = 0.035
 const MOTION_AIR = swingOf(MOTION_AMP)
+// THE ONLY AIR A RESTING PAD IS ALLOWED, and it is the same number
+// contacts.js uses. The idle overlay's own pad travel is ~0.017, so this
+// covers the one thing that can press a pad through a card it is not holding —
+// and it is inside the 0.025 band the suite calls "touching", which
+// PAD_AIR + 2*MOTION_AIR (0.100, four times a card's thickness) was not. That
+// stack of margins WAS this lesson's hover: the pile floated a tenth of a unit
+// over fingers that were supposedly carrying it.
+const CONTACT_AIR = 0.0015 * HAND_SCALE
+// How much of the global idle-breathing overlay this lesson's CRADLE runs at.
+// See the note beside the loop that applies it, at the end of build().
+const CUP_IDLE = 0.6
 
 // One curl scalar drives all three joints of every finger in the rig's own
-// proportion; `base` only supplies the splay and the wrist frame.
-const shaped = (preset, quat, c) => {
+// proportion; `base` only supplies the splay and the wrist frame. `curls`
+// overrides individual fingers — which is what levelling the cup needs, since
+// four fingers of four lengths do NOT present their pads at one height under
+// one shared curl.
+const shaped = (preset, quat, c, curls = null) => {
   const p = getHandPose(preset, 'right')
   p.wrist.quat.copy(quat)
   p.fingers.thumb = thumbChain(c)
-  for (const n of FOUR) p.fingers[n] = chain(c)
+  for (const n of FOUR) p.fingers[n] = chain(curls?.[n] ?? c)
   return p
 }
 
@@ -132,14 +146,8 @@ const dropAt = (c) => {
 // felt), and how high it reaches inside the pile's footprint (what carries the
 // cards). Both taken with the wrist at the origin, so the footprint is stated
 // relative to the wrist and the caller adds its own x/z.
-const _cup = new Map()
-const cupAt = (c) => {
-  if (!_cup.has(c)) {
-    const p = atOrigin(shaped('palmCradle', CRADLE_QUAT, c))
-    _cup.set(c, { pose: p, floor: -extent(p, 'left').lo })
-  }
-  return _cup.get(c)
-}
+const cupFloor = (c, curls = null) =>
+  -extent(atOrigin(shaped('palmCradle', CRADLE_QUAT, c, curls)), 'left').lo
 
 // THE CUP IS SHALLOW, AND IT HAS TO BE. A palm-up hand's fingers curl UP, so a
 // deep cup sweeps its own fingertips straight through the pile they are
@@ -150,9 +158,14 @@ const cupAt = (c) => {
 // real fingers do bend back a touch), which drops the palm away from the block
 // coming down into it without ever rising into it.
 const C_FLAT = -0.05 // palm dropped open to receive
-const C_CUP = 0.14 // fingers closed up under the pile — where it rests
+const C_CUP = 0.14 // seed curl for the closed cup — LEVELLED per finger below
 const C_PRESS = 0.62 // right-hand pads pressed on the deck's top card
 const C_LET = 0.02 // ...straightened, and lifted off it: a block is let go
+// The cradle is now driven by a BLEND parameter rather than a raw curl, because
+// its closed shape is four different curls (one per finger, so the four pads
+// present at one height). 0 is the dropped palm, 1 the levelled cup.
+const CUP_OPEN = 0
+const CUP_CLOSED = 1
 
 export const hinduLesson = {
   id: 'hindu',
@@ -192,11 +205,6 @@ export const hinduLesson = {
     // `handsHigh` gives it.
     const LPX = -(CARD_W * 0.9)
     const LPZ = 0.62
-    // Sampled over the WHOLE open-to-closed blend, not just its ends: the hand
-    // is at every one of those curls at some point, and depth is not linear in
-    // curl (measured, the mid-blend sags below both endpoints).
-    const CUP_BLEND = Array.from({ length: 13 }, (_, i) => C_FLAT + ((C_CUP - C_FLAT) * i) / 12)
-    const CRADLE_Y = 0.012 + Math.max(...CUP_BLEND.map((c) => cupAt(c).floor)) + PAD_AIR
 
     // How far across the pile's width the OPEN palm's middle pad reaches under
     // it. The four fingers spread along the pile's LONG axis at this yaw, so `u`
@@ -211,7 +219,7 @@ export const hinduLesson = {
     // pile's footprint at all times, and the pile then has to ride the tip of a
     // closed fist: measured, it floated at y = 1.5, half a metre over the felt
     // and clean out of the top of the frame.)
-    const CRADLE_XZ = (() => {
+    const CRADLE_XZ0 = (() => {
       const seed = shaped('palmCradle', CRADLE_QUAT, C_FLAT)
       // '+z' is the card's DOWN face for a face-down card — the surface a cup
       // carries. Left-hand targets are authored x-mirrored.
@@ -219,35 +227,164 @@ export const hinduLesson = {
       t.x = -t.x
       return wristAnchorForContact(seed, 'right', 'middle', t.toArray())
     })()
+    // --- LEVELLING THE CUP, and why the pile used to hover ------------------
+    // The pile's seat used to be `extent().hi` — the highest FINGER SURFACE
+    // inside its footprint — plus PAD_AIR plus twice MOTION_AIR. Both halves of
+    // that were wrong in the same direction:
+    //
+    //   * `hi` at one shared curl is set by whichever finger happens to reach
+    //     highest, and the other three then sit BELOW it — measured, the index
+    //     0.068 and the pinky 0.195 below the middle. A pile seated on the
+    //     highest is a pile only one finger is touching.
+    //   * 0.100 of stacked margin on top of that (PAD_AIR + 2·MOTION_AIR = four
+    //     card thicknesses) put even that one finger out of reach of the cards
+    //     it was carrying. The suite measured 0% of gripping fingertips in
+    //     contact, median gap 0.164 — a quarter of a card width of daylight
+    //     under a hand that is supposed to be holding the deck up.
+    //
+    // So level the four TIPS instead: pick each finger's own curl so its pad's
+    // top surface reaches one common plane, and seat the pile on that plane
+    // with only the idle overlay's own travel to spare. The plane is found by
+    // iteration because levelling can itself lift a knuckle above the tips —
+    // three rounds converge, and the answer is the honest one: the height at
+    // which four pads and nothing else are touching the bottom card.
+    const cupPose = (station, c, curls) =>
+      poseWithContacts(shaped('palmCradle', CRADLE_QUAT, c, curls), 'left', {
+        anchor: [station[0], 0, station[2]],
+        quat: CRADLE_QUAT,
+      })
+    // Top of a finger's PAD (tip centre + its distal radius) above the wrist.
+    // Only that finger's own curl moves it, so the rest of the hand is irrelevant.
+    const _tt = new THREE.Vector3()
+    const tipTop = (name, c) =>
+      fingertipWorld(cupPose(CRADLE_XZ0, C_CUP, { [name]: c }), 'left', name, _tt).y +
+      FINGERS[name].rad[2] * HAND_SCALE
+    // The curl at which THIS finger presents its pad at `top`. A pad rises with
+    // curl up to the curl that stands the finger vertical and falls after, so a
+    // fixed ladder plus "keep the closest" is exact and deterministic — and a
+    // finger too short to reach the plane simply stops at its own highest.
+    const curlForTop = (name, top) => {
+      const scan = (lo, hi, steps) => {
+        let best = lo
+        let bestD = Infinity
+        for (let i = 0; i <= steps; i++) {
+          const c = lo + (hi - lo) * (i / steps)
+          const d = Math.abs(tipTop(name, c) - top)
+          if (d < bestD) {
+            bestD = d
+            best = c
+          }
+        }
+        return best
+      }
+      // Coarse ladder, then one refinement pass inside the winning cell: a step
+      // of the coarse ladder is ~0.011 of pad height, which is most of a contact
+      // band all by itself.
+      const step = (1.4 - C_FLAT) / 96
+      const c0 = scan(C_FLAT, 1.4, 96)
+      return scan(Math.max(C_FLAT, c0 - step), Math.min(1.4, c0 + step), 24)
+    }
+    // CENTRE THE FOUR PADS ON THE PILE, then ask how much of each still hangs
+    // off it. The station above puts the MIDDLE pad under the pile's centre,
+    // which leaves the pinky — three knuckles away along a hand that spans 0.74
+    // against a card 0.88 long — off the near end; and the deeper a finger has
+    // to curl to reach the seat, the further its tip retracts across the card,
+    // so the four tips are not a tidy row either. Slide the whole station until
+    // their bounding box is centred on the footprint (a pure translation, which
+    // cannot change the levelling) and measure what is left over. A pad off the
+    // card is not touching it however well its height is levelled.
+    const centred = (pose) => {
+      let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity
+      for (const n of FOUR) {
+        const t = fingertipWorld(pose, 'left', n, _tt)
+        x0 = Math.min(x0, t.x); x1 = Math.max(x1, t.x)
+        z0 = Math.min(z0, t.z); z1 = Math.max(z1, t.z)
+      }
+      const dx = LPX - (x0 + x1) / 2
+      const dz = LPZ - (z0 + z1) / 2
+      const over = {}
+      for (const n of FOUR) {
+        const t = fingertipWorld(pose, 'left', n, _tt)
+        over[n] = Math.hypot(
+          Math.max(0, Math.abs(t.x + dx - LPX) - CARD_W / 2),
+          Math.max(0, Math.abs(t.z + dz - LPZ) - CARD_H / 2),
+        )
+      }
+      // World +dx is an authored −dx for the mirrored left hand; z is not
+      // mirrored.
+      return { station: [CRADLE_XZ0[0] - dx, CRADLE_XZ0[1], CRADLE_XZ0[2] + dz], over }
+    }
+    // HOW HIGH THE PLANE GOES IS A COMPROMISE, and both ends of it are real.
+    // Low: the four pads lie almost flat across the pile, the pinky (0.72 long
+    // against the middle's 1.02) can still reach, but every pad's idle swing is
+    // vertical and the seat has to pay for it. High: the pads curl up, the idle
+    // stops mattering — and the pinky can only reach by standing straight up,
+    // which retracts its tip 0.9 back toward the wrist and clean off the pile
+    // (measured, gap 0.909).
+    //
+    // So do not pick an end. Scan the plane and score each candidate by the gap
+    // the SUITE will measure — the pad's own idle air plus whatever of the tip
+    // hangs off the card — and keep the best. Deterministic, and it re-solves
+    // itself if the rig or the card changes.
+    // Sampled over the WHOLE open-to-closed blend, not just its ends: the hand
+    // is at every one of those curls at some point, and depth is not linear in
+    // curl (measured, the mid-blend sags below both endpoints).
+    const CUP_BLEND = Array.from({ length: 13 }, (_, i) => i / 12)
+    const blendOf = (curls, f) =>
+      Object.fromEntries(FOUR.map((n) => [n, C_FLAT + (curls[n] - C_FLAT) * f]))
+    // HOW HIGH THE PLANE GOES IS THE PINKY'S DECISION, not the middle's, and
+    // that is the second half of why this cradle used to hover. The middle
+    // finger is 1.02 long and the pinky 0.72, and the pinky's knuckle already
+    // sits most of the way up to the middle's pad. So a plane set by the
+    // middle's own comfortable curl is one the pinky can only reach by standing
+    // straight up — which retracts its tip 0.9 back toward the wrist, clean off
+    // the far side of the pile (measured: pinky curl 1.27, tip 0.97 outside the
+    // footprint, gap 0.909, versus 0.002 once the plane comes down to meet it).
+    //
+    // So scan the plane UPWARD from flat and take the LOWEST one that is still a
+    // PAD plane: the first at which nothing else on the hand — at any point of
+    // the open-to-closed cycle — reaches above the four levelled tips. That is
+    // the shallowest cup this rig can seat a deck on, it is the one all four
+    // fingers can reach without curling out from under the cards, and it keeps
+    // the whole shuffle low enough to stay in frame.
+    const CUP = (() => {
+      let out = null
+      for (let i = 0; i <= 32; i++) {
+        const plane = tipTop('middle', C_FLAT + (C_CUP - C_FLAT) * (i / 32))
+        const curls = Object.fromEntries(FOUR.map((n) => [n, curlForTop(n, plane)]))
+        const rise = Math.max(
+          ...CUP_BLEND.map(
+            (f) =>
+              extent(cupPose(CRADLE_XZ0, C_FLAT + (C_CUP - C_FLAT) * f, blendOf(curls, f)), 'left', LPX, LPZ).hi,
+          ),
+        )
+        const { station } = centred(cupPose(CRADLE_XZ0, C_CUP, curls))
+        out = { curls, rise: Math.max(plane, rise), station }
+        if (rise <= plane + 1e-3) break
+      }
+      return out
+    })()
+    const CRADLE_XZ = CUP.station
+    const blendCurls = (f) => blendOf(CUP.curls, f)
+    const CRADLE_Y =
+      0.012 + Math.max(...CUP_BLEND.map((f) => cupFloor(C_FLAT + (C_CUP - C_FLAT) * f, blendCurls(f)))) + PAD_AIR
     // Moving the cup to another column is a MINUS in x, not a plus: anchors are
     // authored in right-hand coords and the engine negates x for the left hand,
     // so a world step of +dx is an authored step of −dx. (Getting this backwards
     // sent the pile the wrong way down the table on the carry-back, with the
     // whole finished stack still welded to the hand.)
     const cradleWrist = (px, pz) => [CRADLE_XZ[0] - (px - LPX), CRADLE_Y, CRADLE_XZ[2] + (pz - LPZ)]
-    // The cradle's own reach INSIDE the pile's footprint decides where the pile
-    // sits: put the bottom card exactly there and the hand carries it. Taken
-    // over EVERY curl the lesson uses, so opening and closing can only ever add
-    // clearance — the pile never has to move to let the fingers work. Closing
-    // the cup swings the fingertips up and BACK, out past the pile's near edge
-    // and therefore out of the footprint, which is why the answer stays a
-    // sensible palm's depth instead of a fist's.
-    const riseIn = (c) => {
-      const p = poseWithContacts(shaped('palmCradle', CRADLE_QUAT, c), 'left', {
-        anchor: [CRADLE_XZ[0], 0, CRADLE_XZ[2]],
-        quat: CRADLE_QUAT,
-      })
-      return extent(p, 'left', LPX, LPZ).hi
-    }
-    const CUP_RISE = Math.max(...CUP_BLEND.map(riseIn))
-    // Twice the motion air: a `fingerMotion` ripple rides ON TOP of a blend
-    // between two shaped hands, and that blend already sags below both of its
-    // own endpoints.
-    const PILE_Y = CRADLE_Y + CUP_RISE + CARD_T / 2 + PAD_AIR + 2 * MOTION_AIR
+    // Nothing in the open half of the cycle may reach ABOVE the closed cup's
+    // pads, or the pile would have to ride the opening hand instead of resting
+    // on the closed one; assert it by taking the max over the blend.
+    const CUP_RISE = CUP.rise
+    const PILE_Y = CRADLE_Y + CUP_RISE + CARD_T / 2 + CONTACT_AIR
     const pileTop = (n) => PILE_Y + Math.max(0, n - 1) * CARD_GAP
 
+    // `c` is the OPEN-to-CLOSED blend parameter now, not a raw curl: 0 is the
+    // dropped palm, 1 the levelled cup the pile rests on.
     const cradle = (c, n, px = LPX, pz = LPZ) =>
-      poseWithContacts(shaped('palmCradle', CRADLE_QUAT, c), 'left', {
+      poseWithContacts(shaped('palmCradle', CRADLE_QUAT, C_FLAT + (C_CUP - C_FLAT) * c, blendCurls(c)), 'left', {
         anchor: cradleWrist(px, pz),
         quat: CRADLE_QUAT,
         cards: n ? stackOf(px, PILE_Y, n, pz) : null,
@@ -347,8 +484,8 @@ export const hinduLesson = {
             // OUTBOARD, not inboard: the deck's whole flight from table centre
             // to the palm passes through the cup's column, so the cup waits
             // clear of it and slides in underneath afterwards.
-            { at: 0, pose: cradle(C_FLAT, 0, LPX - CARD_W * 1.2, LPZ) },
-            { at: 1, pose: cradle(C_FLAT, 0, LPX - CARD_W * 1.2, LPZ), ease: 'easeOutCubic' },
+            { at: 0, pose: cradle(CUP_OPEN, 0, LPX - CARD_W * 1.2, LPZ) },
+            { at: 1, pose: cradle(CUP_OPEN, 0, LPX - CARD_W * 1.2, LPZ), ease: 'easeOutCubic' },
           ],
         },
         annotations: [{ text: 'Right hand takes the deck; the left palm opens to receive', appearAt: 0.15 }],
@@ -369,13 +506,14 @@ export const hinduLesson = {
           // Still clear: the deck is climbing THROUGH this column on its way
           // over, and a cup parked in it is a cup the deck flies through
           // (measured 0.107 of middle finger inside the rising stack).
-          left: [{ at: 1, pose: cradle(C_FLAT, 0, LPX - CARD_W * 1.2, LPZ) }],
+          left: [{ at: 1, pose: cradle(CUP_OPEN, 0, LPX - CARD_W * 1.2, LPZ) }],
         },
       },
     ]
 
     let inHand = deck.slice()
     let piled = 0
+    let piledIds = []
     stripOrder.forEach((block, k) => {
       const n = block.length
       const held = inHand.length
@@ -425,7 +563,7 @@ export const hinduLesson = {
           // The cup opens flat to receive — the block has to have somewhere to
           // land, and an open palm is also what a Hindu's left hand looks like
           // at this instant.
-          left: [{ at: 1, pose: cradle(C_FLAT, piled) }],
+          left: [{ at: 1, pose: cradle(CUP_OPEN, piled) }],
         },
         annotations:
           k === 0
@@ -452,7 +590,29 @@ export const hinduLesson = {
             { at: 0.22, pose: letGo },
             { at: 1, pose: drawnAway, ease: 'easeInOutCubic' },
           ],
-          left: [{ at: 1, pose: cradle(C_CUP, piled + n), ease: 'easeOutCubic' }],
+          // THE RIPPLE BELONGS ON THE CLOSING BEAT, not on the closed one. A
+          // fingerMotion overlay peaks in the MIDDLE of its own segment
+          // (sin²(πt)) and dies at both ends, so here it fires while the cup is
+          // still half open and a whole cup below the pile — free room. On the
+          // `square` beat below the cup is already closed and its four pads are
+          // tangent under the block for the entire segment, so the same 0.035
+          // of ripple is 0.038 of finger driven straight up into cards that are
+          // resting on it (measured 0.0575, thirty times the budget). That is
+          // what the old PILE_Y bought with 2·MOTION_AIR of permanent hover.
+          //
+          // And it closes on the STEP's own ease, not easeOutCubic. That is not
+          // a taste call: easeOutCubic is 83% closed by the time the ripple
+          // peaks, so the overlay fires with 0.015 of room and needs 0.038 — it
+          // put the middle finger 0.033 up inside the pile. On the step's
+          // easeInOutCubic the cup is 40% closed at the peak, which is both
+          // enough room and what catching a falling block looks like.
+          left: [
+            {
+              at: 1,
+              pose: cradle(CUP_CLOSED, piled + n),
+              fingerMotion: [{ fingers: FOUR, type: 'curlRipple', amp: MOTION_AMP, cycles: 1 }],
+            },
+          ],
         },
         annotations:
           k === 0 ? [{ text: 'It falls into the closing cup — nothing is carried there', appearAt: 0.45 }] : undefined,
@@ -465,20 +625,33 @@ export const hinduLesson = {
         duration: 560,
         ease: 'easeInOutCubic',
         to: () => [],
+        // THE CUP IS HOLDING THIS PILE, so say so. Two things follow, and the
+        // second is the one that mattered: the pile visibly rides the fingers
+        // that are under it, and the idle-breathing overlay can no longer press
+        // those pads THROUGH it — a welded packet rides the hand's contact frame,
+        // so when the overlay lifts the pads the cards lift with them. Without
+        // the weld the seat has to reserve the overlay's whole pad travel
+        // (measured 0.031 for a cradle finger lying almost flat across the pile,
+        // where the swing is straight up), and that reservation is bigger than
+        // the band the suite calls contact — i.e. the hand can be safe or it can
+        // be touching, but not both.
+        grip: { left: { cards: piledIds.concat(block.map((c) => c.id)), frame: 'packet' } },
         hands: {
           right: [{ at: 1, pose: regrip, fingerMotion: [{ fingers: FOUR, type: 'tighten', amp: MOTION_AMP }] }],
-          left: [
-            {
-              at: 1,
-              pose: cradle(C_CUP, piled + n),
-              fingerMotion: [{ fingers: FOUR, type: 'curlRipple', amp: MOTION_AMP, cycles: 1 }],
-            },
-          ],
+          // NO fingerMotion on the cup here, and that is the weld's price. The
+          // pile rides the `packet` contact frame, which is HALF THUMB — so a
+          // ripple on the thumb walks the whole welded pile 0.025 sideways into
+          // four pads that are standing still, and a ripple on the four fingers
+          // moves the frame half as far as the pads and buries them by the
+          // difference. The cup's own articulation lives on the CLOSING beat
+          // above, where it is free; here the hand is holding something.
+          left: [{ at: 1, pose: cradle(CUP_CLOSED, piled + n) }],
         },
       })
 
       inHand = rest
       piled += n
+      piledIds = piledIds.concat(block.map((c) => c.id))
     })
 
     steps.push({
@@ -493,7 +666,7 @@ export const hinduLesson = {
       to: (dk) => stackLayout(dk, PILE_Y).map((p) => ({ ...p, pos: p.pos.clone().setZ(LPZ) })),
       grip: { left: { cards: 'all', frame: 'packet' } },
       hands: {
-        left: [{ at: 1, pose: cradle(C_CUP, N, 0, LPZ) }],
+        left: [{ at: 1, pose: cradle(CUP_CLOSED, N, 0, LPZ) }],
         // WIDE, not merely beside: the left hand carries the pile through table
         // centre on this beat and its thumb sweeps a hand-length across as it
         // goes. Parking the right hand one card out left the two translucent
@@ -517,14 +690,14 @@ export const hinduLesson = {
         left: [
           // An explicit at:0 keyframe: without one the lead-in segment inherits
           // the STEP's ease, so the palm dawdled under the falling stack.
-          { at: 0, pose: cradle(C_CUP, N, 0, LPZ) },
+          { at: 0, pose: cradle(CUP_CLOSED, N, 0, LPZ) },
           // OUT FIRST, and out of the stack's FOOTPRINT, not merely open. The
           // pile has a full cup's height to lose here, and easeInCubic buys the
           // withdrawal its window — but only if the palm actually leaves: an
           // opened cup still parked under the column is a hand the whole stack
           // descends through (measured 0.135 deep).
-          { at: 0.34, pose: cradle(C_FLAT, 0, -CARD_W * 1.25, LPZ), ease: 'easeOutCubic' },
-          { at: 1, pose: cradle(C_FLAT, 0, -WIDE, LPZ + CARD_H * 0.3), ease: 'easeOutCubic' },
+          { at: 0.34, pose: cradle(CUP_OPEN, 0, -CARD_W * 1.25, LPZ), ease: 'easeOutCubic' },
+          { at: 1, pose: cradle(CUP_OPEN, 0, -WIDE, LPZ + CARD_H * 0.3), ease: 'easeOutCubic' },
         ],
         right: [{ at: 1, pose: openHold(WIDE, TABLE_TOP, 0.06, CARD_H * 0.5), ease: 'easeOutCubic' }],
       },
@@ -546,6 +719,18 @@ export const hinduLesson = {
         ],
       },
     })
+    // THE CRADLE BREATHES AT HALF AMPLITUDE, and that is the price of a hand
+    // that actually carries the deck. The idle overlay staggers its phase per
+    // FINGER (handMotion's FINGER_PHASE), so on a hand holding a packet the pads
+    // and the contact frame the packet rides drift apart by up to 0.03 — more
+    // than the 0.025 the suite calls contact, and a seat big enough to absorb it
+    // is by definition a seat that never touches. Damping this ONE hand keeps
+    // that drift inside a pad's own clearance. It is applied to every left
+    // keyframe in the lesson, so the overlay stays continuous (a scale that
+    // changes between segments would pop the whole pile, which rides the hand).
+    for (const st of steps) {
+      for (const kf of st.hands?.left ?? []) kf.idleScale = CUP_IDLE
+    }
     return steps
   },
 }

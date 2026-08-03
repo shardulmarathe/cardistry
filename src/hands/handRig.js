@@ -1,6 +1,8 @@
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import { HAND_SCALE, FINGERS, FINGER_NAMES, THUMB_BASE_ROT, jointPivotY } from './handRigSpec'
+import { getRegistry } from '../card/cardRegistry'
+import { CARD_W, CARD_H } from '../lib/constants'
 
 const HAND_COLOR = 0xf0cba6
 
@@ -12,8 +14,9 @@ const HAND_COLOR = 0xf0cba6
 // One shared translucent material across palm, thenar and all five fingers keeps
 // the gold-fresnel rim perfectly consistent (and is cheaper). The limb below the
 // palm gets a SECOND instance from this same factory — identical in every way
-// except that its opacity is modulated per frame (see "Forearm fade" below).
-function makeHandMaterial() {
+// except for its per-frame opacity and a gentler x-ray strength (see the two
+// fade sections below). Same shader TEXT, so both still share one program.
+function makeHandMaterial(xray = 1) {
   const material = new THREE.MeshStandardMaterial({
     color: HAND_COLOR,
     transparent: true,
@@ -23,20 +26,128 @@ function makeHandMaterial() {
     metalness: 0,
     side: THREE.DoubleSide,
   })
-  addFresnelRim(material)
+  addHandSurfaceShader(material, xray)
   return material
 }
 
-function addFresnelRim(material) {
+// --- Card x-ray -------------------------------------------------------------
+// A hand at HAND_SCALE is genuinely bigger than the card it works on, so the
+// parts that grip also HIDE. Two things made that worse than it had to be:
+//
+//  1. Every capsule is DoubleSide with depthWrite off, so one finger already
+//     paints two layers at 0.55. Four overlapping fingers is eight layers —
+//     1 - 0.45^8 ≈ 0.998 — and the whole hand collapses into one opaque mass
+//     with no fingers legible inside it. (Riffle's bridge beat was solid cream.)
+//  2. Nothing distinguished a finger lying ACROSS the deck from one lying
+//     beside it, so lessons could only fix it by moving the hand.
+//
+// So alpha is modulated per fragment by two signals that multiply:
+//
+//  * ndv = |dot(normal, viewDir)| — how BROADSIDE the surface is. This is the
+//    same quantity the gold rim already computes, so it is free. Fade the
+//    flat-on interior of a capsule and keep its silhouette: you look through
+//    the body but the outline, and therefore the finger, still reads. Because
+//    each overlapping capsule contributes its own bright rim, a stack of them
+//    reads as separate fingers instead of one slab — this is what fixes (1),
+//    and it fixes it for the palm and thenar slabs too, which are the big
+//    masses in the waterfall squeeze.
+//  * how much this fragment sits BETWEEN THE CAMERA AND THE CARDS. Anything
+//    that actually occludes a card is, necessarily, in front of it (cards are
+//    opaque and depth-write; hand fragments behind them are already discarded),
+//    so "in front of the deck AND inside the cone the deck subtends" is a tight
+//    proxy for "covering something the lesson is teaching". Hands that are
+//    merely near the cards, or resting on felt beside them, keep most of their
+//    weight — the point is to see THROUGH a hand, never to delete one.
+//
+// Both are continuous and derived only from (camera, card positions, pose), so
+// there is no state to pop and a backwards scrub renders identically.
+const XRAY_FREE = 0.34 // interior fade when covering nothing
+const XRAY_OVER = 0.88 // interior fade when squarely over the cards
+// View-space depth in front of the deck centre, in world units. A finger
+// capsule is ~0.13 thick at HAND_SCALE, so a finger resting ON the deck lands
+// near the top of this ramp. It starts slightly BEHIND the centre because a
+// bowed/spread deck is deep, and a fragment level with its middle is still in
+// front of the far half of it.
+const FRONT_START = -0.1
+const FRONT_FULL = 0.18
+// Distance from the deck's view axis, in deck radii, measured at the deck's own
+// depth (so it is the cone the deck subtends, not a flat screen circle).
+const LAT_INNER = 1.0
+const LAT_OUTER = 2.1
+
+// Deck bounding sphere in VIEW space: xyz = centre, w = radius. One shared
+// value object across every hand material — it is the same for all of them, so
+// updateDeckFocus writes it once per frame and every hand picks it up.
+const DECK_VIEW = new THREE.Vector4(0, 0, -1, 0)
+
+const glsl = (n) => n.toFixed(4)
+
+function addHandSurfaceShader(material, xray) {
   material.onBeforeCompile = (shader) => {
-    shader.fragmentShader = shader.fragmentShader.replace(
-      '#include <dithering_fragment>',
-      `#include <dithering_fragment>
-       float fresnel = pow(1.0 - abs(dot(normalize(vNormal), normalize(vViewPosition))), 2.2);
-       gl_FragColor.rgb += vec3(0.85, 0.65, 0.35) * fresnel * 0.5;`,
-    )
+    shader.uniforms.uDeck = { value: DECK_VIEW }
+    shader.uniforms.uXray = { value: xray }
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+         uniform vec4 uDeck;
+         uniform float uXray;`,
+      )
+      .replace(
+        '#include <dithering_fragment>',
+        `#include <dithering_fragment>
+         float ndv = abs(dot(normalize(vNormal), normalize(vViewPosition)));
+         gl_FragColor.rgb += vec3(0.85, 0.65, 0.35) * pow(1.0 - ndv, 2.2) * 0.5;
+         // vViewPosition is -mvPosition, so negating it recovers the fragment's
+         // view-space position. Camera looks down -z: a LARGER z is nearer.
+         vec3 xrayPos = -vViewPosition;
+         float front = smoothstep(${glsl(FRONT_START)}, ${glsl(FRONT_FULL)}, xrayPos.z - uDeck.z);
+         // Perspective-divide both to the same unit plane, then rescale to world
+         // units at the deck's depth — that makes lat read in deck radii.
+         vec2 fragDir = xrayPos.xy / max(1e-4, -xrayPos.z);
+         vec2 deckDir = uDeck.xy / max(1e-4, -uDeck.z);
+         float lat = length(fragDir - deckDir) * (-uDeck.z) / max(1e-4, uDeck.w);
+         float over = front * (1.0 - smoothstep(${glsl(LAT_INNER)}, ${glsl(LAT_OUTER)}, lat));
+         float fade = ndv * mix(${glsl(XRAY_FREE)}, ${glsl(XRAY_OVER)}, over) * uXray;
+         gl_FragColor.a *= 1.0 - fade;`,
+      )
   }
-  material.customProgramCacheKey = () => 'hand-fresnel-rim'
+  // Both hand materials emit IDENTICAL shader text and differ only in uniform
+  // values, so one program is correct for both.
+  material.customProgramCacheKey = () => 'hand-xray-rim'
+}
+
+// A card is registered by its CENTRE, so a deck's bounding sphere is the box of
+// those centres inflated by one card's own circumscribed radius.
+const CARD_RADIUS = 0.5 * Math.hypot(CARD_W, CARD_H)
+const _lo = new THREE.Vector3()
+const _hi = new THREE.Vector3()
+const _mid = new THREE.Vector3()
+let _deckFrame = -1
+
+// Refresh DECK_VIEW for this render frame. Both hands call it and the frame
+// guard makes the second call free; `frameId` comes from the renderer's own
+// counter so it is one sweep of the 52 card positions per frame, whatever is
+// mounted. Cards live as direct children of one untransformed group, so their
+// local positions ARE their world positions.
+export function updateDeckFocus(camera, frameId) {
+  if (frameId === _deckFrame || !camera?.isPerspectiveCamera) return
+  _deckFrame = frameId
+  const registry = getRegistry()
+  if (registry.size === 0) {
+    DECK_VIEW.w = 0 // radius 0 disables the "over the cards" term entirely
+    return
+  }
+  _lo.set(Infinity, Infinity, Infinity)
+  _hi.set(-Infinity, -Infinity, -Infinity)
+  for (const handle of registry.values()) {
+    _lo.min(handle.mesh.position)
+    _hi.max(handle.mesh.position)
+  }
+  _mid.addVectors(_lo, _hi).multiplyScalar(0.5)
+  const radius = 0.5 * _lo.distanceTo(_hi) + CARD_RADIUS
+  _mid.applyMatrix4(camera.matrixWorldInverse)
+  DECK_VIEW.set(_mid.x, _mid.y, _mid.z, radius)
 }
 
 // --- Forearm fade -----------------------------------------------------------
@@ -113,7 +224,7 @@ function buildFinger(name, spec, material) {
 export function buildHandRig(side = 'right') {
   const root = new THREE.Group()
   root.name = `hand-${side}`
-  const material = makeHandMaterial()
+  const material = makeHandMaterial(1)
 
   const wrist = new THREE.Group()
   wrist.name = 'wrist'
@@ -140,7 +251,10 @@ export function buildHandRig(side = 'right') {
   // differs. The wrist stub rides the same material as the forearm so the arm
   // recedes as ONE piece instead of leaving a bright bead on a ghost tube; the
   // palm and thenar stay solid, which is what keeps the hand attached.
-  const forearmMaterial = makeHandMaterial()
+  // Its x-ray strength is dialled back: the two fades MULTIPLY, and a broadside
+  // forearm already sitting at 0.14 would otherwise cross the deck at ~0.02 and
+  // read as nothing at all.
+  const forearmMaterial = makeHandMaterial(0.55)
 
   // Wrist + forearm stub so the hand doesn't read as a severed palm. Capsules
   // are authored along +y, so they already trail down the -y axis below the palm.

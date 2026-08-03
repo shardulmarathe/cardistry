@@ -10,7 +10,8 @@ import { compileLesson } from '../../src/lessons/engine/compileLesson.js'
 import { sampleTrack } from '../../src/lessons/engine/sampleTrack.js'
 import { createDeck } from '../../src/deckModel.js'
 import { FINGER_NAMES, FINGERS, HAND_SCALE } from '../../src/hands/handRigSpec.js'
-import { fingertipWorld, fingerJointsWorld } from '../../src/hands/handKinematics.js'
+import { fingertipWorld, fingerJointsWorld, GRIP_FRAME_TYPES } from '../../src/hands/handKinematics.js'
+import { cardSurfaceExtents } from '../../src/lessons/authoring/contacts.js'
 import { CARD_W, CARD_H, CARD_T } from '../../src/lib/constants.js'
 
 let failures = 0
@@ -147,13 +148,34 @@ const PENETRATION_BUDGET = {
   // then these numbers must only ever come DOWN. Do not treat a green suite here
   // as "riffle is clean".
   charlier: 0.038, // measured 0.0355 — `fall` index, anchor still typed at scale 13
-  riffle: 0.038, // measured 0.0356 — `cut`/`slide` thumb, anchor still typed at 13
-  waterfall: 0.002, // measured 0.0000 — landscape cage, bow-aware, shielded
-  // Faro's old 0.0723 was luck, not achievement (a prior sweep of ~12 anchor
-  // variants all landed 0.0808-0.0812; only the byte-exact original grazed a
-  // card plane instead of passing through it). Fixed structurally instead:
-  // every hand height in the lesson is now derived from the cards it is over.
-  faro: 0.034, // measured 0.0312 — same `cut`/`slide` thumb regression as riffle
+  // --- RAISED AS THE DELIBERATE PRICE OF CONTACT ---------------------------
+  // Real contact grazes. Flesh compresses and capsules do not, so a pad that is
+  // genuinely ON a card reads as a small overlap to this metric; the only way
+  // to hold every one of these under 0.038 was the blanket squeeze air that
+  // made the hands hover, which is what the user was looking at. These two are
+  // raised to buy exactly that, and the number each buys is recorded next to
+  // it and asserted from below by CONTACT_FLOOR:
+  //
+  //   riffle  gripping fingertips in contact  0% → 30%, median gap 0.189 → 0.128
+  //   faro                                    0% → 59%, median gap 0.195 → 0.023
+  //
+  // Both stay well under the 0.0812 ceiling, so the assertion is still binding,
+  // and both are still transient grazes on the `cut`/`slide`/`weave` carries
+  // rather than resting grips. They must only ever come DOWN — and the way down
+  // is to fix the carry trajectories (the right hand's thumb passes through the
+  // half still sitting at the table centre), NOT to re-inflate the pad air.
+  riffle: 0.046, // measured 0.0440 — `weave` middle; buys 30% contact
+  faro: 0.06, // measured 0.0571 — `weave` index/middle; buys 59% contact
+  // Raised deliberately, and this is the clearest example of why the two-sided
+  // assertion matters. 0.002 was the budget of a lesson whose hands touched
+  // NOTHING — 0% contact, pads a median 0.398 off the deck. It was cheap to hold
+  // precisely because nothing was being held. Solving the cage against the BOWED
+  // geometry (the bend maps a card onto a circular arc; the old cage was solved
+  // on the flat stack the cards curl away from) takes it to 65% contact with a
+  // 0.020 median. The idle-breathing overlay alone swings a tangent pad 0.017,
+  // so no genuine grip can live under 0.002. Same bargain as riffle and faro,
+  // still far under the 0.0812 ceiling so the assertion stays binding.
+  waterfall: 0.03, // measured 0.0282 — buys 0% -> 79% contact
 }
 
 const CARD_HX = CARD_W / 2
@@ -208,10 +230,17 @@ function assertNoPenetration(scene, label, budget) {
             const dz = _pp.z - c.pos.z
             if (dx * dx + dy * dy + dz * dz > lim2) continue // Reject 2, pre-transform
             _pl.set(dx, dy, dz).applyQuaternion(_pq)
-            const ex = Math.abs(_pl.x) - CARD_HX
-            const ey = Math.abs(_pl.y) - CARD_HY
-            const ez = Math.abs(_pl.z) - CARD_HZ
-            if (ex > r || ey > r || ez > r) continue // clear of the box
+            // TRUE geometry, bow included: a bent card is a cylindrical shell,
+            // not the flat rectangle this test used to measure. See
+            // cardSurfaceExtents. (assertAboveFelt already carried this fix;
+            // this test did not, so on every bowed beat — the riffle bridge,
+            // the waterfall arch — it was reporting depth against a rectangle
+            // the cards had long since curled away from.)
+            const e = cardSurfaceExtents(_pl, c.bend ?? 0)
+            const ex = e.x
+            const ey = e.u
+            const ez = e.n
+            if (ex > r || ey > r || ez > r) continue // clear of the card
             const depth = Math.min(-ex, -ey, -ez) + r
             if (depth > worst) {
               worst = depth
@@ -225,6 +254,204 @@ function assertNoPenetration(scene, label, budget) {
     if (worst > worstAll) worstAll = worst
   }
   return worstAll
+}
+
+// ---------------------------------------------------------------------------
+// THE OTHER HALF OF THE ASSERTION: are the hands actually TOUCHING?
+//
+// Everything above this line is one-sided. `resolvePenetration` works by backing
+// a finger OFF until it is clear, shield cards add air on top, and pads used to
+// be authored a whole squeeze-arc off their surfaces — so nothing in the
+// pipeline, and nothing in this harness, ever stopped a grip from settling into
+// a HOVER. It did: measured the day this assertion landed, six of the eight
+// lessons had ZERO percent of their gripping fingertips within a card-thickness
+// of the cards they were holding, and medians of 0.16–0.39 against a card
+// 0.63 wide. A green suite meant "no finger is inside a card", which two
+// mannequin hands a foot above the table also satisfy.
+//
+// So: during every hold, for the fingers that frame type says are GRIPPING
+// (GRIP_FRAME_TYPES[frame].pressure — the honest set; an indexPivot's pinky is
+// not holding anything and is not asked to), measure the clearance from the
+// fingertip SURFACE to the nearest surface of a card that hold is still
+// carrying, and require a minimum fraction of those samples to be in contact.
+//
+// RATCHET, same rule as PENETRATION_BUDGET but the other way up: these are
+// seeded at what the catalog measures today and may only ever go UP. A lesson
+// at 0 is not "passing", it is RECORDED AS BROKEN — read the printed number and
+// raise its floor as it is re-authored. The target is over 45% everywhere.
+const CONTACT_BAND = 0.025 // within this of a card surface = touching
+const CONTACT_FLOOR = {
+  default: 0,
+  // Re-authored onto measured squeeze air (contacts.js): the pads are no longer
+  // parked a full squeeze-arc off the cards they hold.
+  riffle: 0.28, // measured 0.30
+  faro: 0.55, // measured 0.59
+  // --- RE-AUTHORED ONTO THEIR OWN HOLDS -------------------------------------
+  // Neither of these uses the shared tableGrip/cageGrip builders, so the same
+  // three faults had to be fixed in each of them by hand:
+  //   * LEVEL THE PADS BY THE PAD. Both placed a hand by its deepest SURFACE —
+  //     which on a table grip is a knuckle and in a cradle is a fat proximal
+  //     phalange, never the fingertip. Four fingers of four lengths then present
+  //     four pads at four heights and only the luckiest is on the card (hindu:
+  //     index 0.068 and pinky 0.195 below the middle; strip: middle 0.086 off
+  //     the block against index 0.211, ring 0.170, pinky 0.454).
+  //   * STOP STACKING MARGINS. Idle air + motion air + a solved lift were being
+  //     added on top of one another under every pad — 0.100 in hindu, four card
+  //     thicknesses — and every unit of it lands on the beat the grip captures
+  //     against, so it is a unit of gap for the whole hold.
+  //   * RELAX THE OFFENDER, DO NOT LIFT THE HAND. Where one finger reaches into
+  //     the packet, back THAT finger off against the packet where the grip frame
+  //     actually carries it (not where its layout says). Answering with the
+  //     wrist charges all five pads for one finger's overreach.
+  // Both also run the idle-breathing overlay at reduced amplitude on the
+  // gripping hand: the overlay staggers phase per FINGER, so on a hand holding a
+  // welded packet the pads and the frame the packet rides drift apart by more
+  // than this band — and a margin big enough to absorb that never touches.
+  //   hindu  0% → 62%, median gap 0.164 → 0.021, penetration still 0.0000
+  //   strip  1% → 36%, median gap 0.203 → 0.125, penetration 0.0000 → 0.0017
+  hindu: 0.58, // measured 0.62
+  strip: 0.33, // measured 0.36
+  // --- NOT FIXED, recorded so it cannot silently get worse ------------------
+  // OVERHAND is diagnosed but not fixed, and the diagnosis is worth keeping.
+  // Two real bugs sit in its receiving hand. (1) `recvWristFor` raises the wrist
+  // until nothing of the pose dips below the deck — probing at the stroke's
+  // DEEPEST rung, whose pad targets are a card-width past the deck's near edge.
+  // Those targets are unreachable; `solveFingerTo` answers by pinning its
+  // joints; a pinned finger points straight DOWN; so the loop lifts the wrist to
+  // make room for a finger that is only pointing down because it cannot reach,
+  // which puts the target further out of reach again. It settles at y = 2.209
+  // with pads to place at y = 1.27 — a 0.94 drop for chains 0.90 long, measured
+  // solve errors 0.27 to 1.12. (2) All five pads share one `u`, which a 0.90
+  // index and a 0.75 thumb cannot reach when the wrist is placed for a 1.02
+  // middle. Fixing both puts every pad on the deck: 2% → 38% contact, median gap
+  // 0.349 → 0.007.
+  //
+  // It then exposes a third problem, and `fingerDraw` — the thumbless, almost
+  // pitch-free contact frame added for exactly this — took most of it but not
+  // all. With the block riding the three pads that are actually on it instead of
+  // swinging about a thumb 0.83 away, the depth fell 0.135 → 0.080, and these
+  // helped on the way: relaxing the fingers that wrap the block's far edge
+  // against the block WHERE THE FRAME CARRIES IT (bounded, or it straightens the
+  // hand until the delivery drops 0.47 and DECK_LIFT swells to half a card and
+  // drives the holding cradle up through the deck); relaxing against the deck
+  // and the block in ONE call (a pad's depth falls again past the curl that
+  // stands its finger vertical, so un-curling a drag rung to leave the block
+  // drives its tip back DOWN into the deck); pointing that relax at the deck
+  // that is REALLY there (the block has been welded away and the rest has risen
+  // by DECK_LIFT); letting the hand climb as it draws; and ending the return
+  // with a pure vertical descent.
+  //
+  // WHAT IS LEFT IS NOT AN AUTHORING PROBLEM, which is why this stops here. Every
+  // rung of the stroke is solved and every rung measures 0.000 — verified, all of
+  // them — but a track is not its keyframes. The compiler LERPS joint angles
+  // between rungs, each finger's pad therefore travels an arc while the frame the
+  // block rides is their MEAN, and a pad deviates from that mean mid-segment.
+  // Because a fingertip's radius (0.104) is seventeen times a card's thickness
+  // (0.006), this metric charges an entire radius for any pad centre that lands
+  // inside that slab — so a 0.02 deviation reads as 0.08. Ruled out, by
+  // measurement: it is not the idle overlay (0.080 with the overlay switched off
+  // entirely), not sampling (0.084 at 8 rungs, 0.076 at 14, WORSE at 24 and 40 as
+  // per-rung relax noise outgrows the sag), and not clearance — a uniform seat
+  // cannot touch it at all (0.084 at seat 0, 0.089 at seat 0.13), because the
+  // block rides the pads and any lift lifts it too.
+  //
+  // So the fixed state measures 2% / median 0.349 / penetration 0.0000, and the
+  // reachable state measures 34% / median 0.015 / penetration 0.084 — 42x this
+  // budget. The hover ships for now. The remaining lever is
+  // in the engine, not the lesson: either the compiler interpolates a held pose
+  // through its CONTACT FRAME rather than through raw joint angles, or the
+  // penetration metric stops charging a full radius for a graze. The working
+  // branch is kept at an unmerged working branch.
+  overhand: 0, // measured 0.02
+  // --- RE-AUTHORED ONTO REAL CONTACT ----------------------------------------
+  // The charlier's two CARRY holds (`lift`, `lower` — 86% of its samples) used
+  // the `deckRest` PRESET, and DECK_REST_DROP only guarantees the pose's LOWEST
+  // finger surface is tangent: one pad on the cards and four in the air, with
+  // the thumb 1.30 from the deck it was "holding". They now use the shared
+  // solved straddle (packetGrip) with its thumb re-seated onto the edge.
+  //   charlier  7% → 62%, median gap 0.168 → 0.017, penetration unchanged
+  charlier: 0.58, // measured 0.62
+  // The waterfall's cage was solved on the FLAT stack and the deck then bowed
+  // away from it; it is now solved against the BOWED geometry (see the lesson
+  // header — bowedContact is the inverse of the bend shader), yawed 90° so the
+  // four pads cross the deck's width instead of running off its shortened long
+  // axis, and the arch is lifted clear of the felt so the clamp cannot collapse
+  // the stack out of the grip.
+  //   waterfall  0% → 65%, median gap 0.398 → 0.020
+  // ITS PENETRATION BUDGET IS NOW THE BINDING PROBLEM, not this floor: 0.002
+  // was the budget of a lesson whose hands touched nothing at all, and real
+  // contact measures 0.0282 here (the idle overlay alone moves a tangent pad
+  // 0.017, so no grip that is genuinely ON a card can stay under 0.002). It
+  // needs 0.03, exactly the bargain the riffle/faro note above describes — and
+  // it is well under the 0.0812 ceiling, so the assertion stays binding.
+  //
+  // 65% → 79% came from the pass that made the beat WATCHABLE, which is worth
+  // recording because the two goals turned out to agree. That lesson had two
+  // hands caging one 0.72 arch and rendered as an opaque blob with no visible
+  // deck; deleting the second cage also deleted the interference that was
+  // costing contact, and two further fixes came out of measuring the survivor:
+  //   * the grip's `pressure` RAMP (0.35 → 0.1) was worth 30 points on its own.
+  //     The packet frame is 0.5·thumb + 0.25·index + 0.25·middle, so pressure
+  //     curls exactly the fingers the welded packet pivots about and drags the
+  //     other pads off the cards. A near-flat pressure holds them on.
+  //   * holding the wrist STILL for the first third of the release, instead of
+  //     opening it from t=0, keeps the pads on the cards that are still in the
+  //     hand.
+  // Neither is specific to this lesson; both are worth trying wherever a
+  // gripping hand's contact decays across its own hold.
+  waterfall: 0.72, // measured 0.79
+}
+
+const _cj = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()]
+const _cl = new THREE.Vector3()
+const _cq = new THREE.Quaternion()
+const _ct = new THREE.Vector3()
+
+// Signed clearance from a world point to a card's SURFACE (>0 outside, <0 in).
+function surfaceGap(p, c) {
+  _cl.copy(p).sub(c.pos).applyQuaternion(_cq.set(-c.quat.x, -c.quat.y, -c.quat.z, c.quat.w))
+  const e = cardSurfaceExtents(_cl, c.bend ?? 0)
+  const ox = Math.max(e.x, 0)
+  const ou = Math.max(e.u, 0)
+  const on = Math.max(e.n, 0)
+  const out = Math.hypot(ox, ou, on)
+  return out > 0 ? out : Math.max(e.x, e.u, e.n)
+}
+
+// Fraction of gripping-fingertip samples in contact across a whole track, plus
+// the median gap (the live signal for the ratchet above).
+function measureContact(track) {
+  const gaps = []
+  let hits = 0
+  for (let i = 0; i <= 200; i++) {
+    const ms = (track.duration * i) / 200
+    let scene = null
+    for (const h of track.holds ?? []) {
+      if (ms < h.tStart || ms > h.tEnd) continue
+      const grippers = GRIP_FRAME_TYPES[h.frame]?.pressure
+      if (!grippers) continue // 'wrist' welds carry no finger claim
+      scene = scene ?? sampleTrack(track, ms)
+      const pose = scene.hands[h.side]
+      if (!pose) continue
+      const held = []
+      for (const [id] of h.offsets) {
+        if (ms > (h.releases?.get(id) ?? h.tEnd)) continue
+        held.push(scene.cards.get(id))
+      }
+      if (!held.length) continue
+      for (const name of Object.keys(grippers)) {
+        fingertipWorld(pose, h.side, name, _ct)
+        let best = Infinity
+        for (const c of held) best = Math.min(best, surfaceGap(_ct, c))
+        const gap = best - FINGERS[name].rad[2] * HAND_SCALE
+        gaps.push(gap)
+        if (Math.abs(gap) < CONTACT_BAND) hits++
+      }
+    }
+  }
+  if (!gaps.length) return null
+  gaps.sort((a, b) => a - b)
+  return { frac: hits / gaps.length, median: gaps[gaps.length >> 1], n: gaps.length }
 }
 
 // Boundary times where pops would hide: card/hand segment edges + hold edges.
@@ -318,8 +545,20 @@ for (const lesson of LESSONS) {
     maxJump < tol,
     `${lesson.id}: boundary jump ${maxJump.toFixed(4)} at ${maxJumpAt.toFixed(0)}ms (tol ${tol})`,
   )
+  // Pass 4: the hands must actually be ON the cards they claim to hold.
+  const contact = measureContact(track)
+  const floor = CONTACT_FLOOR[lesson.id] ?? CONTACT_FLOOR.default
+  if (contact) {
+    check(
+      contact.frac >= floor,
+      `${lesson.id}: only ${(contact.frac * 100).toFixed(0)}% of gripping fingertips in contact during holds (floor ${(floor * 100).toFixed(0)}%, median gap ${contact.median.toFixed(3)})`,
+    )
+  }
   console.log(
-    `  duration ${(track.duration / 1000).toFixed(1)}s, ${bounds.length} boundaries, max jump ${maxJump.toFixed(4)}, max finger-in-card ${maxPen.toFixed(4)} (budget ${penBudget})`,
+    `  duration ${(track.duration / 1000).toFixed(1)}s, ${bounds.length} boundaries, max jump ${maxJump.toFixed(4)}, max finger-in-card ${maxPen.toFixed(4)} (budget ${penBudget})` +
+      (contact
+        ? `, fingertips in contact ${(contact.frac * 100).toFixed(0)}% of ${contact.n} (floor ${(floor * 100).toFixed(0)}%), median gap ${contact.median.toFixed(3)}`
+        : ''),
   )
 }
 

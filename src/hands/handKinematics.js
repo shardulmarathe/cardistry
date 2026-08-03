@@ -138,6 +138,24 @@ export const GRIP_FRAME_TYPES = {
     pitchGain: 0.35,
     pressure: { thumb: 1, index: 0.3, middle: 0.3 },
   },
+  // Hand-over-deck DRAW (overhand peel): the four fingers pull a packet off the
+  // top of a deck the other hand holds. Every other frame here is >=50% thumb,
+  // and on this rig a thumb cannot travel with the fingers across a deck gripped
+  // from above — its whole chain is ~0.75 against a reach of ~1.0+. A
+  // thumb-weighted frame therefore LAGS the pads and pitches about a pivot the
+  // packet hangs 0.83 from, sweeping the drawn block through the middle finger
+  // ~0.135 deep no matter how the pads are placed. Three separate authoring
+  // passes hit that wall and each worked around it by holding the hand off the
+  // cards — i.e. the hover was the price of the thumb.
+  //
+  // So: no thumb, and almost no pitch. A drawn packet should follow the pads,
+  // not swing about them.
+  fingerDraw: {
+    tips: { index: 0.34, middle: 0.34, ring: 0.32 },
+    pitchFrom: ['index', 'middle'],
+    pitchGain: 0.08,
+    pressure: { index: 1, middle: 1, ring: 0.8, pinky: 0.5, thumb: 0.2 },
+  },
   // Charlier pivot: the packet rides the INDEX fingertip, and extending the
   // finger swings it — the high pitch gain converts the index's curl change
   // into the packet's up-and-over rotation (one-handed cuts).
@@ -207,9 +225,15 @@ export function applyGripPressure(pose, type, p) {
 
 export const DIST_COUPLING = 0.75
 
+// How far a knuckle may ABDUCT off its pose splay to bring a target into reach.
+// Real fingers spread maybe 20°; past that the hand reads as a splayed claw and
+// the four fingers start crossing each other.
+export const SPLAY_LIMIT = 0.35
+
 const _inv = new THREE.Quaternion()
 const _kq = new THREE.Quaternion()
 const _t = new THREE.Vector3()
+const _pre = new THREE.Vector3()
 
 // Map a WORLD point into a finger's knuckle-local frame for a pose/side.
 export function worldToKnuckle(pose, side, name, world, out) {
@@ -225,12 +249,75 @@ export function worldToKnuckle(pose, side, name, world, out) {
 
 const clampJoint = (a) => Math.min(JOINT_LIMITS.max, Math.max(JOINT_LIMITS.min, a))
 
+// A world point in a finger's PRE-SPLAY knuckle frame: everything
+// worldToKnuckle does except the final knuckle rotation.
+function worldToPreSplay(pose, side, name, world, out) {
+  const spec = FINGERS[name]
+  out.copy(world).sub(pose.wrist.pos)
+  if (side === 'left') out.x = -out.x
+  out.multiplyScalar(1 / HAND_SCALE)
+  out.applyQuaternion(_inv.copy(pose.wrist.quat).invert())
+  return out.sub(_t.set(spec.base[0], spec.base[1], spec.base[2]))
+}
+
+// --- Splay solve -------------------------------------------------------------
+// Curls are pure local-X rotations, so a finger's reachable set is the PLANE
+// x = 0 of its post-splay knuckle frame — the `planeError` solveFingerTo
+// reports is the part of a target that no amount of curling can ever reach.
+// Splay is the missing degree of freedom, and for a non-thumb finger the
+// knuckle rotation is a single yaw about local Y (knuckleEuler), so the exact
+// yaw that swings a target INTO that plane is a closed form, not a search:
+//
+//   the post-splay x of a target t (in the pre-splay knuckle frame) is
+//       x_local = t.x·cos S − t.z·sin S
+//   which is zero at  S = atan2(t.x, t.z).
+//
+// Writing that back as pose.splay[name] (an ADDITIVE yaw over the preset's own
+// spec.splay·spread — the units knuckleEuler and applyHandPose both already
+// read) makes the target reachable and keeps FK, the rig and this solver in
+// agreement. Clamped to SPLAY_LIMIT: an anatomically silly yaw is worse than a
+// small residual.
+//
+// The thumb is deliberately excluded. Its knuckle rotation is a full XYZ Euler
+// (THUMB_BASE_ROT + opposition), so its yaw is not the last rotation in the
+// chain and this closed form does not apply; `solveThumbTo` already searches
+// the opposition that swings ITS plane onto the target.
+export function solveSplayFor(pose, side, name, targetWorld) {
+  if (name === 'thumb') return 0
+  const spec = FINGERS[name]
+  worldToPreSplay(pose, side, name, targetWorld, _pre)
+  const want = Math.atan2(_pre.x, _pre.z)
+  const base = spec.splay * pose.spread
+  let extra = want - base
+  // Wrap into (-PI, PI] before clamping so a target BEHIND the knuckle (z < 0,
+  // where atan2 flips sign) doesn't ask for a 300° yaw.
+  extra = Math.atan2(Math.sin(extra), Math.cos(extra))
+  return Math.min(SPLAY_LIMIT, Math.max(-SPLAY_LIMIT, extra))
+}
+
 // Solve joint angles [a0,a1,a2] so `name`'s tip lands on targetWorld (as close
-// as curls allow). Returns { angles, error, planeError }. Pure + deterministic:
-// fixed 24 Gauss–Newton iterations from the pose's current curl.
-export function solveFingerTo(pose, side, name, targetWorld) {
+// as curls allow). Returns { angles, splay, error, planeError }. Pure +
+// deterministic: a closed-form splay (see solveSplayFor) that brings the target
+// into the finger's curl plane, then fixed 24 Gauss–Newton iterations from the
+// pose's current curl inside it.
+//
+// `splay` is OPT-IN and defaults OFF. It is an ADDITIVE knuckle yaw, and a
+// caller that asks for it must write the returned value into pose.splay[name]
+// for FK to reproduce the solve — poseWithContacts does, under its own `splay`
+// option. Off by default because it MOVES EVERY EXISTING SOLVE: a lesson that
+// iterated a wrist height against the old curl-only solver (overhand's
+// `recvWristFor` is the live example) re-converges somewhere else, and its
+// mid-stroke interpolated poses are not re-resolved. Turn it on per grip, and
+// re-measure that grip's penetration when you do.
+export function solveFingerTo(pose, side, name, targetWorld, { splay = false } = {}) {
   const spec = FINGERS[name]
   const [L0, L1, L2] = spec.len
+  let solvedSplay = pose.splay?.[name] ?? 0
+  if (splay && name !== 'thumb') {
+    solvedSplay = solveSplayFor(pose, side, name, targetWorld)
+    // Solve the curl inside the plane this yaw actually produces.
+    pose = { ...pose, splay: { ...(pose.splay ?? {}), [name]: solvedSplay } }
+  }
   const v = worldToKnuckle(pose, side, name, targetWorld, new THREE.Vector3())
   const ty = v.y
   const tz = v.z
@@ -269,6 +356,7 @@ export function solveFingerTo(pose, side, name, targetWorld) {
   const angles = [a0, a1, r * a1]
   return {
     angles,
+    splay: solvedSplay,
     error: Math.hypot(ty - y, tz - z) * HAND_SCALE,
     planeError: Math.abs(v.x) * HAND_SCALE,
   }

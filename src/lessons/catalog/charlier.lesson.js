@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { stackLayout, faceQuat } from '../engine/layouts'
 import {
+  packetGrip,
   poseWithContacts,
   resolvePenetration,
   surfaceContact,
@@ -450,11 +451,81 @@ export const charlierLesson = {
     const restWrist = (x, top, z) => wristFor('deckRest', x, top, z, DECK_REST_DROP)
     const overWrist = (x, top, z) => wristFor('deckApproach', x, top, z, DECK_REST_DROP)
     const GRIP_PRESSURE = 0.2
-    const SQUEEZE_AIR = DECK_REST_DROP * 0.14 * GRIP_PRESSURE
-    const holdWrist = (x, top, z) => {
-      const a = restWrist(x, top, z)
-      return [a[0], a[1] + SQUEEZE_AIR, a[2]]
+
+    // --- The two CARRY holds: a real grip, not a hand resting near the deck ---
+    // `deckRest` is a PRESET, and `DECK_REST_DROP` only guarantees that the
+    // pose's LOWEST finger surface is tangent on the top card. That is one pad
+    // on the cards and four in the air, which is exactly what the carry beats
+    // measured: over `lift` and `lower` the thumb sat 1.30 from the deck it was
+    // supposedly holding, the pinky 0.39, the index 0.16, and only the middle
+    // finger ever touched (7% of gripping fingertips in contact, median gap
+    // 0.168). A drop that clears the deck is not a grip — it is a hover with a
+    // floor under it.
+    //
+    // `packetGrip` is the shared solved straddle the riffle and faro carry with:
+    // thumb on the pile's far long edge, the four pads arching over its centre
+    // line onto the near one, every target a point on a REAL card surface and
+    // every wrist offset read off the rig. Solve it once per station.
+    //
+    // …with one correction, for the one pad that is still off after it. The
+    // thumb keeps a real reservation inside `tableGrip` — 1.2x its measured
+    // squeeze travel — because on the riffle's carries a tightening thumb
+    // drives into the half still sitting at the table centre. There is no
+    // neighbouring half here, and measured on THIS grip the pressure curl moves
+    // the thumb tip AWAY from the edge it holds (x 0.476 → 0.488), so the
+    // reservation is air that is never spent: 0.040 static, 0.055 with the
+    // squeeze on, while every other pad sits inside 0.018. Re-solve the thumb
+    // onto the edge itself and keep `resolvePenetration` as the guard.
+    const deckColumn = (x, y, z) => {
+      const cards = [0, 0.5, 1].map((f) => cardAt(y + DECK_H * f, x, z))
+      // Down to the felt: a deck held in the air is still a solid column as far
+      // as the thumb is concerned, and its distal capsule hangs below its pad.
+      for (let h = -CARD_GAP * 4; y + h > 0.012; h -= CARD_GAP * 4) cards.push(cardAt(y + h, x, z))
+      return cards
     }
+    // HOW FAR OFF THE THUMB CAN BE SEATED IS SET BY ITS KNUCKLE, NOT ITS PAD,
+    // and this is why the reservation looked like a free 0.040 and is not.
+    // Swept on this grip: at any pad clearance under 0.030 the tip lands on the
+    // edge (0.009-0.015 off it) but the thumb's IP joint — the far end of the
+    // fat middle phalange, radius 0.187 unscaled — sinks 0.007 into the cards,
+    // and `resolvePenetration` answers by STRAIGHTENING the whole thumb, which
+    // throws the tip 0.50 away and off the deck's end entirely: worse than the
+    // hover it was meant to cure. Only at 0.030+ is the thumb strictly clear,
+    // and that is exactly the standoff that was hovering.
+    //
+    // So take the documented trade instead of pretending it is not there: a
+    // fingertip that is really ON a card reads as a small overlap to a rigid
+    // capsule model, because flesh compresses and capsules do not. Aim the PAD
+    // at the edge itself (clearance 0) and let the KNUCKLE graze — bounded by a
+    // sixth of the thumb's own pad radius, so the allowance follows the rig —
+    // with `resolvePenetration` still the guard that nothing goes DEEPER than
+    // that. Note the tolerance is doing the opposite of its usual job here: it
+    // is a deliberate, measured graze budget, not the accidental one the
+    // contacts.js note warns about. Measured: pad gap 0.009 solved / 0.020 with
+    // the squeeze on (inside the 0.025 contact band), knuckle graze 0.012,
+    // against a 0.038 budget whose binding case is the `fall` index at 0.036.
+    const THUMB_GRAZE = FINGERS.thumb.rad[2] * HAND_SCALE * 0.165
+    const deckGrip = (x, y, z) => {
+      const g = packetGrip({ centerX: x, centerZ: z, baseY: y, deckH: DECK_H, squeeze: GRIP_PRESSURE })
+      // Same face, same `u` as tableGrip's own thumb target (the pile's far long
+      // edge, half way up the stack, on its inner third) — only the standoff
+      // differs.
+      const pose = poseWithContacts(g.pose, 'right', {}, {
+        thumb: surfaceContact(cardAt(y + DECK_H * 0.5, x, z), { finger: 'thumb', face: '+x', u: -0.3 }),
+      })
+      resolvePenetration(pose, 'right', deckColumn(x, y, z), {
+        fingers: ['thumb'],
+        clearance: THUMB_GRAZE,
+      })
+      return { pose, anchor: g.anchor }
+    }
+    // TRANSLATE a solved grip to its far station; never re-solve there. A
+    // gripped deck rides the hand's contact frame rigidly, so moving hand and
+    // deck together by the same vector keeps the captured card→frame offset
+    // exact — while a second solve would return different curls and walk the
+    // deck straight through the pads that are holding it (the same trap
+    // tableGrip's `tilt` note describes).
+    const gripAt = (g, dx, dy, dz) => [g.anchor[0] + dx, g.anchor[1] + dy, g.anchor[2] + dz]
     // Clear of the deck's column by more than a card: the only place the hand is
     // allowed to turn over. A grip is NEVER held across that turn — a fingertip
     // frame carries the deck rigidly, so a 180° wrist turn would stand the deck
@@ -463,6 +534,13 @@ export const charlierLesson = {
     const cradleAt = (x, y, z) => [W[0] + (x - DX), W[1] + (y - DY), W[2] + (z - DZ)]
     const HOVER_Y = 0.02 + CARD_W * 0.35
     const NOTE_Y = DY + CARD_H * 0.75
+    // The two decks this hand ever carries, and the stations each is carried to.
+    const TABLE_GRIP = deckGrip(0, 0.02, 0) // the squared deck on the felt
+    const STACK_GRIP = deckGrip(STACK.x, STACK.y, STACK.z) // the finished cut
+    const LIFTED = gripAt(TABLE_GRIP, DX, DY - 0.02, DZ) // …up at working height
+    const ASIDE = gripAt(TABLE_GRIP, SIDE_X, DY - 0.02, DZ) // …and out of its column
+    const RETAKE = gripAt(STACK_GRIP, SIDE_X - STACK.x, 0, 0) // coming back from the side
+    const HOVER = gripAt(STACK_GRIP, -STACK.x, HOVER_Y - STACK.y, DZ - STACK.z) // over the felt
 
     return [
       {
@@ -476,7 +554,23 @@ export const charlierLesson = {
             // carried-forward `relaxed` default, which at this rig size opens
             // the lesson with a whole fist inside the deck.
             { at: 0, pose: 'deckApproach', anchor: overWrist(CARD_W * 2.4, TABLE_TOP, -CARD_H * 0.2) },
-            { at: 1, pose: 'deckRest', anchor: holdWrist(0, TABLE_TOP, 0), ease: 'easeOutCubic' },
+            // CLOSE THE FINGERS IN THE AIR, THEN DESCEND. A straight lerp from
+            // an open `deckApproach` to a curled grip travels through every
+            // pose in between, and those are not poses anything solved: the
+            // middle pad swung 0.046 through the top card on the way in.
+            // Finishing the morph a half-card up and coming down vertically in
+            // the SOLVED pose means the pads meet the top face from directly
+            // above, where they are already tangent.
+            {
+              at: 0.55,
+              pose: TABLE_GRIP.pose,
+              anchor: [TABLE_GRIP.anchor[0], TABLE_GRIP.anchor[1] + CARD_W * 0.5, TABLE_GRIP.anchor[2]],
+              ease: 'easeInOutCubic',
+            },
+            // Arrive IN the grip, not above it: this frame is where the `lift`
+            // hold captures its card→frame offsets, so whatever the hand is
+            // doing here is what "holding the deck" means for the whole carry.
+            { at: 1, pose: TABLE_GRIP.pose, anchor: TABLE_GRIP.anchor, ease: 'easeOutCubic' },
           ],
         },
       },
@@ -493,7 +587,7 @@ export const charlierLesson = {
         // really does mean clear throughout.
         grip: { right: { cards: 'all', frame: 'packet', pressure: [{ at: 0, v: GRIP_PRESSURE }, { at: 1, v: GRIP_PRESSURE }] } },
         hands: {
-          right: [{ at: 1, pose: 'deckRest', anchor: holdWrist(DX, DY + DECK_H, DZ) }],
+          right: [{ at: 1, pose: TABLE_GRIP.pose, anchor: LIFTED }],
         },
       },
       {
@@ -504,8 +598,10 @@ export const charlierLesson = {
         camera: 'dealerPOV',
         hands: {
           right: [
-            // 1) out of the deck's column, still palm-down,
-            { at: 0.3, pose: 'deckRest', anchor: holdWrist(SIDE_X, DY + DECK_H, DZ) },
+            // 1) out of the deck's column, still palm-down and still in the
+            //    grip's own pose — the pads slide out along the top card's own
+            //    plane and the thumb leaves the far edge it was holding.
+            { at: 0.3, pose: TABLE_GRIP.pose, anchor: ASIDE },
             // 2) turn palm-up out there, at the cradle's own height,
             { at: 0.68, pose: holdPose, anchor: cradleAt(SIDE_X, DY, DZ), ease: 'easeInOutCubic' },
             // 3) slide in LAST, horizontally: the pads travel in under the
@@ -630,8 +726,11 @@ export const charlierLesson = {
             // the stack it is carrying (measured 0.15 through the thumb).
             { at: 0.22, pose: catchPose, anchor: cradleAt(DX, DY - CARD_H * 0.7, DZ) },
             { at: 0.44, pose: catchPose, anchor: cradleAt(SIDE_X, DY - CARD_H * 0.7, DZ) },
-            { at: 0.72, pose: 'deckRest', anchor: holdWrist(SIDE_X, STACK.y + DECK_H, STACK.z), ease: 'easeInOutCubic' },
-            { at: 1, pose: 'deckRest', anchor: holdWrist(STACK.x, STACK.y + DECK_H, STACK.z), ease: 'easeOutCubic' },
+            { at: 0.72, pose: STACK_GRIP.pose, anchor: RETAKE, ease: 'easeInOutCubic' },
+            // …and close IN to the grip along the stack's own top plane, so the
+            // four pads arrive tangent and the thumb meets the far edge
+            // head-on. This frame is the `lower` hold's capture.
+            { at: 1, pose: STACK_GRIP.pose, anchor: STACK_GRIP.anchor, ease: 'easeOutCubic' },
           ],
         },
       },
@@ -646,7 +745,7 @@ export const charlierLesson = {
         camera: 'overview',
         grip: { right: { cards: 'all', frame: 'packet', pressure: [{ at: 0, v: GRIP_PRESSURE }, { at: 1, v: GRIP_PRESSURE }] } },
         hands: {
-          right: [{ at: 1, pose: 'deckRest', anchor: holdWrist(0, HOVER_Y + DECK_H, DZ) }],
+          right: [{ at: 1, pose: STACK_GRIP.pose, anchor: HOVER }],
         },
       },
       {
@@ -662,8 +761,8 @@ export const charlierLesson = {
         to: (dk) => stackLayout(dk),
         hands: {
           right: [
-            { at: 0, pose: 'deckRest', anchor: holdWrist(0, HOVER_Y + DECK_H, DZ) },
-            { at: 0.36, pose: 'deckRest', anchor: restWrist(CARD_W * 1.6, HOVER_Y + DECK_H, DZ), ease: 'easeOutCubic' },
+            { at: 0, pose: STACK_GRIP.pose, anchor: HOVER },
+            { at: 0.36, pose: STACK_GRIP.pose, anchor: [HOVER[0] + CARD_W * 1.6, HOVER[1], HOVER[2]], ease: 'easeOutCubic' },
             { at: 1, pose: 'deckApproach', anchor: overWrist(CARD_W * 1.9, TABLE_TOP, -CARD_H * 0.15), ease: 'easeInOutCubic' },
           ],
         },

@@ -70,7 +70,20 @@ const JOINT_SUM = 1 + 0.7 + 0.45
 // A pad sits roughly half a chain from its knuckle in these open grips, and
 // arc = radius x angle.
 const swingOf = (curl) => chainLen('middle') * 0.5 * curl * JOINT_SUM
-const PAD_AIR = swingOf(IDLE_CURL)
+// HALVED, to the same number contacts.js uses. `swingOf` assumes a pad sits
+// half a chain from its knuckle, which is true of a curled grip and not of the
+// nearly straight hand this lesson opens with — and the difference is paid for
+// twice, because it is added on top of MOTION_AIR and the solved LIFT. The idle
+// overlay is instead DAMPED on the hand that does the gripping (LH_IDLE below),
+// which is what makes this small a margin honest.
+const PAD_AIR = 0.0015 * HAND_SCALE
+// How much of the global idle-breathing overlay the STRIPPING hand runs at. The
+// overlay staggers its phase per finger, so on a hand carrying a welded block
+// the pads and the contact frame the block rides drift apart by more than the
+// band the suite calls contact; a margin big enough to absorb that is a margin
+// that never touches. Applied to every left keyframe so the overlay stays
+// continuous — a scale that changed between segments would pop the block.
+const LH_IDLE = 0.45
 // A `fingerMotion` overlay is a second, larger swing on top of that, so any
 // pose that carries one is authored this much further off its surface.
 const MOTION_AMP = 0.03
@@ -92,24 +105,10 @@ const atOrigin = (pose) => ({
 
 // --- How deep a hand hangs, measured over its whole surface -------------------
 // `rigMetrics().drop` samples JOINTS only and therefore under-reads a slanted
-// phalange by ~0.02 — which is most of this lesson's air. Sample along every
-// capsule instead, exactly as handPoses' own DECK_*_DROP measurement does.
+// phalange by ~0.02. Sample along every capsule instead, exactly as handPoses'
+// own DECK_*_DROP measurement does.
 const _j = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()]
 const _p = new THREE.Vector3()
-const floorOf = (pose, names = FINGER_NAMES) => {
-  let lo = Infinity
-  for (const name of names) {
-    fingerJointsWorld(pose, 'right', name, _j)
-    for (let i = 0; i < 3; i++) {
-      const r = FINGERS[name].rad[i] * HAND_SCALE
-      for (let k = 0; k <= 8; k++) {
-        _p.copy(_j[i]).lerp(_j[i + 1], k / 8)
-        lo = Math.min(lo, _p.y - r)
-      }
-    }
-  }
-  return -lo
-}
 // How deep a hand's own geometry sinks into a SLAB of cards it is carrying —
 // the block modelled as one box, which it is (52 identical footprints stacked
 // 0.004 apart). Same depth convention as resolvePenetration: 0 = tangent.
@@ -141,11 +140,21 @@ const blendPose = (a, b, f) => {
   for (const name of FINGER_NAMES) p.fingers[name] = a.fingers[name].map((v, i) => v + (b.fingers[name][i] - v) * f)
   return p
 }
-const oneFinger = (name, c) => {
+// ...and the same for the PAD alone: how far this finger's fingertip SURFACE
+// hangs below the wrist. This is the number that had to replace the one above,
+// and the difference between them is exactly what the suite was measuring as a
+// hover. `floorOf` is the deepest point of the WHOLE finger, which on a table
+// grip is usually a knuckle or a mid-phalange, not the pad — so levelling four
+// fingers by it presents four PADS at four different heights and only the
+// luckiest of them is on the card. Measured on this lesson before the change:
+// middle 0.086 off the block it was holding, index 0.211, ring 0.170, pinky
+// 0.454. Levelling the pads instead is what puts all four on the cards.
+const _pt = new THREE.Vector3()
+const oneTip = (name, c) => {
   const p = getHandPose('deckRest', 'right')
   p.wrist.pos.set(0, 0, 0)
   p.fingers[name] = name === 'thumb' ? thumbChain(c) : chain(c)
-  return floorOf(p, [name])
+  return -(fingertipWorld(p, 'right', name, _pt).y - FINGERS[name].rad[2] * HAND_SCALE)
 }
 // LEVEL THE PADS, and let each finger find its own curl to do it.
 //
@@ -167,7 +176,7 @@ for (const name of FINGER_NAMES) {
   let best = { c: 0, d: 0 }
   for (let i = 0; i <= 40; i++) {
     const c = (1.5 * i) / 40
-    const d = oneFinger(name, c)
+    const d = oneTip(name, c)
     if (d > best.d) best = { c, d }
   }
   DEEPEST[name] = best
@@ -179,7 +188,7 @@ const curlForDepth = (name, d) => {
   let hi = peak.c
   for (let i = 0; i < 24; i++) {
     const mid = (lo + hi) / 2
-    if (oneFinger(name, mid) < d) lo = mid
+    if (oneTip(name, mid) < d) lo = mid
     else hi = mid
   }
   return (lo + hi) / 2
@@ -187,9 +196,18 @@ const curlForDepth = (name, d) => {
 // The hand at "closedness" c: the MIDDLE finger takes that curl and sets the
 // plane; every other finger curls until its own pad reaches the same plane.
 const _shaped = new Map()
+// The pads that CAN share a plane are the index, middle and ring; the pinky is
+// 0.72 long against the middle's 1.02 and its own deepest pad position is 0.37
+// shallower than the middle's at a full close, so asking it to join simply pins
+// it. Cap the plane at the shallowest of the three instead — otherwise the
+// middle, which reaches deepest, sets a plane the other two cannot make, and at
+// the DRAW end of the stroke (where every finger is already at its own peak
+// curl) they finish 0.10-0.14 above the block they are carrying. Measured, that
+// one effect was most of this lesson's remaining gap: middle 0.065 versus index
+// 0.185 and ring 0.145.
 const shapedAt = (c) => {
   if (_shaped.has(c)) return _shaped.get(c)
-  const d = oneFinger('middle', c)
+  const d = oneTip('middle', c)
   const p = getHandPose('deckRest', 'right')
   p.fingers.thumb = thumbChain(c)
   p.fingers.middle = chain(c)
@@ -200,12 +218,21 @@ const shapedAt = (c) => {
 // How far the whole hand hangs below its wrist at that closedness — the same
 // measurement DECK_REST_DROP makes, taken per curl, so a wrist placed at
 // (card top + this) leaves the deepest SURFACE exactly tangent on the card.
+// How far the PADS hang below the wrist at that closedness — so a wrist placed
+// at (card top + this) leaves the four fingertips exactly tangent on the card.
+//
+// This used to be `floorOf`, the deepest surface of the whole hand, and on this
+// grip that is a knuckle: measuring by it lifted the wrist far enough for the
+// knuckle to clear and left every pad hanging above the deck. The knuckles and
+// the thumb are not forgotten — they are handed to `resolvePenetration` in
+// `layOn`, which relaxes the individual fingers that actually reach into the
+// stack instead of lifting the whole hand out of contact to protect them.
 const _dropAt = new Map()
 const dropAt = (c) => {
   if (!_dropAt.has(c)) {
     const p = shapedAt(c)
     p.wrist.pos.set(0, 0, 0)
-    _dropAt.set(c, floorOf(p))
+    _dropAt.set(c, Math.max(...FOUR.map((n) => oneTip(n, p.fingers[n][0]))))
   }
   return _dropAt.get(c)
 }
@@ -453,13 +480,21 @@ export const stripLesson = {
       // shortfall is linear in L: measure it at L = 0, then build the pass again
       // with that much air and the pads ride the block for the whole draw.
       const pass = (L) => {
-        const grip = layOn('left', deckTop, C_GRIP, LH_U, { lift: MOTION_AIR + L, cards: deckSpan(held) })
+        // NO MOTION_AIR here. The `tighten` overlay that this pose carries peaks
+        // in the MIDDLE of the segment that arrives at it (sin²(πt)), and at that
+        // instant the hand is still half way down from `hover` — a whole
+        // TRAVEL_LIFT above the deck. Reserving for it at the pose's own station
+        // reserves it where it is never needed, and that reservation lands
+        // squarely on the beat the suite measures: this is the pose the grip
+        // captures against, so every unit of air here is a unit of gap for the
+        // whole strip.
+        const grip = layOn('left', deckTop, C_GRIP, LH_U, { lift: L, cards: deckSpan(held) })
         const seat = seatIn(grip, 'left', deckTop)
         // The delivery: a closed hand set over the pile at the height its own
         // deepest surface can go, then slid in plan until it is carrying the
         // block there. Nothing about the landing spot is typed into the hand,
         // and nothing about the hand is typed into the pile.
-        const drawn = layOn('left', landed, C_DRAW, DRAW_U, { lift: MOTION_AIR + PAD_AIR })
+        const drawn = layOn('left', landed, C_DRAW, DRAW_U, { lift: PAD_AIR })
         const fall = carryOver(
           drawn,
           'left',
@@ -485,6 +520,21 @@ export const stripLesson = {
         // The block is a slab (n-1)*CARD_GAP tall whose TOP card is where the
         // grip frame carries it, so the whole thing is one box to test against.
         const half = ((n - 1) * CARD_GAP + CARD_T) / 2
+        // Relax whatever of the hand is inside the block it is holding, against
+        // the block AT THE PLACE THE GRIP FRAME CARRIES IT — not at its layout
+        // position, which it left the instant the weld captured.
+        for (const st of [grip, drawn]) {
+          const t = carriedTo(st, 'left', seat)
+          resolvePenetration(
+            st,
+            'left',
+            Array.from({ length: 3 }, (_, i) => ({
+              pos: [t.x, t.y - (i * (n - 1) * CARD_GAP) / 2, t.z],
+              quat: faceQuat(false),
+            })),
+            { clearance: 0 },
+          )
+        }
         let short = 0
         const stations = [peeled, carried, drawn]
         for (let i = 0; i < stations.length - 1; i++) {
@@ -499,10 +549,18 @@ export const stripLesson = {
       // `carryOver` only nudges the height when the block would otherwise land
       // UNDER the pile, so the relation is piecewise linear rather than linear —
       // repeat until the pads ride clear (three rounds is always enough).
-      let LIFT = 0
+      // LIFT IS A LAST RESORT, and it used to be the first one. `short` is the
+      // deepest any part of the hand reaches into the block it is carrying, and
+      // it is ONE finger: the middle, 0.055 in at the draw, because the middle
+      // is the longest and the wrist is placed by its own pad. Answering that by
+      // raising the WHOLE hand charges all five pads for one finger's overreach
+      // — 0.06 of air on the beat the grip captures against, i.e. 0.06 of gap
+      // for the whole strip. Relax the offending finger against the block where
+      // the frame actually carries it first, and only lift for what is left.
       let out = pass(0)
-      for (let i = 0; i < 3 && out.short > 0; i++) {
-        LIFT += out.short + PAD_AIR
+      let LIFT = 0
+      for (let i = 0; i < 3 && out.short > CARD_T; i++) {
+        LIFT += out.short - CARD_T
         out = pass(LIFT)
       }
       const { grip, drawn, peeled, carried } = out
@@ -528,7 +586,13 @@ export const stripLesson = {
         hands: {
           left: [
             { at: 0.45, pose: hover },
-            { at: 1, pose: grip, ease: 'easeOutCubic', fingerMotion: [{ fingers: FOUR, type: 'tighten', amp: MOTION_AMP }] },
+            // NOT easeOutCubic. A `tighten` overlay peaks in the middle of its own
+            // segment, and easeOutCubic has the hand 96% of the way down by then —
+            // so the squeeze fires with almost nothing left to give and presses the
+            // pads into the deck (measured 0.007 in). On the default ease the hand
+            // is half way down when it peaks, which is both clear and what closing
+            // on a block looks like.
+            { at: 1, pose: grip, fingerMotion: [{ fingers: FOUR, type: 'tighten', amp: MOTION_AMP }] },
           ],
           right: [{ at: 1, pose: rhEdge(held) }],
         },
@@ -657,6 +721,9 @@ export const stripLesson = {
         ],
       },
     })
+    for (const st of steps) {
+      for (const kf of st.hands?.left ?? []) kf.idleScale = LH_IDLE
+    }
     return steps
   },
 }
