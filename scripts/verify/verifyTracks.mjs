@@ -696,6 +696,42 @@ for (const lesson of LESSONS) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Regression: a bowed card is a circular arc, and the arc maths must work for
+// BOTH bow directions. `surfaceExtents` takes theta = atan2(local.y, R − z);
+// on the surface those are R·sinθ and R·cosθ, so for a SAGGING card (bend < 0,
+// R < 0) both arguments flip sign and atan2 returns θ ± π — a point sitting
+// exactly on the card reported up to 0.87 OUTSIDE it. `u` is what cardDepth,
+// resolvePenetration and the contact metric above all read, so every one of
+// them would have been wrong for the first lesson that sagged a card. Nothing
+// in the catalog does today, which is exactly why this needs a test: the bug
+// was invisible and would have surfaced as an inexplicable grip failure.
+//
+// Test: place points ON the surface via the bend shader's own mapping and
+// require the extents to agree for +bend and −bend.
+{
+  const _p = new THREE.Vector3()
+  for (const mag of [1.2, 2.4, 3.6]) {
+    for (const y of [0, 0.15, 0.3, CARD_H / 2]) {
+      const ext = {}
+      for (const bend of [mag, -mag]) {
+        const ang = y * bend
+        _p.set(0, Math.sin(ang) / bend, (1 - Math.cos(ang)) / bend)
+        const e = cardSurfaceExtents(_p, bend)
+        ext[bend > 0 ? 'arch' : 'sag'] = { u: e.u, n: e.n }
+      }
+      check(
+        Math.abs(ext.sag.n + CARD_T / 2) < 1e-9,
+        `bend-sign: sag bend ${mag} at y=${y} is ${ext.sag.n.toFixed(4)} off its own shell (want ${(-CARD_T / 2).toFixed(4)})`,
+      )
+      check(
+        Math.abs(ext.sag.u - ext.arch.u) < 1e-9,
+        `bend-sign: sag bend ${mag} at y=${y} reports arc extent ${ext.sag.u.toFixed(4)} vs arch's ${ext.arch.u.toFixed(4)}`,
+      )
+    }
+  }
+}
+
 if (failures > 0) {
   console.error(`\nverifyTracks: ${failures} FAILED of ${checks} checks`)
   process.exit(1)

@@ -169,7 +169,15 @@ function surfaceExtents(local, bend) {
   }
   const R = 1 / bend
   // Angle of `local` about the arc's centre, measured the same way as θ above.
-  const theta = Math.atan2(local.y, R - local.z)
+  // On the surface local.y = R·sinθ and (R − local.z) = R·cosθ, so for R < 0
+  // BOTH arguments flip sign and atan2 returns θ ± π — a point sitting exactly
+  // on a SAGGING card reported up to 0.87 outside it, and `u` is what
+  // cardDepth/resolvePenetration and the harness's contact metric read. Nothing
+  // in the catalog bends a card the other way today, so this was latent; it
+  // would have silently corrupted contact and penetration for the first lesson
+  // that did. Normalise by the sign of R so θ is recovered for either bow.
+  const s = Math.sign(R)
+  const theta = Math.atan2(local.y * s, (R - local.z) * s)
   const halfTheta = HALF[1] * Math.abs(bend)
   // Along the surface: arc length past the card's own end (0 while inside).
   _ext.u = (Math.abs(theta) - halfTheta) * Math.abs(R)
