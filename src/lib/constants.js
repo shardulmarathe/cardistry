@@ -27,6 +27,24 @@ export const CAMERA_PRESETS = {
   dealerPOV: { position: [0, 3.4, 5.4], target: [0, 0.35, -0.2], fov: 38 },
   closeUp: { position: [0, 2.5, 3.6], target: [0, 0.3, 0], fov: 34 },
   topDown: { position: [0, 6.2, 0.4], target: [0, 0, 0], fov: 40 },
+  // Low and tight on the table center — for the beat where cards interlace
+  // (riffle weave, faro interlace). Sits just inside ORBIT.minDistance.
+  weave: { position: [0, 1.9, 2.5], target: [0, 0.25, 0], fov: 32 },
+  // Off-axis three-quarter view: gives a one-handed cut (charlier) depth that
+  // the head-on presets flatten, and breaks the symmetry of a long lesson.
+  overShoulder: { position: [1.7, 2.6, 3.4], target: [0.1, 0.3, 0], fov: 34 },
+  // A one-handed cut happens IN THE AIR, not on the felt: charlier's packets
+  // sit at y≈0.85 while every other preset aims at y≈0.3, which pushed the cut
+  // into the top of the frame with half the shot empty table. Aims at the cut
+  // itself, from slightly left so the hand reads beside the deck rather than
+  // behind it. Stays ABOVE the cut: dropping the camera under it frames the
+  // deck's unlit underside, which renders near-black under the overhead key.
+  handCut: { position: [-1.1, 2.75, 3.0], target: [0.02, 0.78, 0.1], fov: 32 },
+  // Two-handed work held IN THE AIR (hindu, strip). At HAND_SCALE 13 a palm-up
+  // cradle cannot bring a pile below about wrist + one cup depth, so the action
+  // genuinely lives near y≈1 — `dealerPOV` aims at 0.35 and leaves it riding
+  // the top of the frame over empty felt.
+  handsHigh: { position: [0, 3.1, 3.6], target: [0, 0.95, 0.1], fov: 35 },
 }
 
 // OrbitControls constraints so users never go under the table or behind the cards.

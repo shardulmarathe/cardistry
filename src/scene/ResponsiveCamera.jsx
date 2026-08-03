@@ -1,5 +1,6 @@
 import { useLayoutEffect } from 'react'
 import { useThree } from '@react-three/fiber'
+import { useAppStore } from '../state/useAppStore'
 
 // A perspective camera's `fov` is the *vertical* field of view, so on a narrow
 // portrait viewport the horizontal field collapses and the wide card table gets
@@ -28,11 +29,20 @@ export default function ResponsiveCamera() {
   const camera = useThree((s) => s.camera)
   const width = useThree((s) => s.size.width)
   const height = useThree((s) => s.size.height)
+  const uiInset = useAppStore((s) => s.uiInset)
 
   useLayoutEffect(() => {
     if (!camera.isPerspectiveCamera || height === 0) return
     applyFov(camera, fovForAspect(width / height))
-  }, [camera, width, height])
+    // Recentre on the strip of viewport the docked UI leaves visible. Rendering
+    // the window (0, inset)-(w, inset+h) out of a virtual frame `inset` taller
+    // puts the scene's centre at (h - inset)/2 — the middle of what you can
+    // actually see — instead of behind the transport panel.
+    const inset = Math.max(0, Math.min(uiInset, height * 0.6))
+    if (inset > 1) camera.setViewOffset(width, height + inset, 0, inset, width, height)
+    else camera.clearViewOffset()
+    camera.updateProjectionMatrix()
+  }, [camera, width, height, uiInset])
 
   return null
 }

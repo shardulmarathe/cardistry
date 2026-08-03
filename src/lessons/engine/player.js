@@ -12,6 +12,12 @@ export const usePlayer = create((set, get) => ({
   playing: false,
   speed: 1,
   direction: 1,
+  // Bumped by every SEEK. LessonRunner integrates time in its own ref while
+  // playing and only reads globalMs when paused, so a seek that also leaves the
+  // player playing (restart) was silently ignored — the ▶ button at the end of
+  // a lesson re-clamped to the end and did nothing. The runner watches this
+  // counter and adopts globalMs whenever it changes, in either play state.
+  seekNonce: 0,
 
   loadTrack: (lessonId, track) =>
     set({
@@ -30,7 +36,8 @@ export const usePlayer = create((set, get) => ({
   play: () => set({ playing: true, direction: 1 }),
   pause: () => set({ playing: false }),
   toggle: () => set((s) => ({ playing: !s.playing })),
-  restart: () => set({ globalMs: 0, playing: true, direction: 1 }),
+  restart: () =>
+    set((s) => ({ globalMs: 0, playing: true, direction: 1, seekNonce: s.seekNonce + 1 })),
   setSpeed: (speed) => set({ speed }),
 
   // Called by the transport slider — pauses and snaps to an absolute time.
@@ -46,25 +53,25 @@ export const usePlayer = create((set, get) => ({
         }
       }
     }
-    set({ globalMs, stepIndex, playing: false })
+    set((s) => ({ globalMs, stepIndex, playing: false, seekNonce: s.seekNonce + 1 }))
   },
 
   jumpToStep: (i) => {
     const { track } = get()
     if (!track || !track.steps[i]) return
-    set({ globalMs: track.steps[i].tStart, stepIndex: i, playing: false })
+    set((s) => ({ globalMs: track.steps[i].tStart, stepIndex: i, playing: false, seekNonce: s.seekNonce + 1 }))
   },
   stepNext: () => {
     const { track, stepIndex } = get()
     if (!track) return
     const i = Math.min(track.steps.length - 1, stepIndex + 1)
-    set({ globalMs: track.steps[i].tStart, stepIndex: i, playing: false })
+    set((s) => ({ globalMs: track.steps[i].tStart, stepIndex: i, playing: false, seekNonce: s.seekNonce + 1 }))
   },
   stepPrev: () => {
     const { track, stepIndex } = get()
     if (!track) return
     const i = Math.max(0, stepIndex - 1)
-    set({ globalMs: track.steps[i].tStart, stepIndex: i, playing: false })
+    set((s) => ({ globalMs: track.steps[i].tStart, stepIndex: i, playing: false, seekNonce: s.seekNonce + 1 }))
   },
 
   // Written by the runner (~12Hz during playback) to keep the scrubber live.

@@ -1,0 +1,233 @@
+/* Mixing overlay: the deck-order strip under the transport, plus the transport
+   toggle that opens it. Kept out of chrome.css on purpose — this is an opt-in
+   analysis layer and it should be removable in one import. */
+
+/* ---------- the transport toggle ---------- */
+.ostrip-toggle {
+  appearance: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid var(--glass-brd);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--bone-dim);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition:
+    color 0.2s ease,
+    border-color 0.2s ease,
+    background 0.2s ease;
+}
+.ostrip-toggle:hover {
+  color: var(--bone);
+  border-color: var(--glass-brd-strong);
+}
+.ostrip-toggle.is-on {
+  color: var(--bone);
+  border-color: var(--glass-brd-strong);
+  background: rgba(240, 198, 122, 0.1);
+}
+.ostrip-swatch {
+  width: 20px;
+  height: 8px;
+  border-radius: 999px;
+  opacity: 0.45;
+  transition: opacity 0.2s ease;
+}
+.ostrip-toggle.is-on .ostrip-swatch {
+  opacity: 1;
+}
+
+/* ---------- the panel ---------- */
+.ostrip {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(240, 198, 122, 0.16);
+}
+
+.ostrip-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.ostrip-title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+.ostrip-note {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--bone-dim);
+}
+.ostrip-tint {
+  appearance: none;
+  cursor: pointer;
+  flex: 0 0 auto;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--glass-brd);
+  background: transparent;
+  color: var(--bone-dim);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  transition:
+    color 0.2s ease,
+    border-color 0.2s ease,
+    background 0.2s ease;
+}
+.ostrip-tint:hover {
+  color: var(--bone);
+  border-color: var(--glass-brd-strong);
+}
+.ostrip-tint.is-on {
+  color: #221109;
+  border-color: transparent;
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+}
+
+/* ---------- start / now rows ---------- */
+.ostrip-rows {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 5px 9px;
+}
+.ostrip-rowlabel {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(247, 241, 230, 0.42);
+}
+.ostrip-start {
+  height: 7px;
+  border-radius: 4px;
+  opacity: 0.72;
+}
+.ostrip-now {
+  display: grid;
+  grid-template-columns: repeat(var(--cells, 52), 1fr);
+  height: 24px;
+  border-radius: 5px;
+  overflow: hidden;
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.35),
+    0 2px 10px rgba(0, 0, 0, 0.35);
+}
+/* No gap between cells: an unbroken run of the original order has to read as a
+   smooth band, so that an interleave reads as stripes by contrast. */
+.ostrip-cell {
+  display: block;
+  height: 100%;
+  transition: background-color 0.3s ease;
+}
+
+/* ---------- readouts ---------- */
+.ostrip-stats {
+  display: flex;
+  align-items: center;
+  gap: 10px 22px;
+  flex-wrap: wrap;
+}
+.ostrip-stat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.ostrip-val {
+  min-width: 3.4ch;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--bone);
+  font-variant-numeric: tabular-nums;
+}
+.ostrip-unit {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: rgba(247, 241, 230, 0.42);
+  transform: translateY(1px);
+}
+.ostrip-meter {
+  display: block;
+  width: 74px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.09);
+  overflow: hidden;
+}
+.ostrip-meter i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #31688e, #35b779, #fde725);
+  transition: width 0.3s ease;
+}
+.ostrip-cap {
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--bone-dim);
+}
+.ostrip-cap b {
+  font-weight: 600;
+  color: rgba(247, 241, 230, 0.86);
+}
+
+/* ---------- responsive ---------- */
+@media (max-width: 760px) {
+  .ostrip-toggle {
+    padding: 0 10px;
+  }
+  .ostrip-now {
+    height: 20px;
+  }
+  .ostrip-stats {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 7px;
+  }
+}
+@media (max-width: 480px) {
+  .ostrip-toggle-label {
+    display: none;
+  }
+  .ostrip-toggle {
+    gap: 0;
+    padding: 0 11px;
+  }
+}
+/* Short landscape phones: drop the "start" reference row, keep the live one. */
+@media (max-height: 480px) {
+  .ostrip-rows > :nth-child(1),
+  .ostrip-rows > :nth-child(2) {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ostrip-cell,
+  .ostrip-meter i {
+    transition: none;
+  }
+}

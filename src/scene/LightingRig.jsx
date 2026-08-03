@@ -6,11 +6,12 @@ import { COLORS } from '../lib/constants'
 export default function LightingRig() {
   return (
     <>
-      <ambientLight intensity={0.28} color="#ffd9c2" />
+      {/* Kept low on purpose: ambient fill is what flattens a spotlit table. */}
+      <ambientLight intensity={0.13} color="#ffd9c2" />
 
       <directionalLight
         position={[-3.4, 6.2, 3.2]}
-        intensity={2.3}
+        intensity={2.7}
         color="#fff2e6"
         castShadow
         shadow-mapSize-width={2048}
@@ -25,21 +26,25 @@ export default function LightingRig() {
         shadow-normalBias={0.02}
       />
 
-      {/* Overhead pooled downlight for the casino highlight on the felt. */}
+      {/* Overhead pooled downlight for the casino highlight on the felt. Hung
+          lower and narrowed from 0.5rad: at y=6.2 a 0.34rad cone lands a
+          ~2.2-unit-radius pool over the play area instead of washing the whole
+          6.5-unit table, which is what gives the felt visible falloff. */}
       <spotLight
-        position={[0.4, 7.5, 0.6]}
-        angle={0.5}
-        penumbra={0.85}
-        intensity={90}
-        distance={20}
+        position={[0.2, 6.2, 0.9]}
+        angle={0.34}
+        penumbra={0.62}
+        intensity={135}
+        distance={16}
         color="#ffe6c4"
         castShadow={false}
       />
 
-      {/* Cool rim from behind so the deck edge separates from the dark felt. */}
-      <directionalLight position={[2.6, 2.2, -4]} intensity={0.5} color="#b9c8ff" />
+      {/* Cool rim from behind, grazing, so the deck silhouette and the
+          translucent hands separate from the dark felt. */}
+      <directionalLight position={[3, 1.6, -4.2]} intensity={0.9} color="#a9beff" />
 
-      <hemisphereLight args={[COLORS.gold, COLORS.feltEdge, 0.35]} />
+      <hemisphereLight args={[COLORS.gold, COLORS.feltEdge, 0.18]} />
     </>
   )
 }

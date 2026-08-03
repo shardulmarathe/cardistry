@@ -122,29 +122,57 @@ export function buildFaceTextures(cards, maxAnisotropy = 8) {
 }
 
 // ---------------------------------------------------------------------------
-// Back — art-deco oxblood field with a gold monogram "S" medallion.
+// Back — bone-bordered art-deco card back with a gold monogram "S" medallion.
 // One shared texture for all 52 cards. The design is ~180°-symmetric (the
 // glyph "S" is itself rotationally symmetric) so it reads correctly whichever
 // way a card is turned.
+//
+// The bone border is doing the heavy lifting: the felt is oxblood, so a
+// full-bleed red back made a face-down 52-card fan read as one undifferentiated
+// mass. A light rim (like every real deck has) gives each card a crisp
+// silhouette, and edge-on it turns a face-down stack's side wall cream.
+// The field is shifted plum-ward off the felt's orange-red so back and table
+// separate by hue as well as by value.
 // ---------------------------------------------------------------------------
+
+const BACK_BORDER = 30 // bone rim width in back-canvas px (~6% of card width)
 
 function drawBack(ctx, w, h) {
   const cx = w / 2
   const cy = h / 2
+  const b = BACK_BORDER
+  const fieldR = 24
 
-  // Oxblood field.
-  const bg = ctx.createRadialGradient(cx, cy, 20, cx, cy, h * 0.62)
-  bg.addColorStop(0, '#6e1020')
-  bg.addColorStop(0.55, '#5a0d18')
-  bg.addColorStop(1, '#26050a')
-  ctx.fillStyle = bg
+  // Bone rim, full bleed. Kept a shade under COLORS.bone (#f7f1e6) so the key
+  // light lifts it into bone instead of clipping it to flat white. The mesh's
+  // rounded corners (cardGeometry RADIUS) clip this canvas, so the rim narrows
+  // at the corners exactly like a real rounded card.
+  const rim = ctx.createLinearGradient(0, 0, w, h)
+  rim.addColorStop(0, '#ded2b6')
+  rim.addColorStop(0.55, '#cdbd9b')
+  rim.addColorStop(1, '#ae9b7a')
+  ctx.fillStyle = rim
   ctx.fillRect(0, 0, w, h)
+
+  // Plum-shifted field, inset to leave the bone rim.
+  const bg = ctx.createRadialGradient(cx, cy * 0.92, 20, cx, cy, h * 0.6)
+  bg.addColorStop(0, '#93203e')
+  bg.addColorStop(0.5, '#701434')
+  bg.addColorStop(1, '#3c0a1d')
+  ctx.fillStyle = bg
+  roundRect(ctx, b, b, w - b * 2, h - b * 2, fieldR)
+  ctx.fill()
+
+  // Everything below is confined to the field so nothing bleeds into the rim.
+  ctx.save()
+  roundRect(ctx, b, b, w - b * 2, h - b * 2, fieldR)
+  ctx.clip()
 
   // Fine diagonal lattice texture (deco weave).
   ctx.save()
-  ctx.strokeStyle = 'rgba(216, 162, 74, 0.06)'
+  ctx.strokeStyle = 'rgba(226, 178, 96, 0.14)'
   ctx.lineWidth = 1
-  const step = 22
+  const step = 18
   for (let d = -h; d < w + h; d += step) {
     ctx.beginPath(); ctx.moveTo(d, 0); ctx.lineTo(d + h, h); ctx.stroke()
     ctx.beginPath(); ctx.moveTo(d, h); ctx.lineTo(d + h, 0); ctx.stroke()
@@ -154,18 +182,18 @@ function drawBack(ctx, w, h) {
   // Double border frame with stepped corner notches.
   ctx.strokeStyle = COLORS.gold
   ctx.lineWidth = 4
-  roundRect(ctx, 26, 26, w - 52, h - 52, 26)
+  roundRect(ctx, b + 12, b + 12, w - (b + 12) * 2, h - (b + 12) * 2, 18)
   ctx.stroke()
-  ctx.strokeStyle = 'rgba(240, 198, 122, 0.7)'
+  ctx.strokeStyle = 'rgba(240, 198, 122, 0.85)'
   ctx.lineWidth = 2
-  roundRect(ctx, 40, 40, w - 80, h - 80, 20)
+  roundRect(ctx, b + 24, b + 24, w - (b + 24) * 2, h - (b + 24) * 2, 14)
   ctx.stroke()
-  drawCornerFans(ctx, w, h)
+  drawCornerFans(ctx, w, h, 66, 34, 'rgba(240, 198, 122, 0.8)')
 
   // Guilloche sunburst behind the medallion.
   ctx.save()
   ctx.translate(cx, cy)
-  ctx.strokeStyle = 'rgba(216, 162, 74, 0.16)'
+  ctx.strokeStyle = 'rgba(226, 178, 96, 0.26)'
   ctx.lineWidth = 1
   const rays = 60
   for (let i = 0; i < rays; i++) {
@@ -176,7 +204,7 @@ function drawBack(ctx, w, h) {
     ctx.stroke()
   }
   // Concentric guilloche rings.
-  ctx.strokeStyle = 'rgba(216, 162, 74, 0.2)'
+  ctx.strokeStyle = 'rgba(226, 178, 96, 0.3)'
   for (let r = 70; r < h * 0.42; r += 26) {
     ctx.beginPath()
     ctx.arc(0, 0, r, 0, Math.PI * 2)
@@ -230,15 +258,24 @@ function drawBack(ctx, w, h) {
   ctx.restore()
   // Gold gradient face.
   const sGrad = ctx.createLinearGradient(0, cy - h * 0.18, 0, cy + h * 0.18)
-  sGrad.addColorStop(0, COLORS.goldBright)
-  sGrad.addColorStop(0.5, COLORS.gold)
-  sGrad.addColorStop(1, '#a9741f')
+  sGrad.addColorStop(0, '#ffe0a4')
+  sGrad.addColorStop(0.5, COLORS.goldBright)
+  sGrad.addColorStop(1, '#b8801f')
   ctx.fillStyle = sGrad
   ctx.fillText('S', cx, cy)
   ctx.lineWidth = 1.5
-  ctx.strokeStyle = 'rgba(240, 198, 122, 0.5)'
+  ctx.strokeStyle = 'rgba(255, 226, 170, 0.6)'
   ctx.strokeText('S', cx, cy)
   ctx.restore()
+
+  ctx.restore() // end field clip
+
+  // Keyline where bone meets field, so the rim stays crisp under the key light
+  // instead of blooming into the plum.
+  ctx.strokeStyle = 'rgba(28, 5, 12, 0.9)'
+  ctx.lineWidth = 3
+  roundRect(ctx, b, b, w - b * 2, h - b * 2, fieldR)
+  ctx.stroke()
 }
 
 function drawCornerFans(ctx, w, h, inset = 52, size = 34, stroke = 'rgba(240, 198, 122, 0.65)') {

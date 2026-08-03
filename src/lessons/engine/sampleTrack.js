@@ -119,10 +119,33 @@ export function sampleCardSegments(segs, ms) {
 const FELT_Y = 0.012
 const _axW = new THREE.Vector3()
 const _axL = new THREE.Vector3()
+const _axN = new THREE.Vector3()
 function clampAboveFelt(out) {
   _axW.set(1, 0, 0).applyQuaternion(out.quat)
   _axL.set(0, 1, 0).applyQuaternion(out.quat) // card local Y = long axis
-  const drop = Math.abs(_axW.y) * (CARD_W / 2) + Math.abs(_axL.y) * (CARD_H / 2)
+  // A BOWED card is not the flat rectangle this clamp used to assume. The bend
+  // shader (cardMaterial.js) maps local (x, y, 0) to
+  //   (x, sin(y·b)/b, (1 − cos(y·b))/b)
+  // so the card shortens along its long axis AND its ends swing toward local
+  // +Z. Since (1 − cos) never changes sign, that swing is one-directional: on a
+  // face-down card local +Z points at world −Y, so the ends curl DOWN. Ignoring
+  // it put the riffle bridge 0.22 and the waterfall 0.29 below the felt — a
+  // third of a card length buried — while this clamp reported it flush, because
+  // the flat model only ever measured the (unbent) rectangle.
+  //
+  // Accounting for it makes the bow rest ON the table: the ends touch the felt
+  // and the arch rises above, which is what a real bridge does.
+  let halfLen = CARD_H / 2
+  let bowDrop = 0
+  const b = out.bend
+  if (Math.abs(b) > 1e-4) {
+    const half = (CARD_H / 2) * b
+    halfLen = Math.abs(Math.sin(half) / b)
+    _axN.set(0, 0, 1).applyQuaternion(out.quat)
+    const bow = (1 - Math.cos(half)) / b // signed: ends travel 0 → bow along +Z
+    bowDrop = Math.max(0, -_axN.y * bow) // counts only while that points down
+  }
+  const drop = Math.abs(_axW.y) * (CARD_W / 2) + Math.abs(_axL.y) * halfLen + bowDrop
   const lowest = out.pos.y - drop
   if (lowest < FELT_Y) out.pos.y += FELT_Y - lowest
 }

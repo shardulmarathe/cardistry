@@ -10,9 +10,11 @@ import { getHand } from '../../hands/handRegistry'
 import Hand from '../../hands/Hand'
 import MotionGuideLayer from '../annotations/guides'
 import { lessonTimeRef } from './lessonTime'
+import { risingSequences, intactNeighbours } from './mixing'
 
 export default function LessonRunner() {
   const activeLessonId = useAppStore((s) => s.activeLessonId)
+  const lessonRun = useAppStore((s) => s.lessonRun)
   const setDeck = useAppStore((s) => s.setDeck)
   const setCameraPreset = useAppStore((s) => s.setCameraPreset)
 
@@ -20,24 +22,33 @@ export default function LessonRunner() {
   const mirrorAccum = useRef(0)
   const finalizedRef = useRef(false)
   const lastCameraRef = useRef(null)
+  const lastSeekRef = useRef(0)
 
   useEffect(() => {
     if (!activeLessonId) return
     const lesson = getLessonById(activeLessonId)
     if (!lesson) return
-    const track = compileLesson(lesson, useAppStore.getState().deck)
+    // Compiles against the CURRENT deck, so a repeat starts from whatever the
+    // previous run left behind and the shuffles compound.
+    const track = compileLesson(lesson, useAppStore.getState().deck, { run: lessonRun })
     usePlayer.getState().loadTrack(activeLessonId, track)
     msRef.current = 0
     finalizedRef.current = false
     lastCameraRef.current = null
     if (lesson.cameraPreset) setCameraPreset(lesson.cameraPreset)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeLessonId])
+  }, [activeLessonId, lessonRun])
 
   useFrame((_, delta) => {
     const p = usePlayer.getState()
     const track = p.track
     if (!track) return
+
+    // Adopt an explicit seek regardless of play state — see player.js seekNonce.
+    if (p.seekNonce !== lastSeekRef.current) {
+      lastSeekRef.current = p.seekNonce
+      msRef.current = p.globalMs
+    }
 
     if (p.playing) {
       msRef.current += delta * 1000 * p.speed * p.direction
@@ -75,6 +86,20 @@ export default function LessonRunner() {
     if (ms >= track.duration && !finalizedRef.current) {
       finalizedRef.current = true
       setDeck(track.finalDeck)
+      // Score this run against the deck as it was when the lesson OPENED, not
+      // as this run started — that is what makes repeats add up instead of each
+      // one reporting the same "one shuffle's worth" of mixing.
+      const st = useAppStore.getState()
+      if (st.lessonBaseline) {
+        const originalIndex = new Map(st.lessonBaseline.map((id, i) => [id, i]))
+        const ids = track.finalDeck.map((c) => c.id)
+        st.recordRun({
+          run: st.lessonRun,
+          rising: risingSequences(ids, originalIndex),
+          kept: intactNeighbours(ids, originalIndex),
+          pairs: Math.max(1, originalIndex.size - 1),
+        })
+      }
     }
     if (ms < track.duration) finalizedRef.current = false
 

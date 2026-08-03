@@ -1,7 +1,9 @@
 import * as THREE from 'three'
 import { faceQuat } from '../engine/layouts'
-import { CARD_GAP } from '../../lib/constants'
+import { CARD_GAP, CARD_H } from '../../lib/constants'
 import { splitIntoRandomBlocks } from '../../lib/shuffleMath'
+import { DECK_REST_DROP, DECK_APPROACH_DROP, PACKET_GRAB_DROP } from '../../hands/handPoses'
+import { surfaceContact, wristAnchorForContact } from '../authoring/contacts'
 
 // Overhand shuffle, shown as what it really is: a hand repeatedly peeling the
 // top packet off one pile and dropping it onto a second pile, until the whole
@@ -14,9 +16,47 @@ import { splitIntoRandomBlocks } from '../../lib/shuffleMath'
 // packet translates cleanly and lands flat with no snap (offset math in
 // grips.js). Pile x-positions swap each round so the deck ping-pongs.
 const SRC_X = 0.95
-const CLEAR = 0.34 // wrist height above a pile's base while gripping
 const PLACE_Z = 0.14
 const PACKETS = 3
+// Top card height of a pile holding `n` cards (matches pileEntry's stacking).
+const pileTop = (n) => 0.02 + Math.max(0, n - 1) * CARD_GAP
+
+// A representative top card of a pile at `x`. Every card in a pile shares one
+// footprint and differs only in height, so the top one stands in for the whole
+// stack whenever a hand has to meet it from above.
+const topCardAt = (x, top) => ({ pos: [x, top, PLACE_Z], quat: faceQuat(false) })
+
+// --- Every wrist offset below is DERIVED off the rig, never typed ------------
+// A wrist-to-pad offset is a distance across the HAND, so it scales linearly
+// with HAND_SCALE. Both offsets this lesson needs used to be world constants
+// authored against a rig 2.83x smaller, and when the rig grew they went stale
+// in opposite directions:
+//   * REST_AT's `x + 0.55` put the rest pads a full card-width PAST the pile
+//     (the pose reaches 1.62 inward now, not 0.52) — a hand resting on felt;
+//   * the cage was anchored with its wrist directly over the pile, but
+//     `packetGrab`'s fingers reach ~0.8 in +z, so the pads closed 0.37 BEYOND
+//     the packet's far edge — the hand gripped air.
+// `wristAnchorForContact` asks the rig the only honest version of the question:
+// where must the wrist sit for THIS pose's pad to land on THAT point? The pad
+// target itself comes from `surfaceContact`, which already stands the finger
+// off the card by its own (now much larger) radius.
+// (…as an ARRAY: surfaceContact returns a Vector3, wristAnchorForContact reads
+// its target by index, and a Vector3 indexed by [0] is silently `undefined`.)
+const padOn = (finger, card, u = 0, v = 0) => surfaceContact(card, { finger, u, v }).toArray()
+// Heights stay on the exported DECK_*/PACKET_GRAB_DROP measurements: those are
+// taken from the pose's DEEPEST capsule surface (not just the pad that is being
+// aimed) and carry the air the idle overlay and grip pressure need, so they are
+// the safer source for y. x and z come from the pad solve.
+const anchorFor = (poseName, dropConst, x, top, { u = 0, v = 0, lift = 0 } = {}) => {
+  const a = wristAnchorForContact(poseName, 'right', 'middle', padOn('middle', topCardAt(x, top), u, v))
+  return [a[0], top + dropConst + lift, a[2]]
+}
+// The cage closing on the top packet of a pile whose top card is at `top`.
+const GRAB_AT = (x, top) => anchorFor('packetGrab', PACKET_GRAB_DROP, x, top)
+// The open hand hovering over that pile, `lift` of extra air above contact.
+const APPROACH_AT = (x, top, lift = 0) => anchorFor('deckApproach', DECK_APPROACH_DROP, x, top, { lift })
+// The closing rest, pads a third of a card in from the pile's near long edge.
+const REST_AT = (x, n) => anchorFor('deckRest', DECK_REST_DROP, x, pileTop(n), { u: 0.34 })
 
 function pileEntry(card, x, i) {
   return {
@@ -64,8 +104,23 @@ export const overhandLesson = {
       ease: 'easeInOutCubic',
       camera: 'overview',
       to: twoPiles(d.slice(), [], -SRC_X, SRC_X),
+      // The opening beat CLOSES onto the deck: the hand arrives from its own
+      // side, settles its pads on the top card, then takes the cage grip.
+      //
+      // The `at: 0` keyframe is load-bearing, not decoration. With no keyframe
+      // at 0 the compiler manufactures a lead-in FROM the carried-forward pose,
+      // which at the first step of a lesson is `relaxed` at its own default
+      // wrist — and `relaxed` parks a (now 2.83x larger) hand at x=0.95 with
+      // its thumb base 1.57 inboard of that, i.e. straight through the deck.
+      // Measured: this single missing keyframe was the whole of this lesson's
+      // 0.1202 max finger-in-card. Pinning frame 0 to a real anchor removes the
+      // phantom pose entirely.
       hands: {
-        right: [{ at: 1, pose: 'packetGrab', anchor: [-SRC_X, CLEAR + d.length * CARD_GAP + 0.05, PLACE_Z] }],
+        right: [
+          { at: 0, pose: 'deckApproach', anchor: APPROACH_AT(SRC_X, pileTop(0), CARD_H) },
+          { at: 0.45, pose: 'deckApproach', anchor: APPROACH_AT(-SRC_X, pileTop(d.length), CARD_H * 0.4) },
+          { at: 1, pose: 'packetGrab', anchor: GRAB_AT(-SRC_X, pileTop(d.length)), ease: 'easeOutCubic' },
+        ],
       },
       annotations: [
         {
@@ -91,9 +146,17 @@ export const overhandLesson = {
         const dstBase = dst.length // where it will land on the destination pile
         const ids = packet.map((c) => c.id)
 
-        const wristStartY = CLEAR + srcBase * CARD_GAP
-        const wristEndY = CLEAR + dstBase * CARD_GAP
-        const peakY = Math.max(wristStartY, wristEndY) + 0.38
+        // Anchors are solved against the packet's TOP card at each end — that
+        // is the surface the fingers actually land on.
+        const startAnchor = GRAB_AT(SRC, pileTop(src.length))
+        const endAnchor = GRAB_AT(DST, pileTop(dstBase + size))
+        // The arc's height is CARD-sized, not hand-sized: it exists so the
+        // carried packet visibly clears the felt, and the packet is a card.
+        const peakAnchor = [
+          (startAnchor[0] + endAnchor[0]) / 2,
+          Math.max(startAnchor[1], endAnchor[1]) + CARD_H / 2,
+          (startAnchor[2] + endAnchor[2]) / 2,
+        ]
         const firstOfRound = bi === blocks.length - 1
 
         // Reach over and settle the hand onto the top packet (no grip yet).
@@ -105,7 +168,7 @@ export const overhandLesson = {
           ease: 'easeInOutCubic',
           to: twoPiles(src.slice(), dst.slice(), SRC, DST),
           hands: {
-            right: [{ at: 1, pose: 'packetGrab', anchor: [SRC, wristStartY, PLACE_Z] }],
+            right: [{ at: 1, pose: 'packetGrab', anchor: startAnchor }],
           },
           annotations: firstOfRound
             ? [{ text: r === 0 ? 'Peel a packet off the top…' : 'Now do it all again', at: [SRC, 0.7, 0.9], appearAt: 0.2 }]
@@ -126,13 +189,20 @@ export const overhandLesson = {
           ease: 'easeInOutCubic',
           // The packet rides the fingertip contact frame with a visible
           // squeeze at pickup that relaxes into the drop.
-          grip: { right: { cards: ids, frame: 'packet', pressure: [{ at: 0, v: 0.6 }, { at: 1, v: 0.35 }] } },
+          grip: { right: { cards: ids, frame: 'packet', pressure: [{ at: 0, v: 0.3 }, { at: 1, v: 0.18 }] } },
+          // BOOKKEEPING: the lesson moves real packets with explicit `to`
+          // arrays and never declared a `reorder`, so `track.finalDeck` came
+          // back as the UNTOUCHED deck — watching the lesson left the app's
+          // logical deck unshuffled while the animation plainly shuffled it.
+          // On the last packet of a round the destination pile IS the whole
+          // deck, bottom-to-top, so that is exactly the new order.
+          reorder: bi === 0 ? () => newDst.slice() : undefined,
           to: twoPiles(newSrc.slice(), newDst.slice(), SRC, DST),
           hands: {
             right: [
-              { at: 0, pose: 'packetGrab', anchor: [SRC, wristStartY, PLACE_Z] },
-              { at: 0.5, pose: 'packetGrab', anchor: [(SRC + DST) / 2, peakY, PLACE_Z] },
-              { at: 1, pose: 'packetGrab', anchor: [DST, wristEndY, PLACE_Z] },
+              { at: 0, pose: 'packetGrab', anchor: startAnchor },
+              { at: 0.5, pose: 'packetGrab', anchor: peakAnchor },
+              { at: 1, pose: 'packetGrab', anchor: endAnchor },
             ],
           },
         })
@@ -143,14 +213,27 @@ export const overhandLesson = {
       d = dst // the rebuilt pile becomes the deck for the next round
     }
 
-    // Settle: lift the hand away from the finished pile (deck ends on the left).
+    // Settle: the hand RESTS on the finished pile (deck ends on the left)
+    // instead of drifting off to hover a card-width away from everything.
     steps.push({
       kind: 'hold',
       id: 'done',
       label: 'Shuffled — twice through',
       duration: 1200,
       hands: {
-        right: [{ at: 1, pose: 'relaxed' }],
+        right: [
+          // Open the cage HIGH before turning into the rest pose: lerping a
+          // fist straight into a flat hand swings the pads down through the
+          // pile even though both endpoints clear it.
+          { at: 0.4, pose: 'deckApproach', anchor: APPROACH_AT(-SRC_X, pileTop(d.length), CARD_H * 0.5) },
+          {
+            at: 1,
+            pose: 'deckRest',
+            anchor: REST_AT(-SRC_X, d.length),
+            ease: 'easeOutCubic',
+            fingerMotion: [{ fingers: ['index', 'middle', 'ring'], type: 'tighten', amp: 0.04 }],
+          },
+        ],
       },
       annotations: [
         { text: 'Blocks moved, but neighbours stayed together — that’s why it mixes weakly', at: [-SRC_X, 0.7, 0.9], appearAt: 0.1 },

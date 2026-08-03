@@ -14,7 +14,7 @@
 // Whole-rig scale: the rig is authored in small "anatomical" units (a middle
 // finger is ~0.09 long, a palm ~0.10 tall); a real hand is roughly a card-and-
 // a-half wide, so we scale it up to cradle a ~0.63-wide card.
-export const HAND_SCALE = 4.6
+export const HAND_SCALE = 11
 
 //   base : knuckle position on the palm  [x across, y up, z palmar]
 //   len  : phalange lengths [proximal, middle, distal]  (middle finger longest)

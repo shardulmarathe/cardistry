@@ -16,9 +16,42 @@ export function alternateMerge(left, right) {
   return out
 }
 
+// A PERFECT weave — this is the faro, not the riffle. Kept under this name
+// because `kind:'riffle'` steps default to it, but a real riffle never
+// alternates strictly: see gsrRiffleOrder below.
 export function riffleOrder(deck) {
   const mid = Math.floor(deck.length / 2)
   return alternateMerge(deck.slice(0, mid), deck.slice(mid))
+}
+
+// Gilbert–Shannon–Reeds: the standard probabilistic model of a REAL riffle,
+// and the one the Bayer–Diaconis "seven shuffles" result is proved about.
+// Cards drop from whichever packet still holds more, in proportion to what
+// each has left — so the result falls in irregular clumps rather than strict
+// alternation. That clumping IS the randomization; a strictly alternating
+// weave is a faro, which is deterministic and restores the deck after eight.
+//
+// The cut stays at exactly mid so the two authored packets on the table match
+// the order (a binomial cut would desync the choreography from the result).
+export function gsrRiffleOrder(deck, rng) {
+  const mid = Math.floor(deck.length / 2)
+  const L = deck.slice(0, mid)
+  const R = deck.slice(mid)
+  const out = []
+  let i = 0
+  let j = 0
+  while (i < L.length || j < R.length) {
+    if (i >= L.length) {
+      out.push(R[j++])
+    } else if (j >= R.length) {
+      out.push(L[i++])
+    } else if (rng() < (L.length - i) / (L.length - i + (R.length - j))) {
+      out.push(L[i++])
+    } else {
+      out.push(R[j++])
+    }
+  }
+  return out
 }
 
 // Split into N contiguous random-sized blocks (overhand rounds).

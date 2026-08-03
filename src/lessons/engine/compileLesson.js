@@ -322,6 +322,41 @@ function bakeHoldReleases(holds, hands, cardTracks, trackDuration) {
   }
 }
 
+// A card is a RECTANGLE: spinning it 180° about its face normal (local Z) maps
+// it exactly onto itself. So two quaternions differing by that spin describe
+// the same card lying in the same place — but slerping between them takes the
+// long way round and the card visibly pirouettes ~180° mid-move.
+//
+// That is what made the riffle/faro weave look like the cards were spinning.
+// The grip projection hands a packet off in one representation
+// (`Y-87 X66 Z-4`) while the landing layout authors the other
+// (`Y90 X90 Z0`) — physically identical, 173° apart as quaternions.
+//
+// Fix once, at compile time, in a forward pass per card: snap each segment's
+// endpoints to whichever equivalent is nearest what precedes it. Purely a
+// change of REPRESENTATION — no card moves, no face turns over — so it is
+// invisible except that the spurious spin disappears. (The card back is
+// near-symmetric under this spin, so even its artwork reads the same; see the
+// card-back-orientation note in HANDS_HANDOFF.md.)
+const _spinAxis = new THREE.Vector3(0, 0, 1)
+const _spinPi = new THREE.Quaternion().setFromAxisAngle(_spinAxis, Math.PI)
+const _spinAlt = new THREE.Quaternion()
+function alignSpin(quat, ref) {
+  _spinAlt.copy(quat).multiply(_spinPi) // right-multiply = about the card's OWN z
+  if (_spinAlt.angleTo(ref) < quat.angleTo(ref)) quat.copy(_spinAlt)
+}
+
+// Runs AFTER bakeHoldReleases, so it aligns against the poses cards are
+// actually released into rather than the pre-bake authored ones.
+function alignCardSpin(cardTracks) {
+  for (const segs of cardTracks.values()) {
+    for (let i = 0; i < segs.length; i++) {
+      if (i > 0) alignSpin(segs[i].from.quat, segs[i - 1].to.quat)
+      alignSpin(segs[i].to.quat, segs[i].from.quat)
+    }
+  }
+}
+
 function pickGuideCards(deck, count = 6) {
   const n = deck.length
   if (n === 0) return []
@@ -331,7 +366,12 @@ function pickGuideCards(deck, count = 6) {
   return ids
 }
 
-export function compileLesson(lessonDef, initialDeck) {
+// `run` is the repeat index for "Shuffle again": it offsets the lesson seed so
+// each repeat is a genuinely DIFFERENT shuffle rather than the same interleave
+// replayed on a new order — a real riffle never drops the same clumps twice.
+// run 0 reproduces the original track byte-for-byte, so the verify harness and
+// every existing caller are unaffected.
+export function compileLesson(lessonDef, initialDeck, { run = 0 } = {}) {
   // Lessons teach on a squared FACE-DOWN deck. If the visualizer left cards
   // flipped over, honoring that here made every face-down target a 180° flip —
   // cards somersaulting on edge through the felt mid-weave (screenshot-caught).
@@ -340,7 +380,7 @@ export function compileLesson(lessonDef, initialDeck) {
   if (initialDeck.some((c) => c.isFaceUp)) {
     initialDeck = initialDeck.map((c) => (c.isFaceUp ? { ...c, isFaceUp: false } : c))
   }
-  const rng = mulberry32(lessonDef.seed ?? 1)
+  const rng = mulberry32((lessonDef.seed ?? 1) + run * 0x9e37)
   const ctx = { rng }
   const steps = lessonDef.build(initialDeck, ctx)
 
@@ -398,7 +438,11 @@ export function compileLesson(lessonDef, initialDeck) {
     let endPoses = currentPoses
 
     if (step.kind === 'riffle') {
-      const finalOrder = riffleOrder(currentDeck)
+      // `kind:'riffle'` describes the WEAVE CHOREOGRAPHY (staggered interlace),
+      // not which merge produced the order. A step picks its own merge via
+      // `order:` — the faro keeps the default perfect alternation, while the
+      // riffle opts into the clumpy GSR merge that actually randomizes.
+      const finalOrder = (step.order ?? riffleOrder)(currentDeck, rng)
       const n = finalOrder.length
       // Optional custom landing layout (e.g. the table riffle weaves into a
       // LANDSCAPE stack); default stays the plain squared stack.
@@ -532,6 +576,7 @@ export function compileLesson(lessonDef, initialDeck) {
   const hands = compileHandTracks(steps, stepMeta)
   const holds = buildHolds(gripDecls, hands, cardTracks)
   bakeHoldReleases(holds, hands, cardTracks, cursor)
+  alignCardSpin(cardTracks)
 
   return {
     duration: cursor,

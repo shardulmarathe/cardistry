@@ -1,4 +1,7 @@
 import * as THREE from 'three'
+import { fingerJointsWorld } from './handKinematics'
+import { FINGERS, FINGER_NAMES, HAND_SCALE } from './handRigSpec'
+import { CARD_T } from '../lib/constants'
 
 // Named hand pose presets. Each pose defines a wrist transform + per-finger
 // joint angles (3 segments each) and a spread factor for the knuckle splay.
@@ -15,7 +18,17 @@ import * as THREE from 'three'
 function euler(x, y = 0, z = 0) {
   return new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z))
 }
+// Palm-down FIRST, then a world-Y yaw (order 'YXZ') — the yaw swings the whole
+// palm-down hand about the vertical, so the fingers point along the table
+// instead of at the camera while the palm keeps facing the felt. Authoring the
+// yaw the other way round (plain 'XYZ') tips the palm on edge instead.
+function eulerYXZ(x, y = 0, z = 0) {
+  return new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z, 'YXZ'))
+}
 const PALM_DOWN = Math.PI / 2
+// Fingers point at the table centre (−x for the right hand; the engine's
+// x-mirror makes the left hand point +x, so one authored yaw serves both).
+const REACH_IN = -Math.PI / 2
 
 function pose(wristPos, wristRot, fingers, spread = 0.28) {
   return {
@@ -142,6 +155,40 @@ export const HAND_POSES = {
     0.46,
   ),
 
+  // --- Shared approach / rest grip -------------------------------------------
+  // Every lesson used to open and close with both hands parked in `relaxed`,
+  // a full card-width of air (0.66) between the nearest fingertip and the
+  // nearest card — two mannequin hands floating beside a deck they never
+  // touch. These two presets are the fix: the hand comes in from its own side
+  // of the table, YAWED so the fingers point at the deck instead of at the
+  // camera, and settles with the fingertips ON the top card.
+  //
+  // Geometry that lessons anchor against (world offsets from the wrist, right
+  // hand, measured off this rig — see the note on `deckRest` below):
+  //   fingertips reach ~0.60 inward (−x) and hang ~0.24 below the wrist;
+  //   the thumb trails to −z, its fat base capsule staying above the fingers.
+  // So `anchor.y = topCardY + DECK_REST_DROP` lands the tips tangent on a
+  // squared deck, and any |anchor.x| ≳ 0.7 keeps the thumb off it entirely.
+
+  // Approach: fingers flat and splayed, hovering — the pose a hand arrives in.
+  deckApproach: pose(
+    [0.98, 0.5, 0.06],
+    eulerYXZ(PALM_DOWN + 0.1, REACH_IN, 0),
+    f([0.14, 0.11, 0.07], [0.2, 0.14, 0.08], [0.22, 0.15, 0.09], [0.2, 0.14, 0.08], [0.17, 0.12, 0.07]),
+    0.44,
+  ),
+
+  // Rest: the same hand closed onto the deck — fingers curled just enough that
+  // the pads (not the knuckles) carry the contact, thumb braced outside the
+  // long edge. This is what "the hands are holding something" looks like at
+  // the start and end of a lesson.
+  deckRest: pose(
+    [0.78, 0.42, 0.02],
+    eulerYXZ(PALM_DOWN + 0.12, REACH_IN, 0),
+    f([0.24, 0.2, 0.13], [0.32, 0.24, 0.15], [0.35, 0.26, 0.16], [0.32, 0.24, 0.15], [0.27, 0.2, 0.12]),
+    0.34,
+  ),
+
   // Spring release: a firm bowed grip that lets the deck cascade.
   springRelease: pose(
     [0.5, 0.46, 0.02],
@@ -150,6 +197,55 @@ export const HAND_POSES = {
     0.22,
   ),
 }
+
+// How far below the wrist each approach/rest preset's LOWEST finger surface
+// hangs, plus a card's own half-thickness — i.e. how high above a top card's
+// CENTRE the wrist must sit for the fingertips to land exactly tangent on it.
+// Measured off the rig (handKinematics FK, all three capsules of all five
+// fingers); a lesson anchors `y = topCardCentreY + DECK_*_DROP` and gets a
+// contact instead of a fingertip buried in the stack.
+// (Exact tangency is 0.352 / 0.269; both carry ~0.014 of extra air so the idle
+// breathing overlay and the ease into the pose can't push a pad through a card.)
+// DERIVED, not hardcoded: every one of these is a wrist-to-finger-surface
+// distance, so it scales linearly with HAND_SCALE. Measuring them off the rig
+// means HAND_SCALE is a single knob — change it and every lesson that anchors
+// off these constants follows automatically, instead of 40-odd hand-tuned
+// offsets silently going stale. (At HAND_SCALE 4.6 these reproduce the values
+// they replace: 0.366 / 0.283 / 0.574.)
+const _mj = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()]
+function measureReach(p) {
+  let drop = 0
+  let reach = 0
+  for (const name of FINGER_NAMES) {
+    const j = fingerJointsWorld(p, 'right', name, _mj)
+    const rad = FINGERS[name].rad
+    for (let k = 1; k < 4; k++) {
+      const r = rad[Math.min(k - 1, 2)] * HAND_SCALE
+      drop = Math.max(drop, p.wrist.pos.y - j[k].y + r)
+      reach = Math.max(reach, p.wrist.pos.x - j[k].x)
+    }
+  }
+  return { drop, reach }
+}
+// Clearance so the idle-breathing overlay and the ease into a pose can't push a
+// pad through a card. Scales with the hand: a bigger hand breathes bigger.
+const CONTACT_AIR = 0.00296 * HAND_SCALE
+const _rest = measureReach(HAND_POSES.deckRest)
+const _approach = measureReach(HAND_POSES.deckApproach)
+
+export const DECK_REST_DROP = _rest.drop + CARD_T / 2 + CONTACT_AIR
+export const DECK_APPROACH_DROP = _approach.drop + CARD_T / 2 + CONTACT_AIR
+// How far the fingertips reach toward the table centre (−x, right hand) from
+// the wrist in these poses — pick |anchor.x| ≈ DECK_REACH + a little so the
+// tips land on the deck while the fat thumb base stays outside its footprint.
+export const DECK_REACH = _rest.reach
+
+// Same idea for the `packetGrab` cage, which riffle/faro/overhand all anchor
+// against (they each had their own hardcoded 0.465). The cage carries more air
+// than a rest contact because it closes AROUND a packet rather than settling on
+// one — that extra is hand-sized, so it scales here too.
+export const PACKET_GRAB_DROP =
+  measureReach(HAND_POSES.packetGrab).drop + CARD_T / 2 + 0.00908 * HAND_SCALE
 
 // Resolve a named pose for a side, optionally re-anchoring the wrist to a world
 // position supplied by the lesson step (lets each lesson place the hands on its
