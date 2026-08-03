@@ -3,8 +3,9 @@ import { faceQuat } from '../engine/layouts'
 import { shuffleArray } from '../../lib/shuffleMath'
 import { CARD_GAP, CARD_H, CARD_T, CARD_W } from '../../lib/constants'
 import { DECK_REST_DROP, DECK_APPROACH_DROP } from '../../hands/handPoses'
-import { FINGERS, HAND_SCALE } from '../../hands/handRigSpec'
+import { FINGERS, FINGER_NAMES, HAND_SCALE } from '../../hands/handRigSpec'
 import { poseWithContacts, rigMetrics, surfaceContact, wristAnchorForContact } from '../authoring/contacts'
+import { fingerJointsWorld, fingertipWorld } from '../../hands/handKinematics'
 
 // Card wash where the HANDS do the washing. Each palm owns one half of the
 // table and circles over it; a card only moves when that palm passes over it:
@@ -28,11 +29,47 @@ const REACH_IN = -Math.PI / 2
 const PRESS_QUAT = new THREE.Quaternion().setFromEuler(
   new THREE.Euler(PALM_DOWN + 0.06, REACH_IN, 0, 'YXZ'),
 )
-const PRESS_POSE = poseWithContacts('washPress', 'right', { quat: PRESS_QUAT })
-// Measured under that yaw — the press pose's own DECK_REST_DROP. Its deepest
-// finger surface IS the middle pad, so a pad solved tangent on a card is the
-// whole hand solved tangent on it.
-const PRESS = rigMetrics('washPress', PRESS_QUAT)
+
+// --- The rake ----------------------------------------------------------------
+// A wash IS palm-driven — there is no finger trick hiding in it — but a palm is
+// not a paddle. Real hands rake: the fingers splay and flex through the spread
+// while the heel drives it, and cards move because a PAD crossed them, not
+// because a rigid shape flew over them. So the press pose is a family, not a
+// constant: one curl parameter, one splay parameter, and every hand height in
+// this file is re-measured for whichever member of the family is on screen.
+//
+// THE CURL SITS SLIGHTLY BACK. `fingerMotion` is a SINE — it swings a joint both
+// ways around the pose it is applied to — and on a palm-down hand curling drives
+// the pads DOWN, i.e. into the felt and through the cards. Authoring the rake
+// around a small hyperextension (JOINT_LIMITS allows -0.25) means the downswing
+// only brings the fingers back to flat, and the anchor below is measured at the
+// DEEPEST phase, so the whole oscillation happens above the cards.
+const RAKE_BASE = -0.09
+const RAKE_AMP = 0.17
+const rakeCurl = (c) => [c, c * 0.8, c * 0.55]
+function rakePose(c, spread) {
+  const p = poseWithContacts('washPress', 'right', { quat: PRESS_QUAT })
+  for (const name of FINGER_NAMES) {
+    p.fingers[name] = rakeCurl(name === 'thumb' ? c * 0.7 : c)
+  }
+  p.spread = spread
+  return p
+}
+// The phase of the rake that reaches DEEPEST — the one the hand height must be
+// measured against, since `applyFingerMotion` distributes its swing over the
+// three joints as [1, 0.7, 0.45].
+const rakeDeepest = (c, spread) => {
+  const p = rakePose(c, spread)
+  for (const name of FINGER_NAMES) {
+    const a = p.fingers[name]
+    p.fingers[name] = [a[0] + RAKE_AMP, a[1] + RAKE_AMP * 0.7, a[2] + RAKE_AMP * 0.45]
+  }
+  return p
+}
+const PRESS_POSE = rakePose(RAKE_BASE, 0.5)
+// Measured under that yaw, on the deepest phase of the rake — the press pose's
+// own DECK_REST_DROP.
+const PRESS = rigMetrics(rakeDeepest(RAKE_BASE, 0.5), PRESS_QUAT)
 // Breathing room the idle overlay and the ease into a pose need. Hand-sized:
 // a bigger hand breathes bigger (handPoses.js carries the same constant).
 const CONTACT_AIR = 0.003 * HAND_SCALE
@@ -57,10 +94,34 @@ const padAt = (pose, quat, drop, x, y, z, lift = 0) => {
   return [a[0], y + drop + lift, a[2]]
 }
 const PRESS_DROP = CARD_T / 2 + PRESS.drop + CONTACT_AIR
-const pressAt = (x, y, z, lift = 0) => padAt('washPress', PRESS_QUAT, PRESS_DROP, x, y, z, lift)
+// Solved against the RAKE pose, not the bare preset: the two have different
+// reaches once the fingers are splayed, and it is the pose on screen whose pad
+// has to land on the card.
+const pressAt = (x, y, z, lift = 0) => padAt(PRESS_POSE, PRESS_QUAT, PRESS_DROP, x, y, z, lift)
 // The open/rest poses are already yawed inward, so they need no quat override,
 // and their exported DROP constants are this same measurement plus its air.
 const openAt = (x, y, z, lift = 0) => padAt('deckApproach', null, DECK_APPROACH_DROP, x, y, z, lift)
+// The plow rakes too — the fingers hook and release as they corral, which is
+// what stops a sweep reading as a bulldozer blade. Its hand rides that much
+// higher, measured on the deepest phase of the hook rather than assumed: a
+// `curlRipple` on a palm-down hand drives the pads DOWN, and `deckApproach`'s
+// own drop is measured with its fingers nearly straight.
+const PLOW_AMP = 0.16
+const PLOW_DEEP = (() => {
+  const p = poseWithContacts('deckApproach', 'right', {})
+  for (const name of FINGER_NAMES) {
+    const a2 = p.fingers[name]
+    p.fingers[name] = [a2[0] + PLOW_AMP, a2[1] + PLOW_AMP * 0.7, a2[2] + PLOW_AMP * 0.45]
+  }
+  return p
+})()
+const PLOW_LIFT = Math.max(
+  0,
+  CARD_T / 2 + rigMetrics(PLOW_DEEP).drop + CONTACT_AIR - DECK_APPROACH_DROP,
+)
+const PLOW_RAKE = [
+  { fingers: ['index', 'middle', 'ring', 'pinky'], type: 'curlRipple', amp: PLOW_AMP, cycles: 2, phase: 0.7 },
+]
 const restAt = (x, y, z) => padAt('deckRest', null, DECK_REST_DROP, x, y, z)
 
 // Each hand's circular smoosh, in WORLD coords, authored around the PALM'S
@@ -79,7 +140,38 @@ const AMP = 0.28
 // a factor of eight while the fingers still crossed.)
 const TIP_R = FINGERS.middle.rad[2] * HAND_SCALE
 const PALM_GAP = 2 * TIP_R // air left between the two hands at closest approach
-const CX = AMP + TIP_R + PALM_GAP / 2 // pad-orbit centre
+// How far INBOARD of its own middle pad the hand's most inboard SURFACE reaches
+// — measured over every capsule of every finger, at the widest splay and the
+// deepest rake the lesson uses, because that is the part that meets the other
+// hand. The rule this replaces ("keep >= 0.5 between the wrists", session 5) is
+// hand-sized and was authored for a rig 2.4x smaller: the wrists now clear each
+// other by a factor of eight while the FINGERS still crossed, which is the
+// documented "palms brush at closest approach" nit. Measure the fingers.
+const _rj = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()]
+const _rp = new THREE.Vector3()
+function inboardOf(pose) {
+  const p = poseWithContacts(pose, 'right', { quat: PRESS_QUAT })
+  p.wrist.pos.set(0, 0, 0)
+  let lo = Infinity
+  for (const name of FINGER_NAMES) {
+    fingerJointsWorld(p, 'right', name, _rj)
+    for (let i = 0; i < 3; i++) {
+      const r = FINGERS[name].rad[i] * HAND_SCALE
+      for (let k = 0; k <= 4; k++) {
+        _rp.copy(_rj[i]).lerp(_rj[i + 1], k / 4)
+        lo = Math.min(lo, _rp.x - r)
+      }
+    }
+  }
+  fingertipWorld(p, 'right', 'middle', _rp)
+  return _rp.x - lo // how far past the middle pad the hand still reaches
+}
+const PAD_LEAD = Math.max(
+  inboardOf(rakePose(RAKE_BASE, 0.5)),
+  inboardOf(rakeDeepest(RAKE_BASE, 0.5)),
+  inboardOf(rakePose(RAKE_BASE + RAKE_AMP, 0.62)),
+)
+const CX = AMP + PAD_LEAD + PALM_GAP / 2 // pad-orbit centre
 const CZ = 0.25
 // The spread's cards scatter to y = 0.02..0.034 (card centres); the palms have
 // to clear the highest of them for the whole sweep.
@@ -259,7 +351,30 @@ export const washLesson = {
     const PLOW_FROM = 1.0 + CARD_W / 2 // just past the spread's outer edge
     const PLOW_TO = CARD_W * 0.3 // on top of the heap
     const WALL_X = 0.075 + CARD_W // the far side of the heap, where cards stop
-    const plowAt = (padX, padZ) => openAt(padX, HEAP_TOP, padZ)
+    const plowAt = (padX, padZ) => openAt(padX, HEAP_TOP, padZ, PLOW_LIFT)
+    // ONE ORBIT, and a hand that is doing something for the length of it. The
+    // orbit is a wrist overlay and has to stay on a single segment (it is only
+    // zero at both ends for an integer number of cycles), so the articulation
+    // rides on top of it as `fingerMotion`: a curl ripple running index→pinky,
+    // four passes per circle, which is what a raking hand does. It is authored
+    // around a slightly hyperextended pose and the anchor is measured at the
+    // ripple's DEEPEST phase, so every finger stays above the cards it is
+    // dragging. `splay` differs per pass — the fingers spread wide going one way
+    // and gather coming back.
+    const smooshHands = (cyc, spread) => [
+      {
+        at: 1,
+        pose: rakePose(RAKE_BASE, spread),
+        anchor: SM_ANCHOR,
+        ease: 'linear',
+        motion: { type: 'orbit', amp: AMP, cycles: cyc },
+        fingerMotion: [
+          { fingers: ['index', 'middle', 'ring', 'pinky'], type: 'curlRipple', amp: RAKE_AMP, cycles: 4, phase: 0.8 },
+          { fingers: ['thumb'], type: 'curlRipple', amp: RAKE_AMP * 0.6, cycles: 4, phase: 0.4 },
+        ],
+      },
+    ]
+
     const squareHands = [
       {
         at: 0.6,
@@ -272,7 +387,16 @@ export const washLesson = {
       // Held HIGH through the turn — the deck is still most of its 0.22 tall at
       // this point — then settling onto the flat spread.
       { at: 0.4, pose: PRESS_POSE, anchor: pressAt(CX + AMP, startTop, CZ, CARD_H * 0.25), ease: 'easeInOutCubic' },
-      { at: 1, pose: PRESS_POSE, anchor: SM_ANCHOR, ease: 'linear', motion: { type: 'orbit', amp: AMP, cycles: 1 } },
+      {
+        at: 1,
+        pose: rakePose(RAKE_BASE, 0.5),
+        anchor: SM_ANCHOR,
+        ease: 'linear',
+        motion: { type: 'orbit', amp: AMP, cycles: 1 },
+        fingerMotion: [
+          { fingers: ['index', 'middle', 'ring', 'pinky'], type: 'curlRipple', amp: RAKE_AMP, cycles: 3, phase: 0.8 },
+        ],
+      },
     ]
     // The opening beat: both hands come in from the sides and CLOSE onto the
     // squared deck (fingertips tangent on its top card) before anything moves.
@@ -338,11 +462,11 @@ export const washLesson = {
         to: () => spread2,
         stagger: { by: 'card', spread: 0.7, span: 0.3 },
         hands: {
-          left: [{ at: 1, pose: PRESS_POSE, anchor: SM_ANCHOR, ease: 'linear', motion: { type: 'orbit', amp: AMP, cycles: 1 } }],
-          right: [{ at: 1, pose: PRESS_POSE, anchor: SM_ANCHOR, ease: 'linear', motion: { type: 'orbit', amp: AMP, cycles: 1 } }],
+          left: smooshHands(1, 0.62),
+          right: smooshHands(1, 0.62),
         },
         annotations: [
-          { text: 'Palms flat — a card moves only when a palm drags it', appearAt: 0.15 },
+          { text: 'Palms flat, fingers raking — a card moves only when a pad crosses it', appearAt: 0.15 },
         ],
       },
       {
@@ -354,8 +478,8 @@ export const washLesson = {
         to: () => spread3,
         stagger: { by: 'card', spread: 0.7, span: 0.3 },
         hands: {
-          left: [{ at: 1, pose: PRESS_POSE, anchor: SM_ANCHOR, ease: 'linear', motion: { type: 'orbit', amp: AMP, cycles: -1 } }],
-          right: [{ at: 1, pose: PRESS_POSE, anchor: SM_ANCHOR, ease: 'linear', motion: { type: 'orbit', amp: AMP, cycles: -1 } }],
+          left: smooshHands(-1, 0.38),
+          right: smooshHands(-1, 0.38),
         },
         annotations: [
           { text: 'Casinos wash for a full minute — change direction often', appearAt: 0.2 },
@@ -374,7 +498,7 @@ export const washLesson = {
         hands: {
           right: [
             { at: 0.15, pose: 'deckApproach', anchor: plowAt(PLOW_FROM, 0.2) },
-            { at: 0.85, pose: 'deckApproach', anchor: plowAt(PLOW_TO, 0.02), ease: 'easeInOutCubic' },
+            { at: 0.85, pose: 'deckApproach', anchor: plowAt(PLOW_TO, 0.02), ease: 'easeInOutCubic', fingerMotion: PLOW_RAKE },
             { at: 1, pose: 'deckApproach', anchor: plowAt(PLOW_TO + 0.06, 0.04) },
           ],
           // The other palm is the wall the cards stop against — parked with its
@@ -396,7 +520,7 @@ export const washLesson = {
         hands: {
           left: [
             { at: 0.12, pose: 'deckApproach', anchor: plowAt(PLOW_FROM, 0.2) },
-            { at: 0.85, pose: 'deckApproach', anchor: plowAt(PLOW_TO, 0.02), ease: 'easeInOutCubic' },
+            { at: 0.85, pose: 'deckApproach', anchor: plowAt(PLOW_TO, 0.02), ease: 'easeInOutCubic', fingerMotion: PLOW_RAKE },
             { at: 1, pose: 'deckApproach', anchor: plowAt(PLOW_TO + 0.06, 0.04) },
           ],
           right: [{ at: 0.3, pose: 'deckApproach', anchor: plowAt(WALL_X, 0.06) }],

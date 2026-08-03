@@ -45,6 +45,12 @@ export const CAMERA_PRESETS = {
   // genuinely lives near y≈1 — `dealerPOV` aims at 0.35 and leaves it riding
   // the top of the frame over empty felt.
   handsHigh: { position: [0, 3.1, 3.6], target: [0, 0.95, 0.1], fov: 35 },
+  // Same subject as handsHigh but pulled back far enough to keep BOTH hands in
+  // frame. A cradle that genuinely carries its pile cannot hold it below y≈1.13
+  // at HAND_SCALE 11, and hands are now large — handsHigh (4.1 out) frames the
+  // cards but crops the hands off the sides, while overview clips the deck
+  // against the header. 6.4 out, aimed at the cradle.
+  handsCradle: { position: [0, 4.8, 6.4], target: [0, 1.05, 0.05], fov: 38 },
 }
 
 // OrbitControls constraints so users never go under the table or behind the cards.
