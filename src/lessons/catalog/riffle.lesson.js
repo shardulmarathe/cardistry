@@ -11,7 +11,7 @@ import { gsrRiffleOrder } from '../../lib/shuffleMath'
 import { CARD_GAP, CARD_H } from '../../lib/constants'
 import { DECK_REST_DROP, DECK_APPROACH_DROP } from '../../hands/handPoses'
 
-// Riffle shuffle — authored as the REAL table riffle: the cards never leave
+// Riffle shuffle, authored as the REAL table riffle: the cards never leave
 // the felt. The right hand cuts the top half and sets it beside the other,
 // both palms settle on top of their halves, the THUMBS bend the inner-near
 // corners up to load the spring, then ratchet open card-by-card so the corners
@@ -36,17 +36,17 @@ export const riffleLesson = {
     'The bend stores elastic spring energy — release it evenly and the cards cascade; crease it and you ruin the card.',
   ],
   build: (deck) => {
-    const G = 0.5 // half-deck center x — landscape halves, inner ends at ±0.06
+    const G = 0.5 // half-deck center x, landscape halves, inner ends at ±0.06
     const YAW = 0.12 // inward angle off 90°: inner short ends point at each other
     const TILT = 0.3 // thumbs lift the INNER end this far while loading
 
     // --- Card-derived hand heights (the thing this file is really about) ----
     // A phalange capsule is FAT: the thumb's proximal is 0.078 in radius and a
     // card is 0.006 thick, so a finger whose AXIS passes within 0.081 of a
-    // card's plane inside its footprint is interpenetrating it — and every hand
+    // card's plane inside its footprint is interpenetrating it, and every hand
     // height in this lesson used to be a hand-picked number with no relation to
     // the cards under it (approach 0.55, cut 0.42, weave 0.32, cascade 0.34).
-    // Measured that way, the flagship was 0.08 deep — the metric's ceiling —
+    // Measured that way, the flagship was 0.08 deep, the metric's ceiling -
     // at every beat. Now: squared-stack top card, half-stack top card, and the
     // measured drop from a wrist to each preset's lowest finger surface.
     const TABLE_TOP = 0.02 + (deck.length - 1) * CARD_GAP
@@ -66,16 +66,16 @@ export const riffleLesson = {
     const REST_PAD_X = 0.18
     // A grip's `pressure` adds up to 0.14 of curl to the gripping fingers at
     // RUNTIME on top of whatever the contact solve settled on, and the idle
-    // overlay adds a little more — enough to push a tangent pad ~0.03 back into
+    // overlay adds a little more, enough to push a tangent pad ~0.03 back into
     // the cards. The bridge cage below therefore solves against a SHIELD: cards
     // floated this far off the real stack, so clearing them leaves exactly that
     // much air for the squeeze. (`clearance` looks like the knob for this and
-    // is the wrong one — `resolvePenetration` stops at the first curl whose
+    // is the wrong one, `resolvePenetration` stops at the first curl whose
     // depth is <= clearance, so a non-zero value BUYS penetration. Always 0.)
     // The two TABLE grips get their margin from LIFT instead: shielding those
     // straightens tableGrip's fingers, and a straight finger reaches FURTHER
     // across the weave corridor than a curled one (measured: 0.030 → 0.056).
-    // Peak `pressure` any of these grips ever sees — the pads are authored
+    // Peak `pressure` any of these grips ever sees, the pads are authored
     // that far off their surfaces and the squeeze presses them home.
     const SQUEEZE = 1.2
     const CARRY_SQUEEZE = 1.25
@@ -90,19 +90,19 @@ export const riffleLesson = {
     const WEAVE_PRESS = 0.3
 
     // Dealer table grips (solved at build time against the half geometry) and
-    // the bridge cage for the finish — shared builders in authoring/contacts.
+    // the bridge cage for the finish, shared builders in authoring/contacts.
     const { pose: restGrip, anchor: REST_ANCHOR } = tableGrip({ gap: G, yaw: YAW, squeeze: SQUEEZE })
     const { pose: loadGrip, anchor: LOAD_ANCHOR } = tableGrip({ gap: G, yaw: YAW, tilt: TILT, squeeze: SQUEEZE })
     // The bridge cage cups the squared LANDSCAPE deck's short ends, so it must
     // be told where that deck's top card actually is (the default 0.3 floated
     // the thumb 0.08 above it). Then back the whole cage off a shielded copy of
-    // the stack — cageGrip itself runs no penetration pass.
+    // the stack, cageGrip itself runs no penetration pass.
     const { pose: cage, anchor: CAGE_ANCHOR0 } = cageGrip({ topY: TABLE_TOP, squeeze: 0.9 })
     // The BRIDGE bows the squared deck by BRIDGE_BEND, and a bowed card rests
     // on its ends: `clampAboveFelt` lifts every card until its ends touch the
     // felt, which for this bow collapses the whole stack onto one plane
-    // BRIDGE_BOW above the table. Solve the cage against BOTH shapes — the
-    // flat stack it closes on and the bowed plate it then squeezes — and lift
+    // BRIDGE_BOW above the table. Solve the cage against BOTH shapes, the
+    // flat stack it closes on and the bowed plate it then squeezes, and lift
     // the cage anchor onto the bowed plate, or the pads cup thin air on the
     // way in and the deck rises through them on the squeeze.
     const BRIDGE_BEND = 2.4
@@ -137,14 +137,14 @@ export const riffleLesson = {
     // The halves are WELDED to their hands from the cut onward (a gripped
     // packet rides the contact frame, so the authored layout is only where the
     // cards land once released). Pushing both table anchors out therefore
-    // pushes both halves out with them — which is the fix for the last weave
+    // pushes both halves out with them, which is the fix for the last weave
     // hit: a tilted landscape half reaches 0.44 from its own centre, so at the
     // authored gap the two inner ends overlapped 0.26 past the centreline and
     // each hand's index pad sat inside the OTHER half's corner. Out by OUT and
     // the pads stop crossing.
-    // The pads no longer cross the weave corridor — the re-authored tableGrip
+    // The pads no longer cross the weave corridor, the re-authored tableGrip
     // holds its own half from ITS near edge instead of reaching across the
-    // centre line — so the halves no longer need pushing apart to keep the
+    // centre line, so the halves no longer need pushing apart to keep the
     // hands off each other.
     const OUT = 0
     // BOWED CARDS REST ON THEIR ENDS, NOT THEIR CENTRES. The bend shader swings
@@ -152,7 +152,7 @@ export const riffleLesson = {
     // DOWN, so `clampAboveFelt` lifts a bowed half until those ends touch the
     // felt: for this lesson's 1.1 bow the halves' centres ride ~0.10 above the
     // flat layout. The clamp pins them there, so the hand does NOT carry them
-    // up with it — it sinks into them. LIFT puts the pads back on the cards.
+    // up with it, it sinks into them. LIFT puts the pads back on the cards.
     // ...which is exactly the bow the shader produces, so DERIVE it instead of
     // guessing: a card bent by `bend` rises (1 - cos(bend*CARD_H/2))/bend at
     // its centre, and the grip carries half of that (bendGain 0.5).
@@ -160,12 +160,12 @@ export const riffleLesson = {
     // card rides the hand 1:1, so once the hand has lifted past the clamp's
     // threshold the two travel together and the pads stay put; below it the
     // clamp raises the cards on its own and the hand sinks into them. The flat
-    // beats (cut, slide) get no lift at all — there is nothing to clamp.
+    // beats (cut, slide) get no lift at all, there is nothing to clamp.
     const LIFT = (1 - Math.cos((CARD_H / 2) * 1.1)) / 1.1
     const REST_A = [REST_ANCHOR[0] + OUT, REST_ANCHOR[1], REST_ANCHOR[2]]
     const LOAD_A = [LOAD_ANCHOR[0] + OUT, LOAD_ANCHOR[1] + LIFT, LOAD_ANCHOR[2]]
     // Where the ratchet ends: the same table grip, but on the SQUARED pile the
-    // weave lands in — so the hands ride out and up exactly as far as the cards
+    // weave lands in, so the hands ride out and up exactly as far as the cards
     // they are pouring, instead of to a pair of hand-picked coordinates that
     // swept the fattest capsule in the rig through the landing corridor.
     // ...which is the same table grip riding OUT along the half and UP over the
@@ -186,7 +186,7 @@ export const riffleLesson = {
       baseY: 0.02 + HALF * CARD_GAP,
       deckH: (HALF - 1) * CARD_GAP,
       // The carry beats squeeze far more gently than the bend does, so their
-      // pads need less air — and the grip-fidelity check wants the thumb ON its
+      // pads need less air, and the grip-fidelity check wants the thumb ON its
       // packet, not hovering a squeeze above it.
       squeeze: CARRY_SQUEEZE,
     })
@@ -210,7 +210,7 @@ export const riffleLesson = {
         hands: {
           right: [
             // Pin frame 0. Without it both hands lerp in from the `relaxed`
-            // preset's OWN wrist position — a pre-scale number that now parks a
+            // preset's OWN wrist position, a pre-scale number that now parks a
             // 2.83x hand on top of the deck, and the sweep out of it rakes the
             // pile (measured 0.172 deep at 0.6s).
             { at: 0, pose: 'deckApproach', anchor: [APPROACH_REACH + 0.9, TABLE_TOP + DECK_APPROACH_DROP + 0.5, 0.2] },
@@ -240,12 +240,12 @@ export const riffleLesson = {
           right: [
             { at: 0.4, pose: topGrip, anchor: [TOP_A[0] + 0.34, TOP_A[1] + 0.24, TOP_A[2]] },
             // NOT easeOutBackSoft: an overshoot ease dips PAST the target, and
-            // the target here is a contact — the pads end up under the cards.
+            // the target here is a contact, the pads end up under the cards.
             { at: 1, pose: restGrip, anchor: REST_A, ease: 'easeOutCubic' },
           ],
           // The left hand must CLOSE ON ITS HALF here, not stand off: `slide`
           // declares the grip at its own first frame, and a grip captures each
-          // card's offset in the hand's frame at that instant — so wherever
+          // card's offset in the hand's frame at that instant, so wherever
           // this hand is when `slide` starts is where the bottom half stays
           // welded for the rest of the lesson. Parked out at 0.75 (the faro's
           // stand-off, which faro can afford because its left hand is not the
@@ -253,8 +253,8 @@ export const riffleLesson = {
           // safe to close in: the cut packet travels to +x and this hand
           // mirrors to −x, so they never share airspace. Height is the bottom
           // half's own top card, which has not moved.
-          // The packet rides the contact frame from HERE — `slide` declares the
-          // grip at its own first frame and the offset is captured then — so
+          // The packet rides the contact frame from HERE, `slide` declares the
+          // grip at its own first frame and the offset is captured then, so
           // this anchor decides where the bottom half stays welded for the rest
           // of the lesson. It is a cliff, not a slope: 0.65 measures 0.0000
           // everywhere, 0.50 measures 0.02-0.05, and 0.45 or below is back at
@@ -286,13 +286,13 @@ export const riffleLesson = {
         // geometry fact, not a preference. A gripped packet rides its hand's
         // contact frame, and the engine mirrors the left hand's frame POSITION
         // while keeping its quaternion unmirrored (grips.js' load-bearing
-        // rule) — so a left-hand grip held across the 90° turn from the carry
+        // rule), so a left-hand grip held across the 90° turn from the carry
         // grip to the table grip rotates its packet the WRONG WAY round and
         // lands it 0.3 off its own layout, which is where the halves floated
         // through the whole bend and weave (measured 0.145 of thumb inside the
         // cards, unchanged by pressure or lift). The right hand turns its half
         // correctly because its frame is unmirrored; the left half follows the
-        // step's layout instead, and its hand — anchored off that same layout —
+        // step's layout instead, and its hand, anchored off that same layout -
         // tracks it. Both halves are gripped again from `bend` on, where no
         // orientation change remains.
         grip: {
@@ -351,13 +351,13 @@ export const riffleLesson = {
         id: 'weave',
         label: 'Ratchet the thumbs — the corners interlace on the felt',
         // A real riffle drops irregular clumps, not one card at a time. Without
-        // this the weave is a perfect faro — deterministic, and the exact move
+        // this the weave is a perfect faro, deterministic, and the exact move
         // this lesson's own "did you know" contrasts itself against.
         order: gsrRiffleOrder,
         duration: 5500,
         ease: 'easeInOutCubic',
         midBend: 0.7,
-        arcLift: 0.05, // the cards stay LOW — they flick down onto the table
+        arcLift: 0.05, // the cards stay LOW, they flick down onto the table
         // The weave lands as a LANDSCAPE stack between the hands (short ends
         // toward the palms), the way a real table riffle squares up.
         toLayout: (order) => landscapeStackLayout(order),
@@ -378,8 +378,8 @@ export const riffleLesson = {
               openFingers: 0.9,
               anchorFrom: LOAD_A,
               // Ride OUT and UP as the weave lands. The cards settle into
-              // landscapeStackLayout — long axis on x, so the stack spans
-              // x±0.44 and tops out at TABLE_TOP — and at the old [0.56, 0.32]
+              // landscapeStackLayout, long axis on x, so the stack spans
+              // x±0.44 and tops out at TABLE_TOP, and at the old [0.56, 0.32]
               // the thumb's base capsule (the fattest in the rig, r≈0.078)
               // swept straight through that landing corridor for the last ~2s.
               anchorTo: LAND_A,
@@ -406,8 +406,8 @@ export const riffleLesson = {
               openFingers: 0.9,
               anchorFrom: LOAD_A,
               // Ride OUT and UP as the weave lands. The cards settle into
-              // landscapeStackLayout — long axis on x, so the stack spans
-              // x±0.44 and tops out at TABLE_TOP — and at the old [0.56, 0.32]
+              // landscapeStackLayout, long axis on x, so the stack spans
+              // x±0.44 and tops out at TABLE_TOP, and at the old [0.56, 0.32]
               // the thumb's base capsule (the fattest in the rig, r≈0.078)
               // swept straight through that landing corridor for the last ~2s.
               anchorTo: LAND_A,
@@ -438,7 +438,7 @@ export const riffleLesson = {
         bend: 0,
         hands: {
           // The weave lands LANDSCAPE (x±0.44), so the hands square it from
-          // 0.9 out — far enough that the thumb base clears the long side —
+          // 0.9 out, far enough that the thumb base clears the long side -
           // with the pads one measured drop above the new top card.
           // `easeOutCubic`, not `settle`: settle overshoots ~4% past the
           // target, which on a contact means straight through the top card.
@@ -532,7 +532,7 @@ export const riffleLesson = {
         hands: {
           // `relaxed` carries the preset's OWN wrist position (x 0.95, y 0.5),
           // which is a hand-picked number from before any of this geometry
-          // existed — it parked the pinky inside the squared deck. Rest on the
+          // existed, it parked the pinky inside the squared deck. Rest on the
           // deck instead, one measured drop above its top card.
           left: [{ at: 1, pose: 'deckRest', anchor: [REST_REACH + REST_PAD_X, TABLE_TOP + DECK_REST_DROP, 0.0], ease: 'easeInOutCubic' }],
           right: [{ at: 1, pose: 'deckRest', anchor: [REST_REACH + REST_PAD_X, TABLE_TOP + DECK_REST_DROP, 0.0], ease: 'easeInOutCubic' }],

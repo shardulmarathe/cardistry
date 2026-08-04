@@ -14,7 +14,7 @@ export const usePlayer = create((set, get) => ({
   direction: 1,
   // Bumped by every SEEK. LessonRunner integrates time in its own ref while
   // playing and only reads globalMs when paused, so a seek that also leaves the
-  // player playing (restart) was silently ignored — the ▶ button at the end of
+  // player playing (restart) was silently ignored, the ▶ button at the end of
   // a lesson re-clamped to the end and did nothing. The runner watches this
   // counter and adopts globalMs whenever it changes, in either play state.
   seekNonce: 0,
@@ -40,7 +40,7 @@ export const usePlayer = create((set, get) => ({
     set((s) => ({ globalMs: 0, playing: true, direction: 1, seekNonce: s.seekNonce + 1 })),
   setSpeed: (speed) => set({ speed }),
 
-  // Called by the transport slider — pauses and snaps to an absolute time.
+  // Called by the transport slider, pauses and snaps to an absolute time.
   scrubTo: (ms) => {
     const { durationMs, track } = get()
     const globalMs = Math.max(0, Math.min(durationMs, ms))

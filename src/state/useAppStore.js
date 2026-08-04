@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { createDeck } from '../deckModel'
 
 // Discrete / logical / slow-changing app state. Per-frame card + hand transforms
-// live in imperative refs (cardRegistry) and the player store — NOT here.
+// live in imperative refs (cardRegistry) and the player store. NOT here.
 export const useAppStore = create((set) => ({
   // 'visualizer' | 'lesson' | 'playground'
   mode: 'visualizer',
@@ -16,8 +16,8 @@ export const useAppStore = create((set) => ({
   // compile seed (a different interleave each time) and forces a recompile.
   // `lessonBaseline` is the card order when the lesson was OPENED and is held
   // across repeats: mixing has to be measured against the pristine deck or
-  // every repeat would read "2 rising sequences" again and the whole point —
-  // watching a riffle climb toward randomness over ~7 runs — would be lost.
+  // every repeat would read "2 rising sequences" again and the whole point -
+  // watching a riffle climb toward randomness over ~7 runs, would be lost.
   lessonRun: 0,
   lessonBaseline: null,
   lessonHistory: [], // [{ run, rising, kept, pairs }] appended as each run ends
@@ -29,7 +29,7 @@ export const useAppStore = create((set) => ({
   camera: { mode: 'orbit', preset: 'overview' },
   // Pixels of viewport the docked UI covers along the bottom. The scene's
   // optical centre is the viewport centre, so a tall transport panel pushes the
-  // action behind it — ResponsiveCamera offsets the projection by this much to
+  // action behind it. ResponsiveCamera offsets the projection by this much to
   // recentre on the visible strip above the panel.
   uiInset: 0,
   settings: { showHands: false, quality: 'high', reducedMotion: false },

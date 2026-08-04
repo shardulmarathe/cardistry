@@ -6,12 +6,12 @@ import { getCard, getRegistry } from '../card/cardRegistry'
 import { buildVizLayout } from '../lessons/engine/layouts'
 
 // Free-play "Visualizer": arrange the deck in a selectable layout (fan, ring,
-// ribbon, spiral, grid, stack). Tap a card to flip it — the card turns over
+// ribbon, spiral, grid, stack). Tap a card to flip it, the card turns over
 // about its VERTICAL axis (a "side flip": the S♠ face mirrors to ♠S, as if a
 // hand grabbed one edge and laid it over), NOT a hinge toward the camera. It
 // lifts in a small arc so it clears its neighbours. "Flip all" runs the same
 // flip as a staggered wave that follows the layout's own card order. Drag a
-// card to any spot to reorder it — works in every layout. The layout itself is
+// card to any spot to reorder it, works in every layout. The layout itself is
 // changed only from the buttons in VisualizerControls; clicking felt does
 // nothing but orbit.
 const FLIP_DUR = 0.5
@@ -65,7 +65,7 @@ export default function VisualizerDriver() {
   }).current
 
   // Keep the local face map in sync with the deck (Reset, single-tap commit,
-  // cascade commit). Values always match after our own commits — this only
+  // cascade commit). Values always match after our own commits, this only
   // matters when the deck is replaced externally (e.g. Reset -> all face-down).
   useEffect(() => {
     const next = new Map()
@@ -153,7 +153,7 @@ export default function VisualizerDriver() {
     if (completedThisFrame && flips.size === 0) commitFaces()
   })
 
-  // "Flip all" — staggered wave in layout order (base.index is the card's
+  // "Flip all", staggered wave in layout order (base.index is the card's
   // position in the current layout, so fan sweeps end-to-end, ring goes around,
   // spiral runs centre-out).
   const firstNonce = useRef(true)
@@ -189,7 +189,7 @@ export default function VisualizerDriver() {
     }
 
     // Cards are registered as their outer <group>; the pickable geometry lives
-    // on two child meshes, and Group.raycast is a no-op — so we must recurse and
+    // on two child meshes, and Group.raycast is a no-op, so we must recurse and
     // walk the hit object's parent chain back up to the registered group.
     const pickCard = () => {
       const entries = [...getRegistry().entries()]
@@ -245,7 +245,7 @@ export default function VisualizerDriver() {
       // Insertion index = the layout slot whose on-screen position is closest to
       // where the card was dropped. Projecting each slot to pixels makes this
       // work uniformly for every layout (fan, ring, ribbon, spiral, grid, stack)
-      // — no per-layout ordering axis. The dragged card's own slot is included,
+      //, no per-layout ordering axis. The dragged card's own slot is included,
       // so dropping it back near home is a no-op.
       const rect = el.getBoundingClientRect()
       const v = new THREE.Vector3()

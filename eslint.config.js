@@ -27,7 +27,7 @@ export default defineConfig([
     },
   },
   {
-    // Build config runs in Node, not the browser — it reads process.env.
+    // Build config runs in Node, not the browser, it reads process.env.
     files: ['vite.config.js'],
     languageOptions: { globals: globals.node },
   },

@@ -1,17 +1,17 @@
 // Micro-animation for the hands: a global idle "breathing" overlay so hands
 // never freeze, and per-segment finger-motion overlays (tremor, ripple,
 // tighten) that add life to a held pose. Everything here is a PURE function of
-// its time argument — no state, no randomness — so bidirectional scrubbing and
+// its time argument, no state, no randomness, so bidirectional scrubbing and
 // compile-time grip capture stay exact.
 //
 // Boundary rule: segment-local finger motion multiplies by sin²(πt), which is
-// 0 (with zero slope) at t=0 and t=1 — any inner phase offsets are safe and
+// 0 (with zero slope) at t=0 and t=1, any inner phase offsets are safe and
 // segment edges never pop. The idle overlay instead runs on ABSOLUTE ms and is
 // continuous everywhere by construction, so it needs no boundary treatment.
 
 import { FINGER_NAMES } from './handRigSpec'
 
-// Curl deltas distribute over [proximal, middle, distal] in this ratio — a
+// Curl deltas distribute over [proximal, middle, distal] in this ratio, a
 // whole-finger flex reads more natural than bending a single joint.
 const JOINT_WEIGHTS = [1, 0.7, 0.45]
 
@@ -49,9 +49,9 @@ export function applyIdle(pose, ms, side, scale = 1) {
 // --- Segment finger motion ---------------------------------------------------
 // A keyframe/segment carries fingerMotion: [{ fingers, type, amp, cycles,
 // phase }] with type one of:
-//   'tremor'     — effortful shake of the listed fingers (grip under load)
-//   'curlRipple' — the wave running index→pinky (drumming/rippling fingers)
-//   'tighten'    — a mid-segment squeeze that fully relaxes by the boundary
+//   'tremor', effortful shake of the listed fingers (grip under load)
+//   'curlRipple', the wave running index→pinky (drumming/rippling fingers)
+//   'tighten', a mid-segment squeeze that fully relaxes by the boundary
 // Evaluated on the segment's UN-eased local t (like wrist `motion` overlays).
 export function applyFingerMotion(pose, fingerMotion, t) {
   const env = Math.sin(Math.PI * t) ** 2

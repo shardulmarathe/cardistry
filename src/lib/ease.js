@@ -10,13 +10,13 @@ export const EASES = {
     const c3 = c1 + 1
     return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2)
   },
-  // Gentler overshoot (~4%) — fingers closing onto a grip, packets squaring.
+  // Gentler overshoot (~4%), fingers closing onto a grip, packets squaring.
   easeOutBackSoft: (t) => {
     const c1 = 0.9
     const c3 = c1 + 1
     return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2)
   },
-  // Dips ~4% below the start before committing — the wind-up before a reach.
+  // Dips ~4% below the start before committing, the wind-up before a reach.
   anticipate: (t) => {
     const c1 = 1.70158
     const c3 = c1 + 1
@@ -25,7 +25,7 @@ export const EASES = {
   // Damped-spring settle: fast rise, overshoot, ring down. The (1-t) factor
   // pins the endpoint at exactly 1 so segment boundaries stay pop-free.
   settle: (t) => 1 - Math.exp(-7 * t) * Math.cos(3 * Math.PI * t) * (1 - t),
-  // Fast commit then a long soft landing — a packet dropped onto a pile.
+  // Fast commit then a long soft landing, a packet dropped onto a pile.
   snapEase: (t) => 1 - Math.pow(1 - t, 5),
 }
 

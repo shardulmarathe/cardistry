@@ -15,14 +15,14 @@ import { buildGuideArrows, buildGuideGhosts, buildGuidePath } from '../annotatio
 //   { kind:'riffle', label, duration, ease, hands?, camera?, annotations? }
 //   { kind:'hold',   label, duration, hands?, camera?, annotations? }
 //
-// hands: { left?: { from, to }, right?: { from, to } } — named pose presets
+// hands: { left?: { from, to }, right?: { from, to } }, named pose presets
 // A pose is { id, pos:Vector3, quat:Quaternion, bend:number }.
 
 function clonePose(p) {
   return { pos: p.pos.clone(), quat: p.quat.clone(), bend: p.bend || 0 }
 }
 
-// Resolve a step's `to` (array or deck→array fn) to the ordered pose array —
+// Resolve a step's `to` (array or deck→array fn) to the ordered pose array -
 // order preserved (the toPoseMap Map form loses it, which staggering needs).
 function resolvePoseArray(to, deck) {
   return typeof to === 'function' ? to(deck) : to
@@ -37,7 +37,7 @@ function staggerWindow(k, count, spread = 0.55, span = 0.45) {
 }
 
 // Group a destination pose array into packets by their (x,z) column, in
-// first-appearance order — lets a split stagger deal packet-by-packet without
+// first-appearance order, lets a split stagger deal packet-by-packet without
 // the lesson enumerating card ids. Returns k(entry) and the packet count.
 function packetIndexer(arr) {
   const index = new Map()
@@ -70,7 +70,7 @@ function normalizeHandKeyframes(spec) {
 // Resolve one keyframe to a full hand pose. A named `pose` is looked up (and
 // re-anchored); with no pose we clone the hand's current pose (optionally moved
 // to a new anchor) so a keyframe can just nudge the wrist or override fingers.
-// Partial `fingers` overrides are merged on top — the thumb-ratchet primitive.
+// Partial `fingers` overrides are merged on top, the thumb-ratchet primitive.
 function resolveKeyframePose(kf, side, current) {
   let base
   if (typeof kf.pose === 'string') {
@@ -104,7 +104,7 @@ function resolveKeyframePose(kf, side, current) {
 
 // Bake the left/right mirror into a positional motion overlay: the x component
 // is negated for the left hand so one authored orbit circles symmetrically.
-// Only wrist POSITION is affected — never the quat or curls (mirror invariant).
+// Only wrist POSITION is affected, never the quat or curls (mirror invariant).
 function mirrorMotion(motion, side) {
   if (!motion) return undefined
   return { ...motion, sx: side === 'left' ? -1 : 1 }
@@ -232,7 +232,7 @@ function buildHolds(decls, hands, cardTracks) {
 
   const holds = []
   // A card's pose at ms as it will actually RENDER: if a previously-built hold
-  // still carries it, project through that hold's frame — otherwise its track.
+  // still carries it, project through that hold's frame, otherwise its track.
   // This lets one grip hand a packet to the next (arch → weave) seamlessly.
   const renderedCardPose = (id, ms) => {
     for (let i = holds.length - 1; i >= 0; i--) {
@@ -285,7 +285,7 @@ function buildHolds(decls, hands, cardTracks) {
 }
 
 // The hold's grip frame at an absolute ms, via the SAME pipeline the runtime
-// sampler uses (idle overlay included, pressure curl included) — capture,
+// sampler uses (idle overlay included, pressure curl included), capture,
 // release baking, and rendering can never disagree.
 function holdFrameAt(hold, hands, ms) {
   const pose = sampleHandSegments(hands[hold.side] ?? [], ms, hold.side)
@@ -297,7 +297,7 @@ function holdFrameAt(hold, hands, ms) {
 // Snap-killer: a held card leaves the hand exactly where the grip frame put
 // it. For every hold, project each card through frame(t_release) ∘ offset and
 // overwrite the `from` pose of the card's segment that begins at that release
-// — the card's post-release travel then starts at its true in-hand position,
+//, the card's post-release travel then starts at its true in-hand position,
 // so the handoff is seamless by construction (both scrub directions). Cards
 // that hand off INTO a following hold have no segment at the boundary and are
 // skipped here; the next hold's capture projects through this one instead.
@@ -324,17 +324,17 @@ function bakeHoldReleases(holds, hands, cardTracks, trackDuration) {
 
 // A card is a RECTANGLE: spinning it 180° about its face normal (local Z) maps
 // it exactly onto itself. So two quaternions differing by that spin describe
-// the same card lying in the same place — but slerping between them takes the
+// the same card lying in the same place, but slerping between them takes the
 // long way round and the card visibly pirouettes ~180° mid-move.
 //
 // That is what made the riffle/faro weave look like the cards were spinning.
 // The grip projection hands a packet off in one representation
 // (`Y-87 X66 Z-4`) while the landing layout authors the other
-// (`Y90 X90 Z0`) — physically identical, 173° apart as quaternions.
+// (`Y90 X90 Z0`), physically identical, 173° apart as quaternions.
 //
 // Fix once, at compile time, in a forward pass per card: snap each segment's
 // endpoints to whichever equivalent is nearest what precedes it. Purely a
-// change of REPRESENTATION — no card moves, no face turns over — so it is
+// change of REPRESENTATION, no card moves, no face turns over, so it is
 // invisible except that the spurious spin disappears. (The card back is
 // near-symmetric under this spin, so even its artwork reads the same; see the
 // card-back-orientation note in HANDS_HANDOFF.md.)
@@ -368,12 +368,12 @@ function pickGuideCards(deck, count = 6) {
 
 // `run` is the repeat index for "Shuffle again": it offsets the lesson seed so
 // each repeat is a genuinely DIFFERENT shuffle rather than the same interleave
-// replayed on a new order — a real riffle never drops the same clumps twice.
+// replayed on a new order, a real riffle never drops the same clumps twice.
 // run 0 reproduces the original track byte-for-byte, so the verify harness and
 // every existing caller are unaffected.
 export function compileLesson(lessonDef, initialDeck, { run = 0 } = {}) {
   // Lessons teach on a squared FACE-DOWN deck. If the visualizer left cards
-  // flipped over, honoring that here made every face-down target a 180° flip —
+  // flipped over, honoring that here made every face-down target a 180° flip -
   // cards somersaulting on edge through the felt mid-weave (screenshot-caught).
   // Entering a lesson already teleports the cards into the start stack, so
   // normalizing faces in that same jump is free.
@@ -425,7 +425,7 @@ export function compileLesson(lessonDef, initialDeck, { run = 0 } = {}) {
           tEnd,
           frame: (isV2 ? g.frame : null) ?? 'wrist',
           bendGain: (isV2 ? g.bendGain : 0) ?? 0,
-          // release:'stagger' — each card leaves the hand at ITS OWN moment:
+          // release:'stagger', each card leaves the hand at ITS OWN moment:
           // when its staggered travel segment inside this step begins. The
           // riffle weave peels cards off the thumb one by one this way.
           release: isV2 ? g.release : undefined,
@@ -440,7 +440,7 @@ export function compileLesson(lessonDef, initialDeck, { run = 0 } = {}) {
     if (step.kind === 'riffle') {
       // `kind:'riffle'` describes the WEAVE CHOREOGRAPHY (staggered interlace),
       // not which merge produced the order. A step picks its own merge via
-      // `order:` — the faro keeps the default perfect alternation, while the
+      // `order:`, the faro keeps the default perfect alternation, while the
       // riffle opts into the clumpy GSR merge that actually randomizes.
       const finalOrder = (step.order ?? riffleOrder)(currentDeck, rng)
       const n = finalOrder.length
@@ -528,7 +528,7 @@ export function compileLesson(lessonDef, initialDeck, { run = 0 } = {}) {
         for (const pose of endPoses.values()) pose.bend = step.bend
       }
       // A partial `to` array moves only the listed cards (e.g. cutting the top
-      // half off a stack) — carry every unlisted card's pose forward.
+      // half off a stack), carry every unlisted card's pose forward.
       if (endPoses.size < currentDeck.length) {
         const merged = new Map(fromPoses)
         for (const [id, p] of endPoses) merged.set(id, p)

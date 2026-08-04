@@ -34,7 +34,7 @@ function drawFace(ctx, card) {
   const pad = 44
   const band = 20 // oxblood + gold edge band width
 
-  // Oxblood edge — the very border matches the deco back (red + gold). Fills
+  // Oxblood edge, the very border matches the deco back (red + gold). Fills
   // the whole canvas so the card's rim reads red-and-gold, with an ivory field
   // inset for the pips.
   const edge = ctx.createLinearGradient(0, 0, CELL_W, CELL_H)
@@ -65,7 +65,7 @@ function drawFace(ctx, card) {
   // Gold corner fans in the band, echoing the back.
   drawCornerFans(ctx, CELL_W, CELL_H, 20, 22, 'rgba(240, 198, 122, 0.9)')
 
-  // Ghosted center suit — a soft tonal backdrop, drawn before the index.
+  // Ghosted center suit, a soft tonal backdrop, drawn before the index.
   ctx.save()
   ctx.globalAlpha = isRed ? 0.14 : 0.1
   ctx.fillStyle = ink
@@ -84,7 +84,7 @@ function drawFace(ctx, card) {
   ctx.fillText(symbol, CELL_W / 2, CELL_H / 2 + 6)
   ctx.globalAlpha = 1
 
-  // Index block — rank over suit, both corners (top-left + rotated bottom-right).
+  // Index block, rank over suit, both corners (top-left + rotated bottom-right).
   drawIndex(ctx, card.rank, symbol, ink, pad)
   ctx.save()
   ctx.translate(CELL_W - pad, CELL_H - pad)
@@ -122,7 +122,7 @@ export function buildFaceTextures(cards, maxAnisotropy = 8) {
 }
 
 // ---------------------------------------------------------------------------
-// Back — bone-bordered art-deco card back with a gold monogram "S" medallion.
+// Back, bone-bordered art-deco card back with a gold monogram "S" medallion.
 // One shared texture for all 52 cards. The design is ~180°-symmetric (the
 // glyph "S" is itself rotationally symmetric) so it reads correctly whichever
 // way a card is turned.

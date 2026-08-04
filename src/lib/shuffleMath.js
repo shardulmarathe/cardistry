@@ -16,7 +16,7 @@ export function alternateMerge(left, right) {
   return out
 }
 
-// A PERFECT weave — this is the faro, not the riffle. Kept under this name
+// A PERFECT weave, this is the faro, not the riffle. Kept under this name
 // because `kind:'riffle'` steps default to it, but a real riffle never
 // alternates strictly: see gsrRiffleOrder below.
 export function riffleOrder(deck) {
@@ -27,7 +27,7 @@ export function riffleOrder(deck) {
 // Gilbert–Shannon–Reeds: the standard probabilistic model of a REAL riffle,
 // and the one the Bayer–Diaconis "seven shuffles" result is proved about.
 // Cards drop from whichever packet still holds more, in proportion to what
-// each has left — so the result falls in irregular clumps rather than strict
+// each has left, so the result falls in irregular clumps rather than strict
 // alternation. That clumping IS the randomization; a strictly alternating
 // weave is a faro, which is deterministic and restores the deck after eight.
 //

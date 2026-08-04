@@ -169,7 +169,7 @@ export default function LessonCatalog() {
   }, [selectedId])
 
   // Tear the preview down for good when the catalog goes away (lesson opened,
-  // tab changed) — a track left in the player would keep the runner sampling.
+  // tab changed), a track left in the player would keep the runner sampling.
   useEffect(() => {
     const baseDeck = baseDeckRef.current
     return () => {

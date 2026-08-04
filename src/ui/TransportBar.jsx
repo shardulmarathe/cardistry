@@ -53,7 +53,7 @@ export default function TransportBar() {
 
   // Tell the camera how much viewport this panel covers, so the shuffle is
   // framed in the strip above it rather than behind it. The panel's height is
-  // not fixed — the mixing strip and the replay history both grow it — so this
+  // not fixed, the mixing strip and the replay history both grow it, so this
   // has to be measured, not assumed.
   useLayoutEffect(() => {
     const el = barRef.current
@@ -161,7 +161,7 @@ export default function TransportBar() {
 
 // "Shuffle again": re-run the same technique on the deck the last run left
 // behind. Shuffles compound the way they do at a real table, and the per-run
-// numbers are scored against the deck as it was when the lesson OPENED — so
+// numbers are scored against the deck as it was when the lesson OPENED, so
 // this is where the catalog's "~7 riffles randomize a deck" claim becomes
 // something you can actually watch happen.
 function ReplayBar({ lesson }) {

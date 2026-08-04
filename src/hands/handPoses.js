@@ -9,16 +9,16 @@ import { CARD_T } from '../lib/constants'
 // larger = more curl toward the palm (see the frame notes in handRig.js).
 //
 // MIRRORING: the left hand is the right rig mirrored by root.scale.x < 0, so it
-// uses the SAME wrist quaternion and the SAME finger angles — only its wrist X
+// uses the SAME wrist quaternion and the SAME finger angles, only its wrist X
 // position is negated (getHandPose). Do NOT mirror the quaternion or negate
 // curls; that double-mirrors and flips the grip (verified headlessly).
 
 // Palm-down base: fingers hang down and curl further down/inward, thumb sweeps
-// toward the deck center — the natural two-handed table grip.
+// toward the deck center, the natural two-handed table grip.
 function euler(x, y = 0, z = 0) {
   return new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z))
 }
-// Palm-down FIRST, then a world-Y yaw (order 'YXZ') — the yaw swings the whole
+// Palm-down FIRST, then a world-Y yaw (order 'YXZ'), the yaw swings the whole
 // palm-down hand about the vertical, so the fingers point along the table
 // instead of at the camera while the palm keeps facing the felt. Authoring the
 // yaw the other way round (plain 'XYZ') tips the palm on edge instead.
@@ -75,7 +75,7 @@ export const HAND_POSES = {
     0.16,
   ),
 
-  // Riffle arch: firm grip that bows the half — fingers wrap the outer edge,
+  // Riffle arch: firm grip that bows the half, fingers wrap the outer edge,
   // thumb presses the inner edge down. This is the grip that loads the spring.
   riffleArch: pose(
     [0.52, 0.44, 0.02],
@@ -110,7 +110,7 @@ export const HAND_POSES = {
   ),
 
   // Packet grab: palm down, all fingers curled to cage a small packet from
-  // above with the thumb opposing — the overhand "pick it up and carry it" grip.
+  // above with the thumb opposing, the overhand "pick it up and carry it" grip.
   packetGrab: pose(
     [0.5, 0.44, 0.05],
     euler(PALM_DOWN, 0, 0),
@@ -118,7 +118,7 @@ export const HAND_POSES = {
     0.12,
   ),
 
-  // Bridge cage: both hands cup the squared, arched deck for the waterfall — the
+  // Bridge cage: both hands cup the squared, arched deck for the waterfall, the
   // thumb presses down on the top edge while the four fingers curl well under
   // the far edge, caging the spring so it can cascade out under control.
   bridgeCage: pose(
@@ -129,7 +129,7 @@ export const HAND_POSES = {
   ),
 
   // Palm cradle: palm UP, fingers curling gently upward to cup a packet that
-  // rests on the palm — the hindu/strip receiving hand. Fingers point away
+  // rests on the palm, the hindu/strip receiving hand. Fingers point away
   // from the dealer (-z) so the cupped pile faces the camera.
   palmCradle: pose(
     [0.62, 0.13, 0.12],
@@ -158,19 +158,19 @@ export const HAND_POSES = {
   // --- Shared approach / rest grip -------------------------------------------
   // Every lesson used to open and close with both hands parked in `relaxed`,
   // a full card-width of air (0.66) between the nearest fingertip and the
-  // nearest card — two mannequin hands floating beside a deck they never
+  // nearest card, two mannequin hands floating beside a deck they never
   // touch. These two presets are the fix: the hand comes in from its own side
   // of the table, YAWED so the fingers point at the deck instead of at the
   // camera, and settles with the fingertips ON the top card.
   //
   // Geometry that lessons anchor against (world offsets from the wrist, right
-  // hand, measured off this rig — see the note on `deckRest` below):
+  // hand, measured off this rig, see the note on `deckRest` below):
   //   fingertips reach ~0.60 inward (−x) and hang ~0.24 below the wrist;
   //   the thumb trails to −z, its fat base capsule staying above the fingers.
   // So `anchor.y = topCardY + DECK_REST_DROP` lands the tips tangent on a
   // squared deck, and any |anchor.x| ≳ 0.7 keeps the thumb off it entirely.
 
-  // Approach: fingers flat and splayed, hovering — the pose a hand arrives in.
+  // Approach: fingers flat and splayed, hovering, the pose a hand arrives in.
   deckApproach: pose(
     [0.98, 0.5, 0.06],
     eulerYXZ(PALM_DOWN + 0.1, REACH_IN, 0),
@@ -178,7 +178,7 @@ export const HAND_POSES = {
     0.44,
   ),
 
-  // Rest: the same hand closed onto the deck — fingers curled just enough that
+  // Rest: the same hand closed onto the deck, fingers curled just enough that
   // the pads (not the knuckles) carry the contact, thumb braced outside the
   // long edge. This is what "the hands are holding something" looks like at
   // the start and end of a lesson.
@@ -199,7 +199,7 @@ export const HAND_POSES = {
 }
 
 // How far below the wrist each approach/rest preset's LOWEST finger surface
-// hangs, plus a card's own half-thickness — i.e. how high above a top card's
+// hangs, plus a card's own half-thickness, i.e. how high above a top card's
 // CENTRE the wrist must sit for the fingertips to land exactly tangent on it.
 // Measured off the rig (handKinematics FK, all three capsules of all five
 // fingers); a lesson anchors `y = topCardCentreY + DECK_*_DROP` and gets a
@@ -208,7 +208,7 @@ export const HAND_POSES = {
 // breathing overlay and the ease into the pose can't push a pad through a card.)
 // DERIVED, not hardcoded: every one of these is a wrist-to-finger-surface
 // distance, so it scales linearly with HAND_SCALE. Measuring them off the rig
-// means HAND_SCALE is a single knob — change it and every lesson that anchors
+// means HAND_SCALE is a single knob, change it and every lesson that anchors
 // off these constants follows automatically, instead of 40-odd hand-tuned
 // offsets silently going stale. (At HAND_SCALE 4.6 these reproduce the values
 // they replace: 0.366 / 0.283 / 0.574.)
@@ -236,20 +236,20 @@ const _approach = measureReach(HAND_POSES.deckApproach)
 export const DECK_REST_DROP = _rest.drop + CARD_T / 2 + CONTACT_AIR
 export const DECK_APPROACH_DROP = _approach.drop + CARD_T / 2 + CONTACT_AIR
 // How far the fingertips reach toward the table centre (−x, right hand) from
-// the wrist in these poses — pick |anchor.x| ≈ DECK_REACH + a little so the
+// the wrist in these poses, pick |anchor.x| ≈ DECK_REACH + a little so the
 // tips land on the deck while the fat thumb base stays outside its footprint.
 export const DECK_REACH = _rest.reach
 
 // Same idea for the `packetGrab` cage, which riffle/faro/overhand all anchor
 // against (they each had their own hardcoded 0.465). The cage carries more air
 // than a rest contact because it closes AROUND a packet rather than settling on
-// one — that extra is hand-sized, so it scales here too.
+// one, that extra is hand-sized, so it scales here too.
 export const PACKET_GRAB_DROP =
   measureReach(HAND_POSES.packetGrab).drop + CARD_T / 2 + 0.00908 * HAND_SCALE
 
 // Resolve a named pose for a side, optionally re-anchoring the wrist to a world
 // position supplied by the lesson step (lets each lesson place the hands on its
-// own deck geometry — the fix for "hands don't sit at the deck halves").
+// own deck geometry, the fix for "hands don't sit at the deck halves").
 export function getHandPose(name, side = 'right', anchor = null) {
   const base = HAND_POSES[name] || HAND_POSES.relaxed
   const pos = anchor
@@ -305,7 +305,7 @@ function lerpSparse(a, b, t, keys) {
   return out
 }
 
-// Interpolate two poses — slerp wrist, lerp joint angles.
+// Interpolate two poses, slerp wrist, lerp joint angles.
 export function lerpHandPose(a, b, t) {
   const out = {
     wrist: {

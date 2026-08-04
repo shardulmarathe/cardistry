@@ -34,8 +34,8 @@ function OrderStrip() {
   const frame = timeline ? frameAt(timeline, completed) : null
 
   // Publish the per-card ramp colour so the 3D cards can wear the same scale.
-  // It is fixed for a lesson — a card's colour is WHERE IT STARTED, and only its
-  // position moves — so this fires once per lesson, never per frame.
+  // It is fixed for a lesson, a card's colour is WHERE IT STARTED, and only its
+  // position moves, so this fires once per lesson, never per frame.
   useEffect(() => {
     useMixingView.getState().setColors(timeline ? timeline.colorById : null)
     return () => useMixingView.getState().setColors(null)

@@ -75,7 +75,7 @@ for (const name of Object.keys(HAND_POSES)) {
   }
 }
 
-// 2. Randomized poses: random wrist transform, curls, spread — plus the v2
+// 2. Randomized poses: random wrist transform, curls, spread, plus the v2
 //    fields (per-finger splay, thumb opposition) so FK stays honest when the
 //    rig learns them.
 const rand = mulberry32(1234)

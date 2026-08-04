@@ -44,7 +44,7 @@ export default function LessonRunner() {
     const track = p.track
     if (!track) return
 
-    // Adopt an explicit seek regardless of play state — see player.js seekNonce.
+    // Adopt an explicit seek regardless of play state, see player.js seekNonce.
     if (p.seekNonce !== lastSeekRef.current) {
       lastSeekRef.current = p.seekNonce
       msRef.current = p.globalMs
@@ -87,7 +87,7 @@ export default function LessonRunner() {
       finalizedRef.current = true
       setDeck(track.finalDeck)
       // Score this run against the deck as it was when the lesson OPENED, not
-      // as this run started — that is what makes repeats add up instead of each
+      // as this run started, that is what makes repeats add up instead of each
       // one reporting the same "one shuffle's worth" of mixing.
       const st = useAppStore.getState()
       if (st.lessonBaseline) {

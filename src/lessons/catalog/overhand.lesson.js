@@ -14,7 +14,7 @@ import { FINGERS, FINGER_NAMES, HAND_SCALE } from '../../hands/handRigSpec'
 // Overhand shuffle, rebuilt as a real one: THE DECK NEVER TOUCHES THE TABLE, and
 // every packet that leaves it is drawn off by a hand closing on it.
 //
-// WHAT THIS REPLACES. The shipped version was a pile transfer — one hand ferried
+// WHAT THIS REPLACES. The shipped version was a pile transfer, one hand ferried
 // packets between two piles on the felt, twelve wrist-flights across the table,
 // 0.94 radians of finger articulation per unit of wrist travel. The block
 // mathematics were right and the mechanics were not; a real overhand never sets
@@ -27,22 +27,22 @@ import { FINGERS, FINGER_NAMES, HAND_SCALE } from '../../hands/handRigSpec'
 //     bottom card, thumb braced on its near end, and NOTHING above the top face
 //     or in the corridor the packets travel through. That one requirement rules
 //     out every hold-from-above in this codebase, including the one hindu and
-//     strip use — anything resting on the top face pins the packet being drawn.
+//     strip use, anything resting on the top face pins the packet being drawn.
 //   * The RIGHT hand works from ABOVE, palm down in the `deckRest` straddle, and
 //     a peel is that hand CLOSING: five pads land on the deck's far half and
 //     travel across it and past its near edge, carrying the top packet with them.
 //   * The packet is welded to the `packet` contact frame, so where it goes IS
-//     where the fingers go — measured, not typed. `deliveryOf` runs the exact
+//     where the fingers go, measured, not typed. `deliveryOf` runs the exact
 //     capture-and-apply the compiler will run (pressure included) and reports
 //     where the hand will have left the cards; the pile's x and z are that
 //     answer, so the packets land under the hand that dropped them.
 //
 // WHY THE FINGERS AND NOT THE THUMB (a real overhand's thumb does this, and this
-// rig's cannot — worth writing down so nobody spends another day on it). A thumb
+// rig's cannot, worth writing down so nobody spends another day on it). A thumb
 // is a chain from a knuckle at WRIST height, and its proximal capsule is the
 // fattest thing on the hand: radius 0.187, a third of a card width.
-//   * Aim its pad at the deck's FAR edge — where a real overhand thumb goes,
-//     because that is what leaves the peeled packet on the palm side — and the
+//   * Aim its pad at the deck's FAR edge, where a real overhand thumb goes,
+//     because that is what leaves the peeled packet on the palm side, and the
 //     chain enters the stack through its underside. Swept 40 wrist heights x 6 IK
 //     seeds: there is no height where the pad is on the card and the chain is out
 //     of it.
@@ -66,14 +66,14 @@ import { FINGERS, FINGER_NAMES, HAND_SCALE } from '../../hands/handRigSpec'
 //      0.10 inside the cards. Raise until the pose's own deepest surface is
 //      tangent on the top card.
 //   3. THE LIFT (`strokePose`). Solved flat onto the card's plane, the stroke
-//      drops the packet 0.3 on its way out — the frame pitches as the fingers
-//      fold — and a packet sinking a third of a card while still over the deck
+//      drops the packet 0.3 on its way out, the frame pitches as the fingers
+//      fold, and a packet sinking a third of a card while still over the deck
 //      has to be chased by a deck that lifts out of its way, which then has to
 //      come back down through the air the packet is falling through. Solve each
 //      rung's height off the plane instead and the packet leaves LEVEL.
 //   4. THE DRAW (`DRAW_OUT`). Pad travel alone can only go as far as the thumb
 //      can follow, which leaves each packet released just past the deck's near
-//      edge — directly over the holding hand's knuckles, which the falling packet
+//      edge, directly over the holding hand's knuckles, which the falling packet
 //      then clips. Drawing the wrist back half a card carries the whole frame.
 //
 // The stroke is a LADDER of solved poses, not two keyframes: lerping between two
@@ -136,7 +136,7 @@ function crestOf(pose, side, name) {
   return crest
 }
 
-// The lowest finger SURFACE under the wrist — how high the wrist has to ride for
+// The lowest finger SURFACE under the wrist, how high the wrist has to ride for
 // nothing to dip through the felt.
 function floorOf(pose, side) {
   let lo = 0
@@ -155,7 +155,7 @@ function floorOf(pose, side) {
 
 const tipOf = (pose, side, name) => fingertipWorld(pose, side, name, new THREE.Vector3())
 
-// Absolute height of the lowest finger SURFACE of a posed hand — `floorOf`'s
+// Absolute height of the lowest finger SURFACE of a posed hand, `floorOf`'s
 // answer for a hand that is already standing somewhere, which is what a
 // deep-curl grip needs: the DECK_*_DROP constants are measured off the PRESET's
 // own curls, and a hand curled twice that deep hangs a lot further below its
@@ -185,7 +185,7 @@ export const overhandLesson = {
   // The deck is held in the air for the whole shuffle, so the action lives near
   // y≈1.1; `overview` aims at 0.15 and would push it into the top of the frame.
   // The whole shuffle happens a hand's height off the felt and finishes in a
-  // pile ON it — a metre of vertical spread, with the lesson panel taking the
+  // pile ON it, a metre of vertical spread, with the lesson panel taking the
   // bottom of the frame. `handsCradle` frames the hands beautifully and crops
   // the pile; `overview` and `dealerPOV` aim at 0.15 and crop the deck. Overhead
   // is the one angle that holds the deck, both hands and the growing pile at
@@ -219,11 +219,11 @@ export const overhandLesson = {
 
     // LEVEL THE PADS. The four fingers are different lengths, so one shared curl
     // presents four seats at four different heights and a flat card can only
-    // rest on the highest — the other three end up inside it (or, once
+    // rest on the highest, the other three end up inside it (or, once
     // `resolvePenetration` has backed them out, nowhere near it). Pick each
     // finger's own curl so all four seats agree, by scanning a ladder of curls
     // and keeping the closest: deterministic, and it re-solves itself if the rig
-    // changes. The scan is deliberately restricted to DEEP curls — a shallow
+    // changes. The scan is deliberately restricted to DEEP curls, a shallow
     // finger reaches the same height by pointing straight out across the table,
     // which puts a fingertip in the corridor the peeled packets fall through.
     const levelCurls = (quat, side, base) => {
@@ -250,7 +250,7 @@ export const overhandLesson = {
     // --- The holding hand, and the deck height that follows from it ----------
     // A DEEP cup, and that is a framing decision as much as an anatomical one: a
     // palm-up hand can only get its own knuckles to the felt, so the shallower
-    // the cradle the higher the deck it is holding rides — at 1.25 the deck sits
+    // the cradle the higher the deck it is holding rides, at 1.25 the deck sits
     // at y=1.13 and the receiving hand's wrist at 2.5, which is off the top of
     // every camera preset in the catalog. Curling the cup brings the pads back
     // over the palm and the whole shuffle down into frame.
@@ -297,7 +297,7 @@ export const overhandLesson = {
       })
       // Resolve against the REAL stack only. The seat above already floats the
       // deck a SHIELD above the crest of these fingers, so adding a second
-      // shield card below it double-counts the margin — and `resolvePenetration`
+      // shield card below it double-counts the margin, and `resolvePenetration`
       // pays for margin by STRAIGHTENING, which on this cradle throws the
       // fingertips 0.7 outboard, straight into the corridor the peeled packets
       // travel through. (Measured: every packet clipped the middle fingertip.)
@@ -306,20 +306,20 @@ export const overhandLesson = {
     })()
 
     // --- The receiving hand ---------------------------------------------------
-    // PALM DOWN, over the deck, fingers pointing at the table centre — the same
+    // PALM DOWN, over the deck, fingers pointing at the table centre, the same
     // `deckRest` straddle every other lesson in this catalog settles a hand with,
     // and the ONE configuration in which a peel is geometrically possible.
     //
     // The thumb cannot do this move on this rig, and it is worth writing down why
     // so nobody spends another day on it. A thumb is a chain from a knuckle that
     // sits at WRIST height, and its proximal capsule is the fattest thing on the
-    // hand (radius 0.187 — a third of a card width):
+    // hand (radius 0.187, a third of a card width):
     //   * aim its pad at the deck's FAR edge (where a real overhand thumb goes,
     //     because that is what leaves the peeled packet on the palm side) and the
     //     chain enters the stack through its underside. Measured over a 40-step
     //     sweep of wrist heights x 6 IK seeds: there is no height where the pad
     //     is on the card and the chain is out of it.
-    //   * aim it at the NEAR edge and the chain stays clear — but then the packet
+    //   * aim it at the NEAR edge and the chain stays clear, but then the packet
     //     hangs 0.435 to the far side of the pad, and since a peel welds the
     //     packet to a frame that is 3/4 thumb TIP while the thumb's own base
     //     stays put, the delivered packet always straddles that base. The
@@ -337,7 +337,7 @@ export const overhandLesson = {
     const PAD_V = { index: -0.62, middle: -0.2, ring: 0.22, pinky: 0.64 }
     // The thumb rides the deck's FAR short end. Not a free choice: `deckRest`
     // trails its thumb to -z (see handPoses), so a target at +z is on the wrong
-    // side of the hand entirely — the solver answers by pinning the joints and
+    // side of the hand entirely, the solver answers by pinning the joints and
     // parking the tip half a hand ABOVE the cards, and since the `packet` frame
     // weights that tip at one HALF, the carried packet then hangs 0.5 under a
     // frame that pitches as the fingers fold. Measured, that one unreachable
@@ -366,7 +366,7 @@ export const overhandLesson = {
       // it is measured off `deckRest`'s own gentle curls, and this stroke folds
       // the fingers far deeper than that, so the same wrist leaves a PIP 0.10
       // inside the cards half way through. Raise until the pose's own deepest
-      // surface is tangent on the top card — measured, on the deepest rung of
+      // surface is tangent on the top card, measured, on the deepest rung of
       // the stroke, so every shallower one clears for free.
       const wrist = [a[0], top.pos[1] + DECK_REST_DROP, a[2]]
       const want = top.pos[1] + CARD_T / 2 + CONTACT_AIR
@@ -396,7 +396,7 @@ export const overhandLesson = {
 
     // The grip's squeeze. Constant across a peel so the frame it produces is the
     // frame `holdFrameAt` will produce (it applies the same pressure at capture
-    // AND at render) — which is what lets the delivery below be MEASURED rather
+    // AND at render), which is what lets the delivery below be MEASURED rather
     // than guessed.
     const PRESS = 0.22
     const FRAME = 'packet'
@@ -428,13 +428,13 @@ export const overhandLesson = {
     // beside it: for a pad position `u`, find the height off the card's plane at
     // which the frame delivers the packet LEVEL with the deck's top. Four passes
     // converge (the delivery follows the pads almost one for one). Without it the
-    // packet dives 0.3 mid-stroke — under the deck it is being drawn off, and
+    // packet dives 0.3 mid-stroke, under the deck it is being drawn off, and
     // through the fingers of the hand holding it.
-    // The hand DRAWS BACK as it closes — half a card, no more. Without it the
+    // The hand DRAWS BACK as it closes, half a card, no more. Without it the
     // stroke is pad-travel only, and the pads can only travel as far as the thumb
     // can follow (its target runs off the end of the card long before theirs
     // does), which leaves each packet released barely clear of the deck's near
-    // edge — i.e. directly above the holding hand's own knuckles, which the
+    // edge, i.e. directly above the holding hand's own knuckles, which the
     // falling packet then clips. Drawing the wrist back carries the thumb with
     // it, so the whole frame keeps up with the fingers.
     const DRAW_OUT = CARD_W * 1.05
@@ -455,8 +455,8 @@ export const overhandLesson = {
     }
 
     // THE FINGERS LIFT AS THEY DRAW. Solved flat onto the card's own plane, the
-    // stroke drops the packet 0.25 on its way out — the frame pitches as the
-    // fingers fold — and a packet sinking a quarter of a card while it is still
+    // stroke drops the packet 0.25 on its way out, the frame pitches as the
+    // fingers fold, and a packet sinking a quarter of a card while it is still
     // over the deck has to be chased by a deck that lifts out of the way, which
     // in turn has to be un-lifted on the drop beat while the packet is falling
     // through the same air. Measured, that chase was every remaining hit in the
@@ -470,7 +470,7 @@ export const overhandLesson = {
     // full card width, so the only separation available for the first part of the
     // stroke is vertical.
     const DECK_LIFT = Math.max(CARD_T * 3, DECK_Y + DECK_H - DELIVERY.y + CARD_T)
-    // The pile is on the felt, directly under where the fingers let go — its x
+    // The pile is on the felt, directly under where the fingers let go, its x
     // and z are the DELIVERY's, not a chosen spot, so the cards land under the
     // hand that dropped them however the rig changes.
     const PILE_X = DELIVERY.x
@@ -521,7 +521,7 @@ export const overhandLesson = {
     // across the table and through the deck (it did).
     const leftRest = (wx, top, z) => restAt(-wx, top, z)
     const leftOpen = (wx, top, z, lift = 0) => openAt(-wx, top, z, lift)
-    // Clear of the deck's column by more than a card — the only place the left
+    // Clear of the deck's column by more than a card, the only place the left
     // hand is allowed to turn over. A grip is NEVER held across that turn: a
     // fingertip frame carries the deck rigidly, so a 180° wrist turn would stand
     // it on edge. The deck waits, squared, while the hand goes around it.
@@ -537,7 +537,7 @@ export const overhandLesson = {
     const PACKETS = 7
     // NOT `splitIntoRandomBlocks`: it draws each block uniformly from 1 to
     // "everything that is left", which routinely hands the first draw 45 of 52
-    // cards — and the packets are stripped from the TOP, so the first peel then
+    // cards, and the packets are stripped from the TOP, so the first peel then
     // tries to drag most of the deck off in one go (measured: 51 cards welded to
     // one thumb). A shuffler takes roughly even packets, so take roughly even
     // packets: the nominal share of what is left, jittered by up to a quarter of
@@ -571,7 +571,7 @@ export const overhandLesson = {
       hands: {
         // The at:0 keyframes are load-bearing on both sides. Without one the
         // compiler builds a lead-in FROM the pose carried forward, which at the
-        // first step of a lesson is `relaxed` at its own default wrist — a hand
+        // first step of a lesson is `relaxed` at its own default wrist, a hand
         // parked at x=±0.95 with its thumb base 1.57 inboard of that, i.e.
         // straight through the deck. That phantom frame alone used to be this
         // lesson's whole penetration budget.
@@ -619,7 +619,7 @@ export const overhandLesson = {
           { at: 1, pose: holdPose, anchor: HOLD_WRIST, ease: 'easeInCubic' },
         ],
         // The receiving hand comes in wide and high, then drops into its station
-        // — never across the deck's column.
+        //, never across the deck's column.
         right: [
           { at: 0.5, pose: 'deckApproach', anchor: openAt(CARD_W * 2.6, DECK_Y + DECK_H, CARD_H * 0.3, CARD_H * 0.5) },
           {
@@ -641,14 +641,14 @@ export const overhandLesson = {
       const rest = held.slice(0, held.length - size)
       // SNAPSHOTS, and `to:` below takes the ARRAY rather than a thunk. `piled`
       // is a mutating loop variable and the compiler resolves a `to` function
-      // AFTER build() returns — so a closure over it hands every step the FINAL
+      // AFTER build() returns, so a closure over it hands every step the FINAL
       // pile and the whole deck teleports into the palm on the first peel. (The
       // exact trap this lesson's previous incarnation was rebuilt to avoid; see
       // the session-4 note in HANDS_HANDOFF.md.)
       const before = piled.slice()
       const landed = piled.concat(block)
       // The deck's top sinks by one packet on every pass, so BOTH ends of the
-      // stroke are re-solved against the card the pads will actually touch — and
+      // stroke are re-solved against the card the pads will actually touch, and
       // the wrist comes down with it. That descent is the only wrist motion the
       // receiving hand makes in the whole shuffle: 0.03 per peel, the thickness
       // of the packet that just left.
@@ -663,11 +663,11 @@ export const overhandLesson = {
       // Each rung gets its OWN wrist height: the hand comes down onto the deck
       // at the start of the stroke and rises with its own fingers as they fold
       // under. Measuring every rung against the deepest one instead parks the
-      // whole hand 0.6 up — out of the top of every camera preset — for the
+      // whole hand 0.6 up, out of the top of every camera preset, for the
       // entire lesson.
       // ONE wrist height for the whole stroke, measured on its DEEPEST rung.
-      // Per-rung heights are prettier — the hand comes down onto the deck and
-      // rises with its own fingers — and they put the delivery back inside the
+      // Per-rung heights are prettier, the hand comes down onto the deck and
+      // rises with its own fingers, and they put the delivery back inside the
       // holding hand: the release ends 0.15 short and every packet clips the
       // cradle's index on its way down. The stroke keeps one station.
       const rungAt = (i) => rungWrist(wristNow, i / RUNGS)
@@ -718,7 +718,7 @@ export const overhandLesson = {
             pressure: [{ at: 0, v: PRESS }, { at: 1, v: PRESS }],
           },
         },
-        // The packet's `to` is nominal and never reached — while it is held it
+        // The packet's `to` is nominal and never reached, while it is held it
         // goes exactly where the fingers go.
         to: layout(rest, DECK_Y + DECK_LIFT, before),
         hands: {
@@ -755,7 +755,7 @@ export const overhandLesson = {
         to: layout(rest, DECK_Y, landed),
         hands: {
           // Hold station while the packet leaves, then extend back over the
-          // deck's new top down the same ladder in reverse — the return half of
+          // deck's new top down the same ladder in reverse, the return half of
           // the stroke, and half of why this lesson's hands articulate at all.
           right: [
             { at: 0.18, pose: drag, anchor: rungAt(RUNGS) },
@@ -792,7 +792,7 @@ export const overhandLesson = {
     })
 
     // --- Square up ------------------------------------------------------------
-    // The pile is already on the felt, under the hand that dropped it — nothing
+    // The pile is already on the felt, under the hand that dropped it, nothing
     // to carry down. Both hands come in and square it, which is what a shuffler
     // does at the end of a pass.
     const PILE_TOP = PILE_Y + DECK_H

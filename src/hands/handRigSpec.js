@@ -1,11 +1,11 @@
 // Single source of truth for every number that determines WHERE the hand's
 // geometry sits: the rig builder (handRig.js), the pure forward-kinematics
 // module (handKinematics.js), and the headless verification harness all import
-// from here. Pure data — no THREE, no geometry, safe to import anywhere.
+// from here. Pure data, no THREE, no geometry, safe to import anywhere.
 //
 // Local hand frame (before the wrist quaternion):
 //   +y : the direction fingers extend from their knuckles (fingers point "up").
-//   +z : the PALMAR direction — the palm faces +z and fingers curl toward +z
+//   +z : the PALMAR direction, the palm faces +z and fingers curl toward +z
 //        (a positive joint rotation about local X sweeps the tip toward +z).
 //   +x : toward the pinky (ulnar) side; the thumb sits on the -x (radial) side.
 // The wrist sits at the origin, knuckles near y≈+0.05, forearm trails to -y.
@@ -33,7 +33,7 @@ export const FINGERS = {
 export const FINGER_NAMES = ['thumb', 'index', 'middle', 'ring', 'pinky']
 
 // Opposable thumb: swing the metacarpal across the palm (z) and forward (x) so
-// its curl presses toward the fingers — a real pinch/grip rather than a spike.
+// its curl presses toward the fingers, a real pinch/grip rather than a spike.
 // The rig applies this as a partial Euler over the build-time splay yaw, so the
 // thumb group's full rotation is Euler(x, y:splay, z, 'XYZ').
 export const THUMB_BASE_ROT = { z: 1.2, x: -0.55 }

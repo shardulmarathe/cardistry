@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 
-// Single-sided card face with bend shader — mirrors the original 2D setup where
+// Single-sided card face with bend shader, mirrors the original 2D setup where
 // front and back are separate layers (backface-visibility:hidden), not one
 // double-sided plane with gl_FrontFacing (that caused corner artifacts in fans).
 export function createCardFaceMaterial(map, key) {
@@ -89,7 +89,7 @@ export function setMaterialTint(material, color) {
   v.set(color.r, color.g, color.b, TINT_STRENGTH)
 }
 
-// Legacy alias — CardField now builds separate front/back materials.
+// Legacy alias. CardField now builds separate front/back materials.
 export function createCardMaterial(frontMap, _backMap, key) {
   return createCardFaceMaterial(frontMap, key)
 }

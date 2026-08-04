@@ -540,7 +540,7 @@ export const hinduLesson = {
       // Computed EAGERLY. `piled` and `inHand` are mutating loop variables, so
       // a `() => ...` thunk would resolve after build() returns and see the
       // FINAL values for every pass, every block would land on top of the
-      // finished pile (the stale-closure trap, see ARCHITECTURE.md).
+      // finished pile (the stale-closure trap in the handoff notes).
       const settleTo = deckStack(inHand, piled, LPX)
       const stripTo = [...pilePoses(block, piled), ...deckStack(rest, piled + n, LPX + DRAW_X)]
       const regrip = holdOn(away, C_PRESS, {

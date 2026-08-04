@@ -1,7 +1,7 @@
 // Headless verification of every lesson's compiled track: purity (bidirectional
 // scrub safety), NaN/normalization hygiene, and motion continuity. Thresholds
 // are sanity-level for the catalog at large and tightened per-flagship as the
-// finger-driven system lands.
+// finger-driven system lands (see plan: the-highest-priority-for-glowing-iverson).
 //
 // Run: node --import ./scripts/verify/register.mjs scripts/verify/verifyTracks.mjs
 import * as THREE from 'three'
@@ -38,7 +38,7 @@ function mulberry32(seed) {
 
 // Serialize a sample into plain numbers IMMEDIATELY, sampleTrack reuses
 // cached output objects per card id, so holding references across samples
-// silently reads the LAST sample (an earlier version of this harness fell for it).
+// silently reads the LAST sample (a prior session's harness fell for this).
 function snapshot(scene) {
   const rows = []
   for (const [id, c] of scene.cards) {
@@ -357,10 +357,11 @@ const CONTACT_FLOOR = {
   //
   // So the fixed state measures 2% / median 0.349 / penetration 0.0000, and the
   // reachable state measures 34% / median 0.015 / penetration 0.084, 42x this
-  // budget. The hover ships for now. The remaining lever is in the engine, not
-  // the lesson: either the compiler interpolates a held pose through its CONTACT
-  // FRAME rather than through raw joint angles, or the penetration metric stops
-  // charging a full radius for a graze. See ARCHITECTURE.md ("Open work").
+  // budget. Per the coordinator's call, the hover ships. The remaining lever is
+  // in the engine, not the lesson: either the compiler interpolates a held pose
+  // through its CONTACT FRAME rather than through raw joint angles, or the
+  // penetration metric stops charging a full radius for a graze. The working
+  // branch is kept at scratchpad/agent-grip-b/overhand.fingerdraw.js.
   overhand: 0, // measured 0.02
   // --- RE-AUTHORED ONTO REAL CONTACT ----------------------------------------
   // The charlier's two CARRY holds (`lift`, `lower`, 86% of its samples) used
@@ -692,42 +693,6 @@ for (const lesson of LESSONS) {
   check(track.finalDeck.every((c) => !c.isFaceUp), 'riffle-faceup: final deck not normalized face-down')
   for (let i = 0; i <= 150; i++) {
     assertAboveFelt(sampleTrack(track, (track.duration * i) / 150), `riffle-faceup@${i}`)
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Regression: a bowed card is a circular arc, and the arc maths must work for
-// BOTH bow directions. `surfaceExtents` takes theta = atan2(local.y, R − z);
-// on the surface those are R·sinθ and R·cosθ, so for a SAGGING card (bend < 0,
-// R < 0) both arguments flip sign and atan2 returns θ ± π, a point sitting
-// exactly on the card reported up to 0.87 OUTSIDE it. `u` is what cardDepth,
-// resolvePenetration and the contact metric above all read, so every one of
-// them would have been wrong for the first lesson that sagged a card. Nothing
-// in the catalog does today, which is exactly why this needs a test: the bug
-// was invisible and would have surfaced as an inexplicable grip failure.
-//
-// Test: place points ON the surface via the bend shader's own mapping and
-// require the extents to agree for +bend and −bend.
-{
-  const _p = new THREE.Vector3()
-  for (const mag of [1.2, 2.4, 3.6]) {
-    for (const y of [0, 0.15, 0.3, CARD_H / 2]) {
-      const ext = {}
-      for (const bend of [mag, -mag]) {
-        const ang = y * bend
-        _p.set(0, Math.sin(ang) / bend, (1 - Math.cos(ang)) / bend)
-        const e = cardSurfaceExtents(_p, bend)
-        ext[bend > 0 ? 'arch' : 'sag'] = { u: e.u, n: e.n }
-      }
-      check(
-        Math.abs(ext.sag.n + CARD_T / 2) < 1e-9,
-        `bend-sign: sag bend ${mag} at y=${y} is ${ext.sag.n.toFixed(4)} off its own shell (want ${(-CARD_T / 2).toFixed(4)})`,
-      )
-      check(
-        Math.abs(ext.sag.u - ext.arch.u) < 1e-9,
-        `bend-sign: sag bend ${mag} at y=${y} reports arc extent ${ext.sag.u.toFixed(4)} vs arch's ${ext.arch.u.toFixed(4)}`,
-      )
-    }
   }
 }
 

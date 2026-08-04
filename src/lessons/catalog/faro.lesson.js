@@ -3,7 +3,7 @@ import { tableGrip, packetGrip, rigMetrics, thumbRatchetKeyframes } from '../aut
 import { CARD_GAP, CARD_H } from '../../lib/constants'
 import { DECK_REST_DROP, DECK_APPROACH_DROP } from '../../hands/handPoses'
 
-// Faro shuffle — the precision cousin of the table riffle: an exact 26/26 cut,
+// Faro shuffle, the precision cousin of the table riffle: an exact 26/26 cut,
 // both halves seated flat on the felt, and a controlled one-card-at-a-time
 // weave off the thumbs with barely any bow. Same finger-driven machinery as
 // the riffle (contact frames, per-card releases), tuned tight and low.
@@ -30,7 +30,7 @@ export const faroLesson = {
     // deep, every frame).
     const TABLE_TOP = 0.02 + (deck.length - 1) * CARD_GAP
     const HALF = Math.floor(deck.length / 2)
-    const YAW = 0.07 // near-square landscape halves — precision, not flourish
+    const YAW = 0.07 // near-square landscape halves, precision, not flourish
     const TILT = 0.14 // barely any lift; a faro is a push-through, not a spring
     const BOW = 0.8 // the seat beat's bend
     // Fingertip reach of the two open presets, measured off the rig: an anchor
@@ -48,16 +48,16 @@ export const faroLesson = {
     // BOWED CARDS REST ON THEIR ENDS, NOT THEIR CENTRES. The bend shader swings
     // a card's ends toward local +Z, which on a face-down card is straight
     // DOWN, so `clampAboveFelt` lifts a bowed half until those ends touch the
-    // felt — for this lesson's 0.8 bow that is ~0.08 higher than the flat
+    // felt, for this lesson's 0.8 bow that is ~0.08 higher than the flat
     // layout says. The halves are also WELDED to their hands from the cut
     // onward (a gripped packet rides the contact frame), but the clamp still
     // pins them, so the hands do NOT carry them up: they sink into them. LIFT
     // is that bow, added to both table anchors, which puts the pads back on
-    // the cards. It is a contact correction, not clearance — without it the
+    // the cards. It is a contact correction, not clearance, without it the
     // seat/weave beats measure 0.047 deep.
     // ...which is DERIVED, not guessed: a card bent by `bend` rises
     // (1 - cos(bend*CARD_H/2))/bend at its centre. It belongs to the BOWED
-    // beats only — the flat cut/slide have nothing to clamp.
+    // beats only, the flat cut/slide have nothing to clamp.
     const LIFT = (1 - Math.cos((CARD_H / 2) * BOW)) / BOW
     const { pose: restGrip, anchor: REST_ANCHOR } = tableGrip({ gap: G, yaw: YAW, squeeze: PRESS })
     const { pose: seatGrip, anchor: SEAT_ANCHOR } = tableGrip({
@@ -75,7 +75,7 @@ export const faroLesson = {
       baseY: 0.02 + HALF * CARD_GAP,
       deckH: (HALF - 1) * CARD_GAP,
       // The carry beats squeeze far more gently than the bend does, so their
-      // pads need less air — and the grip-fidelity check wants the thumb ON its
+      // pads need less air, and the grip-fidelity check wants the thumb ON its
       // packet, not hovering a squeeze above it.
       squeeze: CARRY_SQUEEZE,
     })
@@ -153,8 +153,8 @@ export const faroLesson = {
         // (grips.js), so a left-hand grip held across the 90° turn from the
         // carry grip to the table grip rotates its packet the wrong way round
         // and lands it well off its own layout. The right hand turns its half
-        // correctly; the left half follows the step's layout, and its hand —
-        // anchored off that same layout — tracks it.
+        // correctly; the left half follows the step's layout, and its hand -
+        // anchored off that same layout, tracks it.
         grip: {
           right: { cards: 'secondHalf', frame: 'packet', pressure: [{ at: 0, v: 0.3 }, { at: 1, v: 0.3 }] },
         },
@@ -193,7 +193,7 @@ export const faroLesson = {
         duration: 5200,
         ease: 'easeInOutCubic',
         midBend: 0.4,
-        arcLift: 0.03, // dead low — the cards slide together on the felt
+        arcLift: 0.03, // dead low, the cards slide together on the felt
         toLayout: (order) => landscapeStackLayout(order),
         grip: {
           left: { cards: 'firstHalf', frame: 'thumbPeel', release: 'stagger', pressure: [{ at: 0, v: 0.35 }, { at: 1, v: 0.1 }] },
@@ -217,7 +217,7 @@ export const faroLesson = {
               // was still 0.012 inside a half's raised inner end.
               anchorTo: LAND_A,
               steps: 7,
-              jitter: 0.015, // precise — almost no ratchet noise
+              jitter: 0.015, // precise, almost no ratchet noise
             }),
             { at: 0.96, pose: seatGrip, anchor: LAND_A },
             { at: 1, pose: 'deckRest', anchor: [REST_REACH + REST_PAD_X, TABLE_TOP + DECK_REST_DROP + 0.22, 0.0] },
@@ -260,7 +260,7 @@ export const faroLesson = {
         camera: 'overview',
         hands: {
           // The weave lands LANDSCAPE (x±0.44), so the rest pose comes in from
-          // 0.9 out — far enough that the thumb base clears the long side.
+          // 0.9 out, far enough that the thumb base clears the long side.
           left: [{ at: 1, pose: 'deckRest', anchor: [REST_REACH + REST_PAD_X, TABLE_TOP + DECK_REST_DROP, 0.0], ease: 'easeOutCubic' }],
           right: [{ at: 1, pose: 'deckRest', anchor: [REST_REACH + REST_PAD_X, TABLE_TOP + DECK_REST_DROP, 0.0], ease: 'easeOutCubic' }],
         },

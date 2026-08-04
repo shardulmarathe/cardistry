@@ -9,25 +9,25 @@ import { create } from 'zustand'
 // track: a squared stack is literally sorted by height, so taking every card's
 // landing pose at a step boundary and sorting by y recovers the physical
 // stacking order. That is the source of truth rather than track.finalDeck because
-// finalDeck only tracks lessons that declare `reorder` — the overhand lesson
+// finalDeck only tracks lessons that declare `reorder`, the overhand lesson
 // moves real packets between piles without one, so its finalDeck says "untouched"
 // while its cards say otherwise. Poses never lie.
 // ---------------------------------------------------------------------------
 
 // A stack counts as "squared" (order well defined) when every card shares one
-// footprint and the heights form an unbroken ladder. Anything else — two halves
-// mid-cut, a wash smeared over the felt, a packet in flight — has no meaningful
+// footprint and the heights form an unbroken ladder. Anything else, two halves
+// mid-cut, a wash smeared over the felt, a packet in flight, has no meaningful
 // linear order, so we hold the last squared reading instead of inventing one.
 // Every layout that squares a deck (stackLayout, landscapeStackLayout, the
 // pile builders) puts all 52 cards on EXACTLY one (x,z), so the tolerance can be
-// tight — and it has to be: in the hindu carry the packet in the hand hovers
+// tight, and it has to be: in the hindu carry the packet in the hand hovers
 // 0.015 above the pile it is about to join, close enough that a loose tolerance
 // merges two distinct stacks and reads out a deck order that never existed.
 const SQUARE_SPREAD = 0.012 // world units of allowed x/z jitter
 const SQUARE_Y_GAP = 0.05 // world units; CARD_GAP is 0.004
 
 // Where a card has SETTLED at `ms`: the landing pose of the last segment that
-// has finished. Deliberately not an interpolated sample — landing poses are the
+// has finished. Deliberately not an interpolated sample, landing poses are the
 // exact layout coordinates the lesson authored, so a stack reads out with zero
 // float noise, and a card still in a hand at the boundary can't contribute the
 // grip-baked pose that a sampler would return.
@@ -100,7 +100,7 @@ export const RANDOM_RISING = (n) => (n + 1) / 2
 // --- colour ramp -----------------------------------------------------------
 
 // Viridis: perceptually uniform, monotone in lightness, and readable under all
-// common colour-vision deficiencies — a rainbow would fail both tests and fight
+// common colour-vision deficiencies, a rainbow would fail both tests and fight
 // the oxblood chrome. The domain is lifted off 0 so the darkest cells stay
 // distinct from the dark red panel behind them.
 const STOPS = [
@@ -130,7 +130,7 @@ export function rampHex(t) {
   return `#${hex2(a[0] + (b[0] - a[0]) * f)}${hex2(a[1] + (b[1] - a[1]) * f)}${hex2(a[2] + (b[2] - a[2]) * f)}`
 }
 
-// The pristine deck as one CSS gradient — the "this is where you started" rule.
+// The pristine deck as one CSS gradient, the "this is where you started" rule.
 export const RAMP_GRADIENT = `linear-gradient(90deg, ${Array.from(
   { length: 11 },
   (_, i) => `${rampHex(i / 10)} ${i * 10}%`,
@@ -151,10 +151,10 @@ function frameOf(order, originalIndex, squared, label) {
 }
 
 // One pass per lesson: the deck order after every step, with its statistics.
-// ~52 pose samples per step, done once at mount — never per frame.
+// ~52 pose samples per step, done once at mount, never per frame.
 // `baselineIds` is the deck order to measure AGAINST. With "Shuffle again" the
 // track starts from the previous run's output, so scoring against the track's
-// own first order would reset the numbers every repeat — one riffle from any
+// own first order would reset the numbers every repeat, one riffle from any
 // order is always ~2 rising sequences. Passing the order from when the lesson
 // was OPENED makes repeats accumulate, which is the whole "seven shuffles"
 // demonstration. Omit it and it behaves exactly as before.
@@ -209,7 +209,7 @@ export function frameAt(timeline, stepIndex) {
 export const useMixingView = create((set) => ({
   enabled: false,
   tint: false,
-  colors: null, // Map<cardId, hex> — the card's ORIGINAL position, published by OrderStrip
+  colors: null, // Map<cardId, hex>, the card's ORIGINAL position, published by OrderStrip
   toggle: () => set((s) => ({ enabled: !s.enabled, tint: s.enabled ? false : s.tint })),
   toggleTint: () => set((s) => ({ tint: !s.tint })),
   setColors: (colors) => set({ colors }),

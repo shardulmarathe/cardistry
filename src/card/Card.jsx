@@ -5,7 +5,7 @@ import { setMaterialBend, setMaterialTint } from './cardMaterial'
 import { getCardGeometry } from './cardGeometry'
 import { useMixingView } from '../lessons/engine/mixing'
 
-// Scratch colour for tint writes — setMaterialTint copies out of it immediately.
+// Scratch colour for tint writes, setMaterialTint copies out of it immediately.
 const _tint = new Color()
 
 // `hex` from the mixing ramp, or null to restore the printed card.
@@ -15,7 +15,7 @@ function paintTint(front, back, hex) {
   setMaterialTint(back, color)
 }
 
-// Two single-sided faces in a group — same idea as the original .card-front /
+// Two single-sided faces in a group, same idea as the original .card-front /
 // .card-back DOM layers with backface-visibility:hidden and border-radius clip.
 export default function Card({ id, frontMaterial, backMaterial, stackIndex = 0 }) {
   const groupRef = useRef()
@@ -45,7 +45,7 @@ export default function Card({ id, frontMaterial, backMaterial, stackIndex = 0 }
 
   // The mixing overlay is opt-in and changes only when a lesson step lands, so
   // it drives the materials through a store SUBSCRIPTION rather than React
-  // state — 52 cards recolour without a single component re-render.
+  // state, 52 cards recolour without a single component re-render.
   useEffect(() => {
     const apply = (s) => {
       paintTint(frontMaterial, backMaterial, s.tint && s.colors ? s.colors.get(id) : null)

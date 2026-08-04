@@ -1,13 +1,13 @@
 import * as THREE from 'three'
 import { contactFrame, GRIP_FRAME_TYPES } from '../../hands/handKinematics'
 
-// Rigid attachment of cards to a hand's "grip frame" — the deterministic core
+// Rigid attachment of cards to a hand's "grip frame", the deterministic core
 // of making the procedural hands actually pick up and carry a packet.
 //
 // The grip frame is (handPose.wrist.pos, handPose.wrist.quat): a plain
 // right-handed rigid transform. The left hand is mirrored purely by the rig's
 // negative root.scale.x, and getHandPose('left') keeps the SAME wrist.quat
-// (only wrist.pos.x is negated). So capture and apply are side-agnostic — never
+// (only wrist.pos.x is negated). So capture and apply are side-agnostic, never
 // mirror the quat or negate the offset for the left hand (that double-mirrors).
 //
 // Offsets are captured once (at compile time, at grip start) and are constants
@@ -35,7 +35,7 @@ export function resolveGripCards(spec, deck) {
 // frameType 'wrist' (default) is the legacy rigid wrist weld; the contact
 // types ('pinch' | 'packet' | 'thumbPeel') derive the frame from fingertip FK
 // so finger curls move the held cards. Capture and apply MUST use the same
-// (side, frameType) — consistency is what makes the attachment exact.
+// (side, frameType), consistency is what makes the attachment exact.
 export function frameOf(handPose, side = 'right', frameType = 'wrist', out = null) {
   if (!handPose) return null
   if (frameType === 'wrist' || !GRIP_FRAME_TYPES[frameType]) {
@@ -72,7 +72,7 @@ export function captureGripOffset(frame, cardPose) {
 }
 
 // Place a held card back in world space: world = frame ∘ offset. Writes into
-// the provided out vectors (reused per frame — no allocation in the hot path).
+// the provided out vectors (reused per frame, no allocation in the hot path).
 export function applyGripFrame(frame, offset, outPos, outQuat) {
   outPos.copy(offset.offsetPos).applyQuaternion(frame.quat).add(frame.pos)
   outQuat.copy(frame.quat).multiply(offset.offsetQuat)

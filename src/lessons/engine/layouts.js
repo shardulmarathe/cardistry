@@ -9,7 +9,7 @@ const LIFT = (i) => 0.02 + i * CARD_GAP * 0.4
 
 // Card geometry is in the XY plane (front normal +Z). To lie flat on the table
 // we rotate about X: -90° => face up (front points +Y), +90° => face down.
-// A flip is therefore a PI rotation about X — a natural table turn-over.
+// A flip is therefore a PI rotation about X, a natural table turn-over.
 const RX_UP = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0))
 const RX_DOWN = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, 0, 0))
 
@@ -49,10 +49,10 @@ export function twoHalvesLayout(deck, gap = 0.95, baseY = 0.02) {
 
 // On-edge orientations for a riffle grip: the card long axis (local Y) points
 // up (world +Y) and the FACE (local +Z normal) points to the side (world ±X)
-// toward each hand — a real bridge, not a flat pile facing the ceiling. Built
+// toward each hand, a real bridge, not a flat pile facing the ceiling. Built
 // as a ±90° turn about world Y. With faces along ±X, the existing long-axis
 // bend bows the standing card so its arch profile faces the dealer (normal ≈
-// world Z) — the bow "faces the sides", per design.
+// world Z), the bow "faces the sides", per design.
 export const ON_EDGE = {
   left: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2),
   right: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2),
@@ -84,7 +84,7 @@ export function riffleGripLayout(deck, { gap = 0.5, baseY = 0.5, lean = 0 } = {}
 // other right so their inner short ends meet at the center. `yaw` is the small
 // inward angle off 90° that points the inner ends at each other. `tilt` lifts
 // each half's INNER end as the thumbs load the spring, pivoting on the OUTER
-// end — which stays exactly on the felt, so no corner can dip under the table.
+// end, which stays exactly on the felt, so no corner can dip under the table.
 // Always face-down: a riffle is dealt face-down however the deck arrived.
 export function tableRiffleLayout(deck, { gap = 0.5, yaw = 0.12, baseY = 0.03, tilt = 0 } = {}) {
   const mid = Math.floor(deck.length / 2)
@@ -107,7 +107,7 @@ export function tableRiffleLayout(deck, { gap = 0.5, yaw = 0.12, baseY = 0.03, t
   })
 }
 
-// A squared landscape stack at center — where a table riffle's weave lands and
+// A squared landscape stack at center, where a table riffle's weave lands and
 // the bridge/cascade finish happens (short ends facing the hands at ±x).
 export function landscapeStackLayout(deck, { baseY = 0.02, bend = 0 } = {}) {
   return deck.map((card, i) => ({
@@ -156,7 +156,7 @@ export function blocksRowLayout(blocks, { spacing = 0.66, z = 0.12 } = {}) {
   return poses
 }
 
-// A full ring / mandala — cards radiate outward around the table center.
+// A full ring / mandala, cards radiate outward around the table center.
 export function circleLayout(deck, { radius = 2.15 } = {}) {
   const n = deck.length
   return deck.map((card, i) => {
@@ -195,7 +195,7 @@ export function spiralLayout(deck) {
   })
 }
 
-// A tidy grid — spacing must exceed card footprint to avoid overlap / z-fighting.
+// A tidy grid, spacing must exceed card footprint to avoid overlap / z-fighting.
 export function gridLayout(deck, { cols = 13 } = {}) {
   const colStep = CARD_W + 0.08
   const rowStep = CARD_H + 0.1

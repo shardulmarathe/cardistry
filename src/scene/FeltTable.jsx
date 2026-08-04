@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { COLORS } from '../lib/constants'
 
 // The felt renders on its own layer so the ContactShadows depth pass in Stage
-// can skip it — see the long note there. The main camera opts back in.
+// can skip it, see the long note there. The main camera opts back in.
 export const FELT_LAYER = 1
 
 // A large felt surface with a runtime radial-gradient texture (matching App.css)
@@ -15,12 +15,12 @@ function makeFeltTexture() {
   canvas.height = size
   const ctx = canvas.getContext('2d')
 
-  // Radial oxblood gradient — lit pool at center fading to dark edge.
+  // Radial oxblood gradient, lit pool at center fading to dark edge.
   //
   // The UVs of the circleGeometry below span its 13-unit bounding box, so
   // texture radius r maps to 13*r world units. The old outer stop of 0.62 put
-  // the dark end of the gradient ~8 units out — well outside the ~±3.3 units
-  // the overview camera can see — so the vignette never reached the screen and
+  // the dark end of the gradient ~8 units out, well outside the ~±3.3 units
+  // the overview camera can see, so the vignette never reached the screen and
   // the table read as one flat sheet of bright crimson. 0.40 lands the falloff
   // inside the frame, which is what makes the spotlight pool read as a pool.
   const g = ctx.createRadialGradient(

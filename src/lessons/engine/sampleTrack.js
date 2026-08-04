@@ -45,7 +45,7 @@ function poseFromSegments(segs, ms, out) {
 
 // A procedural wrist-position overlay, evaluated as a pure function of the
 // segment-local, UN-eased t. Every shape uses integer `cycles`, so the offset
-// is exactly zero at t=0 and t=1 — segment boundaries, step jumps, gaps, and
+// is exactly zero at t=0 and t=1, segment boundaries, step jumps, gaps, and
 // reverse scrubbing all stay pop-free, and the whole pipeline stays a pure
 // function of ms. `sx` (baked at compile) mirrors x for the left hand.
 const _motionV = new THREE.Vector3()
@@ -73,7 +73,7 @@ function motionOffset(m, t, out) {
   return out
 }
 
-// The global idle overlay runs on ABSOLUTE ms (continuous everywhere — no
+// The global idle overlay runs on ABSOLUTE ms (continuous everywhere, no
 // boundary pops possible) and is applied to EVERY returned pose, including the
 // clamped before/after branches, so hands breathe even while "holding still".
 // Those branches must clone: segment poses are shared track data and the idle
@@ -129,8 +129,8 @@ function clampAboveFelt(out) {
   // so the card shortens along its long axis AND its ends swing toward local
   // +Z. Since (1 − cos) never changes sign, that swing is one-directional: on a
   // face-down card local +Z points at world −Y, so the ends curl DOWN. Ignoring
-  // it put the riffle bridge 0.22 and the waterfall 0.29 below the felt — a
-  // third of a card length buried — while this clamp reported it flush, because
+  // it put the riffle bridge 0.22 and the waterfall 0.29 below the felt, a
+  // third of a card length buried, while this clamp reported it flush, because
   // the flat model only ever measured the (unbent) rectangle.
   //
   // Accounting for it makes the bow rest ON the table: the ends touch the felt
@@ -161,7 +161,7 @@ export function sampleTrack(track, ms) {
 
   // Which cards are attached to a hand right now (id -> {hold, offset}), plus
   // grip pressure per side. Pressure visibly tightens the rendered hand's
-  // gripping fingers BEFORE contact frames are computed — the same order the
+  // gripping fingers BEFORE contact frames are computed, the same order the
   // compiler used at capture time (holdFrameAt), so the weld stays exact.
   const active = new Map()
   const sidePressure = { left: 0, right: 0 }
@@ -191,7 +191,7 @@ export function sampleTrack(track, ms) {
     }
   }
 
-  // One contact frame per (side, frameType) per sample — not per card.
+  // One contact frame per (side, frameType) per sample, not per card.
   const frameCache = new Map()
   const gripFrame = (hold) => {
     const key = `${hold.side}|${hold.frame}`

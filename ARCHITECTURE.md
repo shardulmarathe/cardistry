@@ -5,11 +5,11 @@ non-obvious invariants worth knowing before changing anything.
 
 ## The core rule: two kinds of state
 
-Discrete or slow-changing state — mode, deck order, active lesson, camera preset,
-playback step and speed — lives in a **zustand** store.
+Discrete or slow-changing state, mode, deck order, active lesson, camera preset,
+playback step and speed, lives in a **zustand** store.
 
-Per-frame state — each card's position, rotation and bend; each hand's joint
-angles — is written **imperatively through refs**, via `cardRegistry` and
+Per-frame state, each card's position, rotation and bend; each hand's joint
+angles, is written **imperatively through refs**, via `cardRegistry` and
 `handRegistry`.
 
 `setState` is never called inside `useFrame`. The player mirrors its time cursor
@@ -25,10 +25,10 @@ Drivers (`VisualizerDriver`, `LessonRunner`) each own exactly one `useFrame`, an
 ```
 lesson definition (src/lessons/catalog/*.lesson.js)
    │
-   ▼  compileLesson.js — runs ONCE
+   ▼  compileLesson.js, runs ONCE
 deterministic Track { cards: [segments], hands: { left: [segs], right: [segs] } }
    │
-   ▼  sampleTrack.js — pure (Track, ms) → { cards: Map, hands, annotations }
+   ▼  sampleTrack.js, pure (Track, ms) → { cards: Map, hands, annotations }
    │
    ▼  LessonRunner useFrame
 cardRegistry / handRegistry handles → mesh transforms + rig joint angles
@@ -53,16 +53,16 @@ base, not at the knuckle.
 kinematics module import it, and `fkParity.test.mjs` asserts the two stay in
 agreement.
 
-`handKinematics.js` is pure forward kinematics plus analytic IK — a two-link
+`handKinematics.js` is pure forward kinematics plus analytic IK, a two-link
 finger solve with 0.75 distal coupling, and a thumb solve with an opposition
 search. It is headless-safe, which is what makes the verification harness
 possible.
 
 **Mirror policy:** points may be mirrored for the left hand, but orientations are
-only ever composed as `wrist.quat ∘ f(angles)` — never decomposed under negative
+only ever composed as `wrist.quat ∘ f(angles)`, never decomposed under negative
 scale, which does not round-trip.
 
-### Contact frames — why fingers move cards
+### Contact frames: why fingers move cards
 
 Held cards ride a **contact frame** derived from live fingertip positions rather
 than being welded to the wrist:
@@ -82,12 +82,12 @@ travel segment begins.
 
 `bakeHoldReleases` projects every held card through `frame(t_release) ∘ offset`
 and overwrites the next segment's `from`. Handoffs are therefore seamless *by
-construction* in both scrub directions — the riffle's worst boundary jump is
+construction* in both scrub directions, the riffle's worst boundary jump is
 0.0029, down from 0.03 before baking.
 
 ## Cards
 
-One shared `PlaneGeometry(W, H, 1, 24)` — segmented so the bend shader has
+One shared `PlaneGeometry(W, H, 1, 24)`, segmented so the bend shader has
 vertices to work with. Faces are generated at runtime into canvas textures
 (`textureFactory.js`); there are no card-front image assets. Bend is injected via
 `onBeforeCompile` with a `uBend` uniform. Face-down is a mesh Y-rotation of π
@@ -97,15 +97,15 @@ against a two-sided material.
 
 `npm run verify` runs headless (no browser, no WebGL) over the compiled tracks:
 
-- **`fkParity.test.mjs`** — forward kinematics matches the rig.
-- **`verifyTracks.mjs`** — determinism, scrub reversibility, deck integrity
+- **`fkParity.test.mjs`**, forward kinematics matches the rig.
+- **`verifyTracks.mjs`**, determinism, scrub reversibility, deck integrity
   (52 unique cards in, 52 out), boundary continuity, and the two contact metrics.
 
 The contact metrics are **ratchets**, and they oppose each other:
 
-- `CONTACT_FLOOR` — percentage of fingertips genuinely touching cards. Only goes
+- `CONTACT_FLOOR`, percentage of fingertips genuinely touching cards. Only goes
   **up**. A lesson measuring 0% is recorded as *broken*, not passing.
-- `PENETRATION_BUDGET` — deepest finger intrusion into a card surface. Only goes
+- `PENETRATION_BUDGET`, deepest finger intrusion into a card surface. Only goes
   **down**.
 
 Having both means a lesson cannot satisfy the penetration check by simply
@@ -129,7 +129,7 @@ passed trivially for a while because of this.
 
 **Never hold a grip across a large hand-orientation change.** The packet rides
 the frame's quaternion, so a 90° wrist turn tips the deck over mid-carry. Move
-the hand into its new orientation first, *then* declare the grip — this is
+the hand into its new orientation first, *then* declare the grip, this is
 exactly why the riffle bridge is split into a cage step and a bow step.
 
 **Converging palms need ≥ 0.5 x-separation**, or translucent hands interpenetrate
@@ -139,7 +139,7 @@ and read as one melted shape.
 riffle values (`arcLift 0.55`, `midBend 3.1`) read as a card fountain.
 
 **Bowed cards can rest on their end points**, which a naive felt-contact
-assertion does not catch — it tests the card's origin, not its bent extent.
+assertion does not catch, it tests the card's origin, not its bent extent.
 
 ## Open work
 
@@ -147,7 +147,7 @@ assertion does not catch — it tests the card's origin, not its bent extent.
 pressed 0.02 into the top card of a 52-card stack is inside the deck's silhouette
 and invisible, but the metric charges a full capsule radius (0.104 at
 `HAND_SCALE` 11) the moment a pad centre enters a card's 0.006-thick slab. Real
-contact necessarily grazes — flesh compresses, capsules do not.
+contact necessarily grazes, flesh compresses, capsules do not.
 
 Consequences today: three lessons carry raised penetration budgets (riffle 0.046,
 faro 0.060, charlier 0.038), and overhand ships a hover (2% contact) because its
@@ -156,7 +156,7 @@ gripping version measures 0.084.
 Measuring against the union envelope of the cards a hand is touching should let
 all three budgets ratchet back down and unblock overhand at once. The alternative
 lever is interpolating a held hand through its contact frame rather than through
-raw joint angles — the residual there comes from the compiler lerping joint
+raw joint angles, the residual there comes from the compiler lerping joint
 angles between keyframes while the frame the packet rides is their mean, so pads
 deviate mid-segment.
 

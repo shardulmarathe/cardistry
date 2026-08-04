@@ -640,7 +640,7 @@ export const stripLesson = {
         // Computed EAGERLY. `piled` is a mutating loop variable, so a
         // `() => pilePoses(block, piled)` thunk would resolve after build()
         // returns and see 52 for every block, the pile would build itself off
-        // the top of the frame (the stale-closure trap, see ARCHITECTURE.md).
+        // the top of the frame (the stale-closure trap in the handoff notes).
         to: pilePoses(block, piled),
         hands: {
           left: [
