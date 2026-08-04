@@ -357,11 +357,10 @@ const CONTACT_FLOOR = {
   //
   // So the fixed state measures 2% / median 0.349 / penetration 0.0000, and the
   // reachable state measures 34% / median 0.015 / penetration 0.084 — 42x this
-  // budget. The hover ships for now. The remaining lever is
-  // in the engine, not the lesson: either the compiler interpolates a held pose
-  // through its CONTACT FRAME rather than through raw joint angles, or the
-  // penetration metric stops charging a full radius for a graze. The working
-  // branch is kept at an unmerged working branch.
+  // budget. The hover ships for now. The remaining lever is in the engine, not
+  // the lesson: either the compiler interpolates a held pose through its CONTACT
+  // FRAME rather than through raw joint angles, or the penetration metric stops
+  // charging a full radius for a graze. See ARCHITECTURE.md ("Open work").
   overhand: 0, // measured 0.02
   // --- RE-AUTHORED ONTO REAL CONTACT ----------------------------------------
   // The charlier's two CARRY holds (`lift`, `lower` — 86% of its samples) used

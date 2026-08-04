@@ -260,7 +260,7 @@ export const riffleLesson = {
           // everywhere, 0.50 measures 0.02-0.05, and 0.45 or below is back at
           // the 0.0812 ceiling, because the same number also sets the half's
           // position under the bend and weave grips. (Closing further in would
-          // shrink the carry's hook — see the handoff — but not at that price.)
+          // shrink the carry's hook, but not at that price.)
           // Height is the bottom half's own top card plus the clearance the
           // welded relationship needs; the cut packet travels to +x and this
           // hand mirrors to −x, so they never share airspace.

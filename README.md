@@ -1,16 +1,56 @@
-# React + Vite
+# Cardistry
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+An interactive 3D card table and shuffle trainer. Spread a real 52-card deck into
+six layouts, or step through guided, scrubbable 3D lessons for the classic
+shuffles — riffle, overhand, hindu, faro, charlier, strip and wash.
 
-Currently, two official plugins are available:
+**[Live demo →](https://cardistry-eight.vercel.app)**
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Built with React 19, Vite and react-three-fiber.
 
-## React Compiler
+## What makes it interesting
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+**Every lesson is a pure function of time.** A lesson definition compiles once
+into a deterministic keyframe track, which is then sampled by a pure
+`(track, ms) → poses` function. Scrubbing backward and forward lands on
+identical frames, so the timeline can be dragged in either direction without
+drift or re-simulation.
 
-## Expanding the ESLint configuration
+**The hands are finger-driven, not arm-driven.** Cards are moved by fingertip
+contact frames rather than being parented to a wrist that waves over the table.
+Each held packet rides a solved grip, with per-card release timing — so a riffle
+actually looks like fingers bridging and releasing a cascade.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+**Card faces are generated at runtime.** All 52 faces are drawn to canvas
+textures on load; there are no image assets for card fronts. Bending is a
+vertex-shader effect (`onBeforeCompile`, `uBend`) over one shared segmented
+geometry.
+
+**Contact and penetration are measured, not eyeballed.** `npm run verify` runs a
+headless harness that scores every lesson on two opposing metrics — how much of
+each fingertip is genuinely in contact with the cards, and how far any finger
+penetrates a card surface. Both are ratchets: contact may only go up, penetration
+only down. A lesson whose hands stop touching the cards fails the check rather
+than silently regressing to a hover.
+
+## Running it
+
+```bash
+npm install
+npm run dev      # http://localhost:5173
+npm run verify   # determinism, FK parity, contact + penetration budgets
+npm run lint
+npm run build
+```
+
+## Architecture
+
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for the data-flow rules, the module map,
+and the non-obvious invariants worth knowing before changing the engine.
+
+## Stack
+
+React 19 · Vite · three.js · @react-three/fiber · @react-three/drei ·
+@react-three/rapier · zustand · framer-motion
+
+Deployed on Vercel.
