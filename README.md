@@ -4,8 +4,6 @@ An interactive 3D card table and shuffle trainer. Spread a real 52-card deck int
 six layouts, or step through guided, scrubbable 3D lessons for the classic
 shuffles — riffle, overhand, hindu, faro, charlier, strip and wash.
 
-**[Live demo →](https://cardistry-eight.vercel.app)**
-
 Built with React 19, Vite and react-three-fiber.
 
 ## What makes it interesting
