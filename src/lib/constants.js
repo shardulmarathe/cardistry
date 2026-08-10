@@ -50,6 +50,17 @@ export const CAMERA_PRESETS = {
   // the packets, and only mildly above them - the interleave is a side-on event,
   // and looking down at it flattens the two halves into one line.
   inHands: { position: [0, 1.9, 4.2], target: [0, 1.0, 0], fov: 34 },
+  // A ONE-HANDED CUT HAPPENS IN THE AIR. Measured on the charlier's compiled
+  // track (scripts/inspect/framing.mjs): its cards span y 0.02..1.11 and the
+  // BUSIEST band - where most card mass actually sits - is y 0.9. Every table
+  // preset aims at y 0.15..0.35, so running the cut on one pushed it against the
+  // top of the frame with a third of the shot empty felt below.
+  //
+  // Off-centre to the LEFT because the cutting hand is on the right: from
+  // straight on you look down the deck's own axis and the swing flattens out.
+  // Stays ABOVE the cut - dropping under it frames the deck's unlit underside,
+  // which renders near-black beneath the overhead key.
+  handCut: { position: [-1.35, 3.15, 4.5], target: [0.02, 0.86, 0.1], fov: 34 },
 }
 
 // OrbitControls constraints so users never go under the table or behind the cards.

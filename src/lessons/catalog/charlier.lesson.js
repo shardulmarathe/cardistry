@@ -70,7 +70,7 @@ export const charlierLesson = {
   // HAND_SCALE 13 the palm alone overflows it and the cut runs off the top of
   // the frame. `dealerPOV` is 6.4 out with a half-height of 2.2, which holds the
   // whole hand AND the table deck it starts from.
-  cameraPreset: 'dealerPOV',
+  cameraPreset: 'handCut',
   summary:
     'A one-handed cut, not a shuffle: the thumb drops the bottom half into the palm, the index finger pivots it up and over the top. Deterministic — it only cuts.',
   facts: [
@@ -594,7 +594,7 @@ export const charlierLesson = {
         id: 'turn',
         label: 'Turn the hand palm-up under the deck',
         duration: 1100,
-        camera: 'dealerPOV',
+        camera: 'handCut',
         hands: {
           right: [
             // 1) out of the deck's column, still palm-down and still in the
