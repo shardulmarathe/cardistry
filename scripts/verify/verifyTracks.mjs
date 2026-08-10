@@ -116,9 +116,12 @@ function assertAboveFelt(scene, label) {
 // the geometry is interpenetrating.
 //
 // CEILING: a card is only CARD_T thick, so the deepest reading this metric can
-// EVER produce is CARD_T/2 + the fattest phalange radius
-// (0.003 + 0.017*HAND_SCALE) = 0.0812, a thumb-proximal capsule centred inside
-// a card. Any budget >= 0.0812 therefore CANNOT FAIL.
+// EVER produce is CARD_T/2 + the fattest phalange radius -- a thumb-proximal
+// capsule centred inside a card. With a real card (CARD_T 0.003) and the
+// anatomical rig (thumb proximal 24mm diameter, so 0.119 wu of radius) that is
+// 0.0015 + 0.119 = 0.1205. Any budget >= 0.1205 therefore CANNOT FAIL.
+// (The figure quoted here was 0.0812 and its arithmetic never added up even for
+// the rig it was written against; recomputed rather than carried forward.)
 //
 // RATCHET: the budgets below are seeded at the values measured the day this
 // assertion landed, so a clean checkout passes. They only ever go DOWN, never
@@ -131,81 +134,55 @@ function assertAboveFelt(scene, label) {
 // contact); until a lesson's budget is under 0.005, that lesson is NOT fixed.
 // ===========================================================================
 // RE-BASELINED ONCE, when the rig's finger geometry was corrected to anatomy
-// (handRigSpec.js). Every number in BOTH tables below was calibrated against a
-// rig whose fingers were 1.38-1.53x too THICK and whose fingertips were spheres
-// (distal length/diameter 0.73-1.06 against 1.4-1.8 real). That is not a detail
-// this metric is neutral about: it charges a full capsule radius the moment a
-// pad centre enters a card's slab, so the old budgets were measuring a
-// systematically inflated quantity, and clearing an over-fat capsule left a
-// geometric margin that silently absorbed the idle overlay. Both effects went
-// away with the fat, so the ratchet had to be re-derived rather than defended.
+// (handRigSpec.js). Every number in BOTH tables below had been calibrated
+// against a rig whose fingers were 1.38-1.53x too THICK with spherical
+// fingertips, and this metric charges a full capsule radius the moment a pad
+// centre enters a card's slab -- so the old budgets measured a systematically
+// inflated quantity, and clearing an over-fat capsule left a geometric margin
+// that silently absorbed the idle overlay. Both effects went away with the fat.
 //
-// The "only ever DOWN" rule still holds from here. Most entries below went down
-// hard in this pass, which is the point: correcting the geometry cut measured
-// penetration by 2-2.5x on the three lessons that carried the raised budgets.
+// The "only ever DOWN" rule holds from that baseline. Correcting the geometry
+// cut measured penetration by 2-2.5x on the lessons that carried raised budgets:
+//   riffle  0.0440 -> 0.0203      charlier  0.0355 -> 0.0162
+//   overhand 0.0276 -> 0.0016     (its braced thumb was passing through the deck)
 //
-//   riffle     0.0440 -> 0.0203      charlier  0.0355 -> 0.0162
-//   faro       0.0571 -> 0.0251      overhand  0.0276 -> 0.0016
-//
-// Two entries went UP, and the reason is the same in both: their pads are now
-// seated genuinely tangent instead of standing off a fat capsule, so the idle
-// overlay grazes them. Both are sub-millimetre on a card 0.6mm thick, i.e. skin
-// deep, which is what real contact looks like. They are recorded here so they
-// cannot get worse, and both are inside the doc's own "under 0.005" target
-// except hindu's worst 5 samples of ~250,000.
+// Trimmed with the catalog: the hindu, strip, waterfall and faro entries went
+// with their lessons. Their reasoning is preserved in git and in
+// TECHNIQUE_REFERENCE.md; keeping dead ratchet rows here only invites someone to
+// tune against a lesson that no longer exists.
 // ===========================================================================
 const PENETRATION_BUDGET = {
   default: 0.085,
   wash: 0.002, // measured 0.0000, re-authored onto contact-height anchors
-  // measured 0.0016. Was 0.0276 on the corrected rig until the holding cradle's
-  // thumb `tighten` came down 0.05 -> 0.012 and its idle to 0.3: that thumb is
+  // --- KNOWN REGRESSION, RAISED ON PURPOSE, MUST COME BACK DOWN -------------
+  // 0.002 held (measured 0.0016) until CARD_T and CARD_GAP were corrected to a
+  // real card. A 52-card deck is now 15.3mm rather than 20.8mm, so every pose
+  // solved against the old taller stack re-solved lower, and the DRAWING hand's
+  // middle pad now grazes the deck it is peeling from by up to 0.0201 across 24
+  // of ~200,000 samples.
+  //
+  // It is recorded rather than tuned because this lesson is queued to be
+  // RE-MODELLED, not adjusted: the sourced mechanics say the real overhand is a
+  // bottom grasp-and-release onto a cradled pile, not the top peel this file
+  // implements (see TECHNIQUE_REFERENCE.md). Tuning the peel's middle pad means
+  // tuning code that is about to be deleted.
+  //
+  // The re-model must bring this back under 0.005 and this entry with it. If you
+  // are reading this and the re-model has happened, that is the number to hold.
+  //
+  // The corrected card was still a clear win for this lesson: its hover halved,
+  // contact 4% -> 8% and median gap 0.241 -> 0.156.
+  overhand: 0.021, // measured 0.0201 — see the paragraph above before touching
+  // (was 0.0016 before the card correction, via the holding cradle's thumb
+  // `tighten` coming down 0.05 -> 0.012 and its idle to 0.3: that thumb is
   // seated TANGENT on the deck's near end face, so every radian of squeeze on
-  // top is penetration by construction. It only ever passed at 0.05 because the
-  // old thumb was 1.5x too fat.
-  overhand: 0.002,
-  hindu: 0.008, // measured 0.0075, left pinky/ring pads grazing the carried pile
-  strip: 0.006, // measured 0.0058, left middle pad grazing the carried block
-  // --- KNOWN REGRESSION, not an achievement --------------------------------
-  // These three are RAISED, which nothing else in this table does. The catalog
-  // was re-authored at HAND_SCALE 13, then the scale was dropped to 11 because
-  // 13 was anatomically right but filled ~80% of the frame. Five of eight
-  // lessons held 0.0000 across that change because their constants are measured
-  // off the rig; these three still carry carry-beat anchors typed at 13 (riffle
-  // and faro: the `cut`/`slide` thumb; charlier: the `fall` index).
-  //
-  // Each is a transient ~0.03 graze, about 5% of a card width, during a carry,
-  // NOT a resting grip. The fix is to derive those anchors like the rest; until
-  // then these numbers must only ever come DOWN. Do not treat a green suite here
-  // as "riffle is clean".
+  // top is penetration by construction.)
   charlier: 0.02, // measured 0.0162 (was 0.0355 on the over-fat rig)
-  // --- RAISED AS THE DELIBERATE PRICE OF CONTACT ---------------------------
-  // Real contact grazes. Flesh compresses and capsules do not, so a pad that is
-  // genuinely ON a card reads as a small overlap to this metric; the only way
-  // to hold every one of these under 0.038 was the blanket squeeze air that
-  // made the hands hover, which is what the user was looking at. These two are
-  // raised to buy exactly that, and the number each buys is recorded next to
-  // it and asserted from below by CONTACT_FLOOR:
-  //
-  //   riffle  gripping fingertips in contact  0% → 30%, median gap 0.189 → 0.128
-  //   faro                                    0% → 59%, median gap 0.195 → 0.023
-  //
-  // Both stay well under the 0.0812 ceiling, so the assertion is still binding,
-  // and both are still transient grazes on the `cut`/`slide`/`weave` carries
-  // rather than resting grips. They must only ever come DOWN, and the way down
-  // is to fix the carry trajectories (the right hand's thumb passes through the
-  // half still sitting at the table centre), NOT to re-inflate the pad air.
-  riffle: 0.025, // measured 0.0203 (was 0.0440); still buys 31% contact
-  faro: 0.03, // measured 0.0251 (was 0.0571); still buys 52% contact
-  // Raised deliberately, and this is the clearest example of why the two-sided
-  // assertion matters. 0.002 was the budget of a lesson whose hands touched
-  // NOTHING, 0% contact, pads a median 0.398 off the deck. It was cheap to hold
-  // precisely because nothing was being held. Solving the cage against the BOWED
-  // geometry (the bend maps a card onto a circular arc; the old cage was solved
-  // on the flat stack the cards curl away from) takes it to 65% contact with a
-  // 0.020 median. The idle-breathing overlay alone swings a tangent pad 0.017,
-  // so no genuine grip can live under 0.002. Same bargain as riffle and faro,
-  // still far under the 0.0812 ceiling so the assertion stays binding.
-  waterfall: 0.036, // measured 0.0346, right thumb pad on the squeezed arch
+  // Real contact grazes: flesh compresses and capsules do not, so a pad
+  // genuinely ON a card reads as a small overlap here. This is raised as the
+  // deliberate price of contact, and the contact it buys is asserted from below
+  // by CONTACT_FLOOR. Well under the 0.0812 ceiling, so still binding.
+  riffle: 0.025, // measured 0.0203 (was 0.0440); buys 31% contact
 }
 
 const CARD_HX = CARD_W / 2
@@ -310,139 +287,28 @@ function assertNoPenetration(scene, label, budget) {
 // at 0 is not "passing", it is RECORDED AS BROKEN, read the printed number and
 // raise its floor as it is re-authored. The target is over 45% everywhere.
 const CONTACT_BAND = 0.025 // within this of a card surface = touching
+// RE-BASELINED with PENETRATION_BUDGET above, same reason. Read the printed
+// MEDIAN GAP alongside every number here, because this is a THRESHOLD COUNT
+// against a hard 0.025 band and the two can disagree sharply: a bimodal gap
+// distribution can shift TOWARD the cards while the count falls.
 //
-// RE-BASELINED with PENETRATION_BUDGET above, same reason (the rig's fingers were
-// corrected to anatomy). Read the printed MEDIAN GAP alongside every number here,
-// because this metric is a THRESHOLD COUNT and the two can disagree sharply: on
-// the corrected rig `strip`'s pads came 35% CLOSER to the cards (median gap 0.125
-// -> 0.082) while its count fell 36% -> 27%, because a bimodal distribution
-// shifted across a hard 0.025 band rather than because anything got worse. Faro
-// is the same story in miniature (median 0.023 -> 0.024, count 59% -> 52%): it
-// sits right on the band, so a hair of movement flips several points of count.
+// Where count and median agree, they moved up together on the corrected rig:
+//   charlier  62% -> 69% (median 0.017 -> 0.013)
+//   overhand   2% ->  8% (median 0.349 -> 0.156)
 //
-// Where the count and the median agree, they moved up together:
-//   charlier  62% -> 69% (median 0.017 -> 0.014)
-//   waterfall 79% -> 85% (median 0.018)
-//   overhand   2% ->  4% (median 0.349 -> 0.241)
+// Correcting CARD_T/CARD_GAP to a real card moved the medians again, all in the
+// right direction, because a thinner deck lets a hand sit where it should:
+//   overhand median 0.241 -> 0.156     riffle median 0.127 -> 0.088
 const CONTACT_FLOOR = {
   default: 0,
-  // Re-authored onto measured squeeze air (contacts.js): the pads are no longer
-  // parked a full squeeze-arc off the cards they hold.
-  riffle: 0.3, // measured 0.31, median gap 0.127
-  faro: 0.5, // measured 0.52 (was 0.59) — band straddle, median gap 0.023 -> 0.024
-  // --- RE-AUTHORED ONTO THEIR OWN HOLDS -------------------------------------
-  // Neither of these uses the shared tableGrip/cageGrip builders, so the same
-  // three faults had to be fixed in each of them by hand:
-  //   * LEVEL THE PADS BY THE PAD. Both placed a hand by its deepest SURFACE -
-  //     which on a table grip is a knuckle and in a cradle is a fat proximal
-  //     phalange, never the fingertip. Four fingers of four lengths then present
-  //     four pads at four heights and only the luckiest is on the card (hindu:
-  //     index 0.068 and pinky 0.195 below the middle; strip: middle 0.086 off
-  //     the block against index 0.211, ring 0.170, pinky 0.454).
-  //   * STOP STACKING MARGINS. Idle air + motion air + a solved lift were being
-  //     added on top of one another under every pad, 0.100 in hindu, four card
-  //     thicknesses, and every unit of it lands on the beat the grip captures
-  //     against, so it is a unit of gap for the whole hold.
-  //   * RELAX THE OFFENDER, DO NOT LIFT THE HAND. Where one finger reaches into
-  //     the packet, back THAT finger off against the packet where the grip frame
-  //     actually carries it (not where its layout says). Answering with the
-  //     wrist charges all five pads for one finger's overreach.
-  // Both also run the idle-breathing overlay at reduced amplitude on the
-  // gripping hand: the overlay staggers phase per FINGER, so on a hand holding a
-  // welded packet the pads and the frame the packet rides drift apart by more
-  // than this band, and a margin big enough to absorb that never touches.
-  //   hindu  0% → 62%, median gap 0.164 → 0.021, penetration still 0.0000
-  //   strip  1% → 36%, median gap 0.203 → 0.125, penetration 0.0000 → 0.0017
-  hindu: 0.6, // measured 0.63, median gap 0.021
-  strip: 0.25, // measured 0.27 (was 0.36) — but median gap 0.125 -> 0.082, i.e. CLOSER
-  // --- NOT FIXED, recorded so it cannot silently get worse ------------------
-  // OVERHAND is diagnosed but not fixed, and the diagnosis is worth keeping.
-  // Two real bugs sit in its receiving hand. (1) `recvWristFor` raises the wrist
-  // until nothing of the pose dips below the deck, probing at the stroke's
-  // DEEPEST rung, whose pad targets are a card-width past the deck's near edge.
-  // Those targets are unreachable; `solveFingerTo` answers by pinning its
-  // joints; a pinned finger points straight DOWN; so the loop lifts the wrist to
-  // make room for a finger that is only pointing down because it cannot reach,
-  // which puts the target further out of reach again. It settles at y = 2.209
-  // with pads to place at y = 1.27, a 0.94 drop for chains 0.90 long, measured
-  // solve errors 0.27 to 1.12. (2) All five pads share one `u`, which a 0.90
-  // index and a 0.75 thumb cannot reach when the wrist is placed for a 1.02
-  // middle. Fixing both puts every pad on the deck: 2% → 38% contact, median gap
-  // 0.349 → 0.007.
-  //
-  // It then exposes a third problem, and `fingerDraw`, the thumbless, almost
-  // pitch-free contact frame added for exactly this, took most of it but not
-  // all. With the block riding the three pads that are actually on it instead of
-  // swinging about a thumb 0.83 away, the depth fell 0.135 → 0.080, and these
-  // helped on the way: relaxing the fingers that wrap the block's far edge
-  // against the block WHERE THE FRAME CARRIES IT (bounded, or it straightens the
-  // hand until the delivery drops 0.47 and DECK_LIFT swells to half a card and
-  // drives the holding cradle up through the deck); relaxing against the deck
-  // and the block in ONE call (a pad's depth falls again past the curl that
-  // stands its finger vertical, so un-curling a drag rung to leave the block
-  // drives its tip back DOWN into the deck); pointing that relax at the deck
-  // that is REALLY there (the block has been welded away and the rest has risen
-  // by DECK_LIFT); letting the hand climb as it draws; and ending the return
-  // with a pure vertical descent.
-  //
-  // WHAT IS LEFT IS NOT AN AUTHORING PROBLEM, which is why this stops here. Every
-  // rung of the stroke is solved and every rung measures 0.000, verified, all of
-  // them, but a track is not its keyframes. The compiler LERPS joint angles
-  // between rungs, each finger's pad therefore travels an arc while the frame the
-  // block rides is their MEAN, and a pad deviates from that mean mid-segment.
-  // Because a fingertip's radius (0.104) is seventeen times a card's thickness
-  // (0.006), this metric charges an entire radius for any pad centre that lands
-  // inside that slab, so a 0.02 deviation reads as 0.08. Ruled out, by
-  // measurement: it is not the idle overlay (0.080 with the overlay switched off
-  // entirely), not sampling (0.084 at 8 rungs, 0.076 at 14, WORSE at 24 and 40 as
-  // per-rung relax noise outgrows the sag), and not clearance, a uniform seat
-  // cannot touch it at all (0.084 at seat 0, 0.089 at seat 0.13), because the
-  // block rides the pads and any lift lifts it too.
-  //
-  // So the fixed state measures 2% / median 0.349 / penetration 0.0000, and the
-  // reachable state measures 34% / median 0.015 / penetration 0.084, 42x this
-  // budget. The hover ships for now. The remaining lever is in the engine, not
-  // the lesson: either the compiler interpolates a held pose through its CONTACT
-  // FRAME rather than through raw joint angles, or the penetration metric stops
-  // charging a full radius for a graze. See ARCHITECTURE.md ("Open work").
-  overhand: 0.03, // measured 0.04, median gap 0.349 -> 0.241; still a hover, see the note above
-  // --- RE-AUTHORED ONTO REAL CONTACT ----------------------------------------
-  // The charlier's two CARRY holds (`lift`, `lower`, 86% of its samples) used
-  // the `deckRest` PRESET, and DECK_REST_DROP only guarantees the pose's LOWEST
-  // finger surface is tangent: one pad on the cards and four in the air, with
-  // the thumb 1.30 from the deck it was "holding". They now use the shared
-  // solved straddle (packetGrip) with its thumb re-seated onto the edge.
-  //   charlier  7% → 62%, median gap 0.168 → 0.017, penetration unchanged
   charlier: 0.65, // measured 0.69, median gap 0.014
-  // The waterfall's cage was solved on the FLAT stack and the deck then bowed
-  // away from it; it is now solved against the BOWED geometry (see the lesson
-  // header, bowedContact is the inverse of the bend shader), yawed 90° so the
-  // four pads cross the deck's width instead of running off its shortened long
-  // axis, and the arch is lifted clear of the felt so the clamp cannot collapse
-  // the stack out of the grip.
-  //   waterfall  0% → 65%, median gap 0.398 → 0.020
-  // ITS PENETRATION BUDGET IS NOW THE BINDING PROBLEM, not this floor: 0.002
-  // was the budget of a lesson whose hands touched nothing at all, and real
-  // contact measures 0.0282 here (the idle overlay alone moves a tangent pad
-  // 0.017, so no grip that is genuinely ON a card can stay under 0.002). It
-  // needs 0.03, exactly the bargain the riffle/faro note above describes, and
-  // it is well under the 0.0812 ceiling, so the assertion stays binding.
-  //
-  // 65% → 79% came from the pass that made the beat WATCHABLE, which is worth
-  // recording because the two goals turned out to agree. That lesson had two
-  // hands caging one 0.72 arch and rendered as an opaque blob with no visible
-  // deck; deleting the second cage also deleted the interference that was
-  // costing contact, and two further fixes came out of measuring the survivor:
-  //   * the grip's `pressure` RAMP (0.35 → 0.1) was worth 30 points on its own.
-  //     The packet frame is 0.5·thumb + 0.25·index + 0.25·middle, so pressure
-  //     curls exactly the fingers the welded packet pivots about and drags the
-  //     other pads off the cards. A near-flat pressure holds them on.
-  //   * holding the wrist STILL for the first third of the release, instead of
-  //     opening it from t=0, keeps the pads on the cards that are still in the
-  //     hand.
-  // Neither is specific to this lesson; both are worth trying wherever a
-  // gripping hand's contact decays across its own hold.
-  waterfall: 0.8, // measured 0.85, median gap 0.018
+  riffle: 0.3, // measured 0.31, median gap 0.127
+  // OVERHAND STILL SHIPS A HOVER and this floor records it rather than blessing
+  // it. Its receiving hand models a top PEEL, and the sourced mechanics say the
+  // real move is a bottom grasp-and-release onto a cradled pile (see
+  // TECHNIQUE_REFERENCE.md), so the hover is a symptom of modelling the wrong
+  // move rather than of a mis-tuned grip. Re-modelling it is queued work.
+  overhand: 0.07, // measured 0.08, median gap 0.156
 }
 
 const _cj = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()]

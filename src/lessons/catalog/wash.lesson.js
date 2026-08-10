@@ -258,7 +258,6 @@ export const washLesson = {
   id: 'wash',
   title: 'Card Wash',
   technique: 'wash',
-  difficulty: 'beginner',
   randomizes: 'Very good',
   seed: 42,
   cameraPreset: 'topDown',

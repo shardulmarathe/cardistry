@@ -20,7 +20,7 @@ export const frameCounter = { n: 0 }
 
 window.__cardistry = {
   stores: { app: useAppStore, player: usePlayer },
-  lessons: LESSONS.map((l) => ({ id: l.id, title: l.title, difficulty: l.difficulty })),
+  lessons: LESSONS.map((l) => ({ id: l.id, title: l.title })),
   getLessonById,
   compileLesson,
   sampleTrack,

@@ -96,13 +96,13 @@ export default function TransportBar() {
           and the controls below are the right affordance. */}
       {!started && (
         <div className="transport-start">
-          <button type="button" className="start-btn" onClick={() => p.play()} autoFocus>
-            <span className="start-btn-glyph" aria-hidden="true">
+          <button type="button" className="demo-btn" onClick={() => p.play()} autoFocus>
+            <span className="demo-btn-glyph" aria-hidden="true">
               ▶
             </span>
-            <span className="start-btn-text">
-              <span className="start-btn-title">Play demo</span>
-              <span className="start-btn-sub">
+            <span className="demo-btn-text">
+              <span className="demo-btn-title">Play demo</span>
+              <span className="demo-btn-sub">
                 {steps.length} steps · {fmt(durationMs)}
               </span>
             </span>

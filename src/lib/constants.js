@@ -1,10 +1,19 @@
 // Shared world constants + design tokens for the 3D rebuild.
 // World units are arbitrary "table units"; a card is ~63x88mm scaled up.
 
+// A poker card is 63.5 x 88.9 x 0.30 mm, and CARD_W is what fixes this world's
+// scale: 0.63 wu = 63.5mm, so 1 wu = 100.8mm. Every other dimension here is that
+// same conversion, not a look-right number.
 export const CARD_W = 0.63
 export const CARD_H = 0.88
-export const CARD_T = 0.006 // visual thickness reference
-export const CARD_GAP = 0.004 // vertical spacing between stacked cards
+// 0.30mm. Was 0.006 (0.60mm), i.e. twice a real card, which read as a chunky
+// slab at close range and doubled what the penetration metric charges for a pad
+// entering a card's slab.
+export const CARD_T = 0.003
+// Stack pitch. Was 0.004, which piled 52 cards to 20.8mm against a real deck's
+// 15.6mm -- a third too tall, so every bow, weave and squared deck was reading
+// as a fatter object than a deck of cards is. 0.003 puts 52 cards at 15.3mm.
+export const CARD_GAP = 0.003
 export const CARD_ASPECT = CARD_H / CARD_W
 
 // --- Palette: casino oxblood felt under a warm gold spotlight ---
@@ -22,60 +31,19 @@ export const COLORS = {
 
 // Camera presets: { position:[x,y,z], target:[x,y,z], fov }
 // A gentle-orbit "dealer's seat" is the default reading angle.
+//
+// PRUNED with the catalog. This carried eleven presets, seven of which existed
+// for lessons that no longer do (springProfile/springArch for the waterfall's
+// squeeze, handsCradle/handsHigh for hindu and strip, handCut for the charlier's
+// old staging, weave for the tabled riffle's interlace, overShoulder for nothing
+// still shipping). Each came with a paragraph of reasoning about framing a beat
+// that has been deleted, which is worse than no comment at all. Add a preset back
+// when a beat needs it, with the measurement that justifies it.
 export const CAMERA_PRESETS = {
   overview: { position: [0, 4.3, 4.9], target: [0, 0.15, 0], fov: 35 },
   dealerPOV: { position: [0, 3.4, 5.4], target: [0, 0.35, -0.2], fov: 38 },
   closeUp: { position: [0, 2.5, 3.6], target: [0, 0.3, 0], fov: 34 },
   topDown: { position: [0, 6.2, 0.4], target: [0, 0, 0], fov: 40 },
-  // Low and tight on the table center, for the beat where cards interlace
-  // (riffle weave, faro interlace). Sits just inside ORBIT.minDistance.
-  weave: { position: [0, 1.9, 2.5], target: [0, 0.25, 0], fov: 32 },
-  // Off-axis three-quarter view: gives a one-handed cut (charlier) depth that
-  // the head-on presets flatten, and breaks the symmetry of a long lesson.
-  overShoulder: { position: [1.7, 2.6, 3.4], target: [0.1, 0.3, 0], fov: 34 },
-  // A one-handed cut happens IN THE AIR, not on the felt: charlier's packets
-  // sit at y≈0.85 while every other preset aims at y≈0.3, which pushed the cut
-  // into the top of the frame with half the shot empty table. Aims at the cut
-  // itself, from slightly left so the hand reads beside the deck rather than
-  // behind it. Stays ABOVE the cut: dropping the camera under it frames the
-  // deck's unlit underside, which renders near-black under the overhead key.
-  handCut: { position: [-1.1, 2.75, 3.0], target: [0.02, 0.78, 0.1], fov: 32 },
-  // Two-handed work held IN THE AIR (hindu, strip). At HAND_SCALE 13 a palm-up
-  // cradle cannot bring a pile below about wrist + one cup depth, so the action
-  // genuinely lives near y≈1, `dealerPOV` aims at 0.35 and leaves it riding
-  // the top of the frame over empty felt.
-  handsHigh: { position: [0, 3.1, 3.6], target: [0, 0.95, 0.1], fov: 35 },
-  // Same subject as handsHigh but pulled back far enough to keep BOTH hands in
-  // frame. A cradle that genuinely carries its pile cannot hold it below y≈1.13
-  // at HAND_SCALE 11, and hands are now large, handsHigh (4.1 out) frames the
-  // cards but crops the hands off the sides, while overview clips the deck
-  // against the header. 6.4 out, aimed at the cradle.
-  handsCradle: { position: [0, 4.8, 6.4], target: [0, 1.05, 0.05], fov: 38 },
-  // A one-handed spring is a PROFILE: the deck bows in the plane that faces the
-  // dealer, so the only view that shows the bow at all is a low, near-level one.
-  // Every table preset looks DOWN at 28-40°, from up there you see the back of
-  // the hand holding the deck and none of the arc under it, which is exactly how
-  // the waterfall's squeeze beat came to render as an opaque blob of fingers
-  // with the deck invisible inside. 12° of elevation instead, and aimed at the
-  // hand rather than the felt (the action lives at y≈0.6-1.4 here, not 0.3).
-  // Off-centre to the LEFT because the pour is: this keeps the falling ribbon
-  // and the catching hand inside the frame, and the lesson panel covers the
-  // bottom ~40% of it, so the subject is aimed a little above the middle.
-  springProfile: { position: [0.45, 2.5, 7.3], target: [-0.5, 0.86, 0.05], fov: 34 },
-  // The SQUEEZE, which is a different shot from the pour even though it is the
-  // same scene. It has no waterfall to frame, only the arch and the hand
-  // bowing it, about a hand's width of subject, so springProfile's distance
-  // renders it as a thumbnail in one corner. Closer, aimed at the arch itself,
-  // and crossed to the LEFT of centre: the caging hand is at +x, so from over
-  // there you look straight down the deck's long axis and the bow flattens to
-  // an edge. From this side the arc runs across the frame with the hand behind
-  // it, which is the only view in which "bowed" is visible at all.
-  // The squeeze has TWO subjects: the caging hand bowing the deck (wrist x≈0.2)
-  // and the catch hand waiting open beneath it (wrist x≈−1.8). Aiming at the
-  // deck alone put the frame centre two units right of the action and pushed
-  // the catch hand off the left edge. Centred between them and pulled back far
-  // enough to hold both whole.
-  springArch: { position: [-0.55, 2.0, 6.2], target: [-0.55, 0.8, 0.0], fov: 34 },
 }
 
 // OrbitControls constraints so users never go under the table or behind the cards.

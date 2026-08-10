@@ -1,20 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import {
-  getLessonsByDifficulty,
-  getLessonById,
-  DIFFICULTY_LABEL,
-  RANDOMNESS_GUIDE,
-  GRIP_GLOSSARY,
-} from '../lessons/catalog'
+import { useEffect, useRef, useState } from 'react'
+import { LESSONS, getLessonById, RANDOMNESS_GUIDE, GRIP_GLOSSARY } from '../lessons/catalog'
 import { useAppStore } from '../state/useAppStore'
 import { usePlayer } from '../lessons/engine/player'
 import { compileLesson } from '../lessons/engine/compileLesson'
-
-const SUIT_FOR_DIFF = {
-  beginner: '♦',
-  intermediate: '♣',
-  advanced: '♠',
-}
 
 const WIDE_QUERY = '(min-width: 900px)'
 const PREVIEW_DELAY = 280 // debounce: never pay for a compile on a stray click
@@ -130,6 +118,12 @@ function usePreview(lessonId) {
     const start = window.setTimeout(() => {
       const track = trackFor(lesson, useAppStore.getState().deck)
       usePlayer.getState().loadTrack(previewId, track)
+      // `loadTrack` loads PAUSED at frame 0, because opening a technique should
+      // not fling you into the middle of a shuffle. That is a lesson behaviour,
+      // not a global one: this preview is meant to be running. Without an
+      // explicit play it only started via the loop path below, a full LOOP_HOLD
+      // (900ms) later, which read as the table failing to cue.
+      usePlayer.getState().play()
       phase = 'playing'
       loop = window.setInterval(tick, 160)
     }, PREVIEW_DELAY)
@@ -146,13 +140,12 @@ function usePreview(lessonId) {
 
 export default function LessonCatalog() {
   const openLesson = useAppStore((s) => s.openLesson)
-  const groups = useMemo(() => getLessonsByDifficulty(), [])
 
   const [infoOpen, setInfoOpen] = useState(false)
   // Wide screens have a detail column to fill, so pick the first technique for
   // the user; narrow screens drill down from the list, so they start on it.
   const [selectedId, setSelectedId] = useState(
-    () => lastSelectedId ?? (window.matchMedia(WIDE_QUERY).matches ? (groups[0]?.lessons[0]?.id ?? null) : null),
+    () => lastSelectedId ?? (window.matchMedia(WIDE_QUERY).matches ? (LESSONS[0]?.id ?? null) : null),
   )
   const lesson = selectedId ? getLessonById(selectedId) : null
   const playerLessonId = usePlayer((s) => s.lessonId)
@@ -241,34 +234,27 @@ export default function LessonCatalog() {
           </div>
         ) : (
           <div className="catalog-scroll">
-            {groups.map((group) => (
-              <div key={group.difficulty} className="catalog-tier">
-                <div className="tier-head">
-                  <span className={`tier-suit diff-${group.difficulty}`}>
-                    {SUIT_FOR_DIFF[group.difficulty]}
-                  </span>
-                  <span className="tier-label">{DIFFICULTY_LABEL[group.difficulty]}</span>
-                  <span className="tier-rule" />
-                </div>
-                <div className="catalog-grid">
-                  {group.lessons.map((l) => {
-                    const isSel = l.id === selectedId
-                    return (
-                      <button
-                        key={l.id}
-                        type="button"
-                        className={`lesson-card${isSel ? ' is-selected' : ''}`}
-                        aria-pressed={isSel}
-                        onClick={() => (isSel ? open(l.id) : select(l.id))}
-                      >
-                        <span className="lesson-name">{l.title}</span>
-                        <MixMeter strength={l.randomizes} />
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            ))}
+            {/* Four techniques, one flat grid. The difficulty tiers this used to
+                group by are gone: with four deliberately dissimilar moves the
+                grouping was chrome rather than signal, and it invited the
+                "beginner" ones to be treated as throwaways. */}
+            <div className="catalog-grid">
+              {LESSONS.map((l) => {
+                const isSel = l.id === selectedId
+                return (
+                  <button
+                    key={l.id}
+                    type="button"
+                    className={`lesson-card${isSel ? ' is-selected' : ''}`}
+                    aria-pressed={isSel}
+                    onClick={() => (isSel ? open(l.id) : select(l.id))}
+                  >
+                    <span className="lesson-name">{l.title}</span>
+                    <MixMeter strength={l.randomizes} />
+                  </button>
+                )
+              })}
+            </div>
           </div>
         )}
       </div>
@@ -293,12 +279,6 @@ export default function LessonCatalog() {
             <button type="button" className="detail-back" onClick={() => setSelectedId(null)}>
               ← All techniques
             </button>
-            <p className="detail-kicker">
-              <span className={`tier-suit diff-${lesson.difficulty}`}>
-                {SUIT_FOR_DIFF[lesson.difficulty]}
-              </span>
-              {DIFFICULTY_LABEL[lesson.difficulty]}
-            </p>
             <h3 className="detail-title">{lesson.title}</h3>
             <div className="detail-mix">
               <span className="detail-mix-label">Mixing strength</span>

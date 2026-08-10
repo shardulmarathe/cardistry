@@ -25,7 +25,6 @@ export const riffleLesson = {
   id: 'riffle',
   title: 'Riffle Shuffle',
   technique: 'riffle',
-  difficulty: 'intermediate',
   randomizes: 'Excellent',
   seed: 7,
   cameraPreset: 'dealerPOV',

@@ -179,7 +179,6 @@ export const overhandLesson = {
   id: 'overhand',
   title: 'Overhand Shuffle',
   technique: 'overhand',
-  difficulty: 'beginner',
   randomizes: 'Weak',
   seed: 21,
   // The deck is held in the air for the whole shuffle, so the action lives near
