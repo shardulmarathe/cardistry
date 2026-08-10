@@ -794,6 +794,388 @@ export function cageGrip({ topY = 0.3, squeeze = 0 } = {}) {
   return { pose, anchor }
 }
 
+// --- Straddle grip (edge grip) -----------------------------------------------
+// THE GRIP EVERY OTHER GRIP IN THIS FILE IS NOT. See TECHNIQUE_REFERENCE.md.
+//
+// `tableGrip` and `cageGrip` both hold a deck by pressing pads onto its broad
+// TOP FACE from above (the thumb takes one long edge, but the four fingers press
+// '-z'). That is why the hands hover: a pad aimed at a broad face can only rest
+// ON the deck, so the only way to keep it out is air, and it is why they occlude
+// the cards badly enough to need an x-ray shader. Real card grips clamp the
+// deck's PERIMETER with the hand behind it: thumb on the near long edge, fingers
+// wrapped onto the far one, index over the short end, and the PALM carrying the
+// bottom face. The reference frame is unmistakable, the deck's face is entirely
+// unobscured.
+//
+// WHY THE PALM CARRIES THE BOTTOM, and why this is the reachable form. This rig
+// curls a finger in ONE plane (pure local-X rotations) with at most SPLAY_LIMIT
+// of yaw, so "reach in from the side and press inward on the far edge" is not a
+// motion it has: pressing in -x with a finger whose curl sweeps +z/-y is exactly
+// the stall tableGrip's own comment records ("every pad missed by 0.4 and buried
+// itself beside the deck"). What IS reachable is the real thing anyway: with the
+// palm UP under the deck, a finger extending past the far edge curls back over
+// it, so the pad arrives on that edge travelling the way the joint actually
+// moves. The clamp is palm-below against fingertips-around, which is what a
+// dealer's grip is.
+//
+// The deck is PORTRAIT in the hand: its long axis runs out along the fingers
+// (local +y of the card = away from the wrist), so its long edges are the ±x
+// faces and its short ends the ±y faces.
+// ON A LONG-EDGE FACE THE ALONG-DECK AXIS IS `u`, NOT `v`. FACE_UV maps the ±x
+// faces to u = local y (the long axis) and v = local z (the card NORMAL), so a `v`
+// here offsets by a fraction of a CARD THICKNESS -- 0.003 world units, i.e.
+// nothing. Both edge grips were written with `v` and were silently pinning every
+// edge contact to the middle of the deck.
+const STRADDLE_THUMB_U = 0.18 // thumb pad this far along the deck from centre
+const STRADDLE_INDEX_V = 0.86 // index sits near the far short end...
+const STRADDLE_PAD_V = [0, 0.34, 0.02, -0.3] // ...then middle/ring/pinky trail back
+// How far PAST the far long edge the knuckles are parked. The pads have to curl
+// BACK onto that edge, so the knuckles must clear it; too little and the finger
+// is asked to bend past 90° to a point behind its own knuckle (the stall above),
+// too much and the chain cannot reach back.
+const STRADDLE_KNUCKLE_OUT = 0.0
+// Where the knuckle row sits ALONG the deck, as a fraction of a half-deck from
+// its centre (+1 = the near short end). The palm has to be UNDER the deck, not
+// beside it, or the thumb is asked to span the whole width from outside the far
+// edge -- 1.19 world units against a 0.74 chain, measured.
+const STRADDLE_ALONG = -0.4
+const STRADDLE_ROLL = -0.6
+// ALL FOUR PLACEMENT NUMBERS BELOW ARE SWEPT, NOT CHOSEN, by
+// scripts/inspect/gripProbe.mjs, which solves this grip across thousands of
+// placements and scores reach residual first, then pads in contact, then
+// penetration depth.
+//
+// THEY ARE SQUEEZE-DEPENDENT AND MUST BE RE-SWEPT PER STATION. `squeezeAir`
+// moves every contact target off its surface as the squeeze rises, and the wrist
+// anchor is DERIVED from the thumb target, so the whole placement shifts with it.
+// Measured: the optimum swept at squeeze 0 (0.10 / 0.50 / -0.40 / -0.45), which
+// is clean there, puts the thumb's proximal capsule 0.1206 INSIDE the deck at
+// squeeze 0.55 and leaves its pad 0.183 off the edge. A grip builder in this file
+// that quietly carried one tuned placement across every caller would be exactly
+// the failure mode the rest of these comments keep recording.
+//
+// PREFER `straddleGripAuto`, which sweeps this for you against the station's own
+// geometry and squeeze (see below). The bare constants here are a sane default
+// for a portrait deck held in the air, not a universal answer.
+//
+// Head to head against `packetGrip`, the face grip it replaces, on identical
+// charlier geometry and judged by the fingers each frame CLAIMS to grip with:
+//   packetGrip   ('packet' frame, 5 pads scored)   3/5 in contact, deepest 0.0000
+//   straddleGrip ('straddle' frame, 2 pads scored) 2/2 in contact, deepest 0.0000
+// Fraction of the thumb chain spent rising from its knuckle to the near edge.
+const STRADDLE_THUMB_DROP = 0.5
+// Seed shape: fingers HOOKED to wrap an edge (most of the fold at the MCP and
+// PIP so the pad faces back toward the palm), thumb nearly straight because the
+// near edge is close to a whole thumb away across the deck. Gauss-Newton is
+// local, so this seed is choosing the basin, not the answer.
+const STRADDLE_SEED = {
+  thumb: [0.35, 0.3, 0.22],
+  index: [0.95, 1.2, 0.9],
+  middle: [1.0, 1.25, 0.94],
+  ring: [1.0, 1.2, 0.9],
+  pinky: [1.05, 1.1, 0.83],
+}
+// Palm UP, fingers extending away from the dealer. Under this the hand frame maps
+// local +y (finger extension) -> world -z (away), local +z (palmar) -> world +y
+// (up), local +x (pinky side) -> world +x. So the thumb is on -x and the four
+// fingers run ALONG the deck on its +x side, curling up over that long edge.
+const PALM_UP = -Math.PI / 2
+// Face-down portrait, matching layouts.faceQuat(false): rotX(+90) puts the card's
+// normal down and its long axis along world +z, i.e. long edges on ±x.
+const PORTRAIT_FACE_DOWN = new THREE.Quaternion().setFromEuler(
+  new THREE.Euler(Math.PI / 2, 0, 0),
+)
+
+export function straddleGrip({
+  centerX = 0,
+  centerZ = 0,
+  baseY = 0.02,
+  deckH = 0,
+  squeeze = 0,
+  // The deck's own orientation. Default is face-down PORTRAIT, the same quat
+  // `faceQuat(false)` produces, which is the only one the offsets below mean
+  // anything against: it puts the long EDGES on the ±x faces and the short ENDS
+  // on ±y, with local -y the end AWAY from the wrist.
+  cardQuat = null,
+  // Placement overrides, so scripts/inspect/gripProbe.mjs can sweep them instead
+  // of the constants being hand-guessed. Defaults are the swept optimum.
+  knuckleOut = STRADDLE_KNUCKLE_OUT,
+  thumbDrop = STRADDLE_THUMB_DROP,
+  along = STRADDLE_ALONG,
+  // Roll about the hand's own forward axis. This is how a real thumb clears the
+  // deck: rolling the palm brings the thumb around the near edge from OUTSIDE
+  // instead of driving its metacarpal under the stack. Without it the pads reach
+  // their targets perfectly and the thumb's proximal capsule still sits 4.2mm
+  // inside the cards, which `resolvePenetration` cannot fix (it scales CURL, and
+  // a thumb base is placed by the wrist).
+  roll = STRADDLE_ROLL,
+} = {}) {
+  const quat = eulerYXZ(PALM_UP, 0, roll)
+  const seed = seeded('deckRest', STRADDLE_SEED, 0.12)
+  const M = rigMetrics(seed, quat)
+  const travel = squeezeTravel(seed, 'right', 'packet', squeeze)
+  const cq = cardQuat ?? PORTRAIT_FACE_DOWN
+  const cardAt = (h) => ({ pos: [centerX, baseY + h, centerZ], quat: cq })
+  const mid = cardAt(deckH * 0.5)
+  const topCard = cardAt(deckH)
+
+  // Across the deck: park the four knuckles just outside the FAR long edge
+  // (+x), measured off the rig so it follows HAND_SCALE.
+  const ax = centerX + CARD_W / 2 + knuckleOut - M.knuckle.middle.x
+  // Along it: the middle knuckle sits level with the deck's centre, so the four
+  // pads spread fore and aft of it along the deck rather than bunching.
+  const az = centerZ + (CARD_H / 2) * along - M.knuckle.middle.z
+  // The thumb takes the NEAR long edge (-x), half way up the stack.
+  const thumb = surfaceContact(mid, {
+    finger: 'thumb',
+    face: '-x',
+    u: STRADDLE_THUMB_U,
+    clearance: squeezeAir('thumb', travel),
+  })
+  const ay = thumb.y - M.knuckle.thumb.y - chainLen('thumb') * thumbDrop
+  const anchor = [ax, ay, az]
+
+  const contacts = { thumb }
+  // The index curls over the deck's FAR SHORT END (+y): the one contact besides
+  // the thumb that the sources single out ("the forefinger resting on top",
+  // "index fingers curled on top").
+  contacts.index = surfaceContact(topCard, {
+    finger: 'index',
+    face: '-y',
+    u: 0.55,
+    clearance: squeezeAir('index', travel),
+  })
+  // MIDDLE, RING AND PINKY GET NO FINGERTIP TARGET, and that is the grip, not a
+  // shortcut. In a real straddle the deck is trapped between the thumb, the palm
+  // and the LATERAL surfaces of these three fingers lying along the far long
+  // edge; their tips are past the edge and touch nothing. Aiming their tips at
+  // that edge asks for a motion the rig does not have (the pad would have to
+  // travel sideways in -x while a curl sweeps +z/-y) and the solver reports it
+  // honestly as plane error it cannot spend: measured 0.18, 0.41 and 0.65, i.e.
+  // up to a whole card width off. So they keep the seeded hook, which lays those
+  // lateral surfaces along the edge, and `resolvePenetration` is what keeps them
+  // out of the cards. The `straddle` grip frame scores thumb and index for this
+  // reason -- a metric that demands five pads on the deck is asking for a grip
+  // no hand uses.
+
+  const pose = poseWithContacts(seed, 'right', { anchor, quat, splay: true }, contacts)
+  // Report whether the two real contacts actually REACHED. An unreached target
+  // is not a loose grip, it is a finger pointing somewhere else entirely (see
+  // solveFingerTo's JOINT_LIMITS pinning), and it is silent unless measured.
+  const reach = Math.max(
+    solveThumbTo(pose, 'right', contacts.thumb, { oppRange: 1.1, steps: 33 }).error,
+    solveFingerTo(pose, 'right', 'index', contacts.index, { splay: true }).error,
+  )
+  // Resolve against THIS DECK ONLY, and emphatically NOT against a solid column
+  // down to the felt the way `tableGrip` does. That column is correct there
+  // because the hand comes from ABOVE, so anything below the pile is somewhere
+  // the hand has no business being. A straddle is the opposite: the PALM IS
+  // UNDERNEATH, carrying the bottom face, so a phantom column below the deck
+  // claims cards exactly where the hand has to be. Including it made every
+  // placement measure ~0.10 deep and drove the auto-placer to pick a hand parked
+  // beside the deck rather than under it.
+  const column = [topCard, mid, cardAt(0)]
+  resolvePenetration(pose, 'right', column)
+  return { pose, anchor, contacts, reach, column }
+}
+
+// --- Edge pinch grip ----------------------------------------------------------
+// THE OTHER EDGE GRIP, and the one hindu and strip actually use. A straddle rests
+// the deck in the palm; a PINCH holds it clear of the hand between two OPPOSING
+// fingertips, which is what the sources describe for both:
+//
+//   hindu, holding hand: "the deck is held face down, with the middle finger on
+//   one long edge and the thumb on the other"
+//   strip / hindu, receiving hand: "take hold of the inner end of the deck by its
+//   sides between the top joints of the thumb and second finger, the forefinger
+//   resting on the top of the pack"
+//
+// So: thumb on one long edge, MIDDLE on the opposite long edge, index laid on the
+// top face near the far edge to stop the packet pivoting. Ring and pinky trail
+// free, as the sources say outright ("the third and fourth fingers resting free")
+// — so, as with the straddle, they get no fingertip target and are not scored.
+//
+// Two opposing pads is the whole point of a pinch, and unlike the straddle's far
+// long edge these two ARE reachable: they face each other across the deck's
+// width, so each pad arrives along its own curl plane rather than sideways.
+// `u`, not `v` -- see the note on STRADDLE_THUMB_U.
+const PINCH_THUMB_U = 0.1 // thumb pad this far along the deck from centre
+const PINCH_MIDDLE_U = -0.05 // middle opposes it, a whisker nearer the wrist
+const PINCH_INDEX_U = 0.62 // index lies on the top face, out toward the far edge
+const PINCH_MAX_DEPTH = 0.012
+const PINCH_SEED = {
+  thumb: [0.42, 0.34, 0.24],
+  index: [0.72, 0.95, 0.7],
+  middle: [0.62, 0.9, 0.68],
+  ring: [0.5, 0.7, 0.5],
+  pinky: [0.42, 0.6, 0.44],
+}
+const PINCH_GRID = {
+  knuckleOut: [-0.3, -0.1, 0.1, 0.3],
+  thumbDrop: [-0.2, 0, 0.2, 0.4],
+  along: [-0.3, 0, 0.3, 0.6],
+  roll: [-0.6, -0.3, 0, 0.3, 0.6],
+}
+
+export function edgePinchGrip({
+  centerX = 0,
+  centerZ = 0,
+  baseY = 0.02,
+  deckH = 0,
+  squeeze = 0,
+  cardQuat = null,
+  knuckleOut = 0,
+  thumbDrop = 0,
+  along = 0,
+  roll = 0,
+} = {}) {
+  const quat = eulerYXZ(PALM_UP, 0, roll)
+  const seed = seeded('deckRest', PINCH_SEED, 0.1)
+  const M = rigMetrics(seed, quat)
+  const travel = squeezeTravel(seed, 'right', 'pinch', squeeze)
+  const cq = cardQuat ?? PORTRAIT_FACE_DOWN
+  const cardAt = (h) => ({ pos: [centerX, baseY + h, centerZ], quat: cq })
+  const mid = cardAt(deckH * 0.5)
+  const topCard = cardAt(deckH)
+
+  const ax = centerX + CARD_W / 2 + knuckleOut - M.knuckle.middle.x
+  const az = centerZ + (CARD_H / 2) * along - M.knuckle.middle.z
+  // Thumb on the NEAR long edge (-x), middle on the FAR one (+x): opposed.
+  const thumb = surfaceContact(mid, {
+    finger: 'thumb',
+    face: '-x',
+    u: PINCH_THUMB_U,
+    clearance: squeezeAir('thumb', travel),
+  })
+  const ay = thumb.y - M.knuckle.thumb.y - chainLen('thumb') * thumbDrop
+  const anchor = [ax, ay, az]
+
+  const contacts = {
+    thumb,
+    middle: surfaceContact(mid, {
+      finger: 'middle',
+      face: '+x',
+      u: PINCH_MIDDLE_U,
+      clearance: squeezeAir('middle', travel),
+    }),
+    index: surfaceContact(topCard, {
+      finger: 'index',
+      u: PINCH_INDEX_U,
+      clearance: squeezeAir('index', travel),
+    }),
+  }
+
+  const pose = poseWithContacts(seed, 'right', { anchor, quat, splay: true }, contacts)
+  const reach = Math.max(
+    solveThumbTo(pose, 'right', contacts.thumb, { oppRange: 1.1, steps: 33 }).error,
+    solveFingerTo(pose, 'right', 'middle', contacts.middle, { splay: true }).error,
+    solveFingerTo(pose, 'right', 'index', contacts.index, { splay: true }).error,
+  )
+  // A pinch holds the deck AWAY from the hand, so unlike the straddle there is no
+  // palm under it and no reason to model anything but the deck itself.
+  const column = [topCard, mid, cardAt(0)]
+  resolvePenetration(pose, 'right', column)
+  return { pose, anchor, contacts, reach, column }
+}
+
+// --- Self-placing straddle ----------------------------------------------------
+// THE ADOPTION BLOCKER, REMOVED. A lesson calling `straddleGrip` directly has to
+// carry four placement numbers per station, and they do NOT transfer: the anchor
+// is derived from the thumb target and `squeezeAir` moves that target, so a
+// placement swept at one squeeze can bury the thumb 0.12 deep at another. Four
+// magic numbers per station that silently stop being right is exactly the class
+// of bug the rest of this file is a monument to.
+//
+// So sweep at COMPILE time instead. One solve is ~1.6ms, the grid below is 144
+// candidates, so a station costs ~0.3s once per lesson compile, and the result is
+// a placement measured against the station's own geometry and squeeze rather than
+// inherited from a different one. Deterministic (fixed grids, no randomness), so
+// the compiled track stays a pure function of the lesson source.
+//
+// Scored in strict priority: REACH first (an unreached target is a finger
+// pointing somewhere else, not a loose one), then pads in contact, then depth.
+// Skin deep. Above this a placement is rejected outright, however well it scores
+// on contact (see the gate below).
+const STRADDLE_MAX_DEPTH = 0.012
+const STRADDLE_GRID = {
+  knuckleOut: [-0.2, 0, 0.2, 0.4],
+  thumbDrop: [0.1, 0.3, 0.5, 0.7],
+  along: [-0.4, -0.2, 0, 0.2, 0.4, 0.6],
+  roll: [-0.6, -0.45, -0.3, -0.15, 0, 0.15, 0.3],
+}
+const _sg = new THREE.Vector3()
+
+// Signed clearance from a fingertip SURFACE to the nearest of `cards`: >0 clear,
+// <0 inside. NOT via `cardDepth`, which early-returns 0 for any point outside the
+// card and so cannot measure clearance at all — using it here scored every pad as
+// a whole radius away and reported a perfect grip as 0/2 in contact.
+const _pgLocal = new THREE.Vector3()
+const _pgInv = new THREE.Quaternion()
+function padGap(pose, side, name, cards) {
+  fingertipWorld(pose, side, name, _sg)
+  let best = Infinity
+  for (const c of cards) {
+    _pgLocal.copy(_sg).sub(cardPosOf(c)).applyQuaternion(_pgInv.copy(c.quat).invert())
+    const e = surfaceExtents(_pgLocal, c.bend ?? 0)
+    const ox = Math.max(e.x, 0)
+    const ou = Math.max(e.u, 0)
+    const on = Math.max(e.n, 0)
+    const outside = Math.hypot(ox, ou, on)
+    const g = outside > 0 ? outside : Math.max(e.x, e.u, e.n)
+    if (g < best) best = g
+  }
+  return best - FINGERS[name].rad[2] * HAND_SCALE
+}
+
+// Shared self-placing sweep for the edge grips. `build` is the grip builder,
+// `scored` the fingers whose pads that grip really claims, `grid` its placement
+// axes and `maxDepth` its skin-deep gate.
+function autoPlace(build, scored, grid, maxDepth, opts) {
+  let best = null
+  for (const knuckleOut of grid.knuckleOut) {
+    for (const thumbDrop of grid.thumbDrop) {
+      for (const along of grid.along) {
+        for (const roll of grid.roll) {
+          const g = build({ ...opts, knuckleOut, thumbDrop, along, roll })
+          let deepest = 0
+          for (const name of FINGER_NAMES) {
+            deepest = Math.max(deepest, fingerDepth(g.pose, 'right', name, g.column, 6))
+          }
+          const touching = scored.filter(
+            (n) => Math.abs(padGap(g.pose, 'right', n, g.column)) < 0.025,
+          ).length
+          const cand = { g, reach: g.reach, touching, deepest, placement: { knuckleOut, thumbDrop, along, roll } }
+          if (!best) {
+            best = cand
+            continue
+          }
+          const gate = (c) => (c.reach <= 0.02 ? 0 : 2) + (c.deepest <= maxDepth ? 0 : 1)
+          if (gate(cand) !== gate(best)) {
+            if (gate(cand) < gate(best)) best = cand
+            continue
+          }
+          if (cand.touching !== best.touching) {
+            if (cand.touching > best.touching) best = cand
+            continue
+          }
+          if (cand.deepest < best.deepest - 1e-9) best = cand
+        }
+      }
+    }
+  }
+  return {
+    ...best.g,
+    placement: best.placement,
+    measured: { reach: best.reach, touching: best.touching, of: scored.length, deepest: best.deepest },
+  }
+}
+
+export const edgePinchGripAuto = (opts = {}) =>
+  autoPlace(edgePinchGrip, ['thumb', 'middle', 'index'], PINCH_GRID, PINCH_MAX_DEPTH, opts)
+
+export const straddleGripAuto = (opts = {}) =>
+  autoPlace(straddleGrip, ['thumb', 'index'], STRADDLE_GRID, STRADDLE_MAX_DEPTH, opts)
+
 // Generate the weave's hand keyframes so the thumb ratchets open across
 // EXACTLY the window in which the staggered cards release (staggerWindow:
 // card k starts at k/(n-1)*spread through the step), the thumb visibly

@@ -288,7 +288,11 @@ function buildHolds(decls, hands, cardTracks) {
 // sampler uses (idle overlay included, pressure curl included), capture,
 // release baking, and rendering can never disagree.
 function holdFrameAt(hold, hands, ms) {
-  const pose = sampleHandSegments(hands[hold.side] ?? [], ms, hold.side)
+  // The frame type is passed so the gripping fingers are interpolated through
+  // their fingertips here EXACTLY as they are at render time (sampleTrack picks
+  // the same type from the same most-pressured-hold rule). Omitting it captured
+  // offsets against a joint-lerped pose the viewer never sees.
+  const pose = sampleHandSegments(hands[hold.side] ?? [], ms, hold.side, hold.frame)
   if (!pose) return null
   applyGripPressure(pose, hold.frame, pressureAt(hold, ms))
   return frameOf(pose, hold.side, hold.frame)

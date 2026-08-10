@@ -781,7 +781,15 @@ export const overhandLesson = {
               pose: holdPose,
               anchor: HOLD_WRIST,
               ease: 'snapEase',
-              fingerMotion: [{ fingers: ['thumb'], type: 'tighten', amp: 0.05 }],
+              // 0.012, not 0.05. This thumb is braced on the deck's near end
+              // face and `resolvePenetration` seats it TANGENT, so every radian
+              // of squeeze on top of that is penetration by construction. At
+              // 0.05 the peak of this envelope (t=0.5, where sin²(πt)=1) drove
+              // the thumb's MIDDLE phalange 0.028 into the bottom card, on
+              // every drop beat. It only passed before because the old thumb was
+              // 1.5x too fat, so clearing the fat capsule left a margin this
+              // squeeze could eat; a correctly-thin thumb has no such slack.
+              fingerMotion: [{ fingers: ['thumb'], type: 'tighten', amp: 0.012 }],
             },
           ],
         },
@@ -864,6 +872,23 @@ export const overhandLesson = {
         { text: 'Repeat it a dozen times and it still barely mixes — that is the overhand', appearAt: 0.1 },
       ],
     })
+
+    // THE HOLDING CRADLE BREATHES AT REDUCED AMPLITUDE, for the same reason
+    // hindu's and strip's do (see the note at the end of hindu.lesson.js). This
+    // hand is braced on a deck with its thumb seated tangent on the near end
+    // face, and the idle overlay adds 0.021rad of curl to every finger with a
+    // per-FINGER phase stagger, so it walks a tangent pad straight into the
+    // cards it is bracing against and drifts the pads away from each other at
+    // the same time. A braced hand is stabilised by that contact in life too, so
+    // damping it is the physical answer as well as the measured one.
+    //
+    // Applied to EVERY left keyframe, not just the holding ones: a scale that
+    // changes between segments steps the overlay discontinuously, and the deck
+    // rides this hand.
+    const HOLD_IDLE = 0.3
+    for (const st of steps) {
+      for (const kf of st.hands?.left ?? []) kf.idleScale = HOLD_IDLE
+    }
 
     return steps
   },

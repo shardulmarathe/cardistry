@@ -1,6 +1,17 @@
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
-import { HAND_SCALE, FINGERS, FINGER_NAMES, THUMB_BASE_ROT, jointPivotY } from './handRigSpec'
+import {
+  HAND_SCALE,
+  FINGERS,
+  FINGER_NAMES,
+  THUMB_BASE_ROT,
+  jointPivotY,
+  mmToRig,
+  PALM_MM,
+  THENAR_MM,
+  WRIST_MM,
+  FOREARM_MM,
+} from './handRigSpec'
 import { getRegistry } from '../card/cardRegistry'
 import { CARD_W, CARD_H } from '../lib/constants'
 
@@ -231,17 +242,19 @@ export function buildHandRig(side = 'right') {
   root.add(wrist)
 
   // Palm: a flattened, slightly domed slab, thin along the palmar axis (z),
-  // wide across (x), tall from wrist (-y) to the knuckle line (+y≈0.05).
-  const palmGeo = new RoundedBoxGeometry(0.092, 0.1, 0.026, 4, 0.012)
+  // wide across (x), tall from the wrist crease (-y) to the knuckle line (+y).
+  // Dimensions come from PALM_MM in the spec, in millimetres, so the palm and
+  // the fingers cannot drift out of proportion with each other.
+  const palmGeo = new RoundedBoxGeometry(...PALM_MM.size.map(mmToRig), 4, mmToRig(12))
   const palm = new THREE.Mesh(palmGeo, material)
-  palm.position.set(-0.002, 0.0, 0.0)
+  palm.position.set(...PALM_MM.pos.map(mmToRig))
   wrist.add(palm)
 
   // Thenar eminence: the fleshy pad at the base of the thumb, for a full palm.
-  const thenarGeo = new RoundedBoxGeometry(0.034, 0.06, 0.03, 3, 0.014)
+  const thenarGeo = new RoundedBoxGeometry(...THENAR_MM.size.map(mmToRig), 3, mmToRig(14))
   const thenar = new THREE.Mesh(thenarGeo, material)
-  thenar.position.set(-0.034, -0.018, 0.008)
-  thenar.rotation.z = -0.3
+  thenar.position.set(...THENAR_MM.pos.map(mmToRig))
+  thenar.rotation.z = THENAR_MM.rotZ
   wrist.add(thenar)
 
   // The limb below the palm gets its OWN material instance (same factory, so it
@@ -258,14 +271,19 @@ export function buildHandRig(side = 'right') {
 
   // Wrist + forearm stub so the hand doesn't read as a severed palm. Capsules
   // are authored along +y, so they already trail down the -y axis below the palm.
-  const wristGeo = new THREE.CapsuleGeometry(0.03, 0.03, 6, 12)
+  const wristGeo = new THREE.CapsuleGeometry(mmToRig(WRIST_MM.dia / 2), mmToRig(WRIST_MM.len), 6, 12)
   const wristMesh = new THREE.Mesh(wristGeo, forearmMaterial)
-  wristMesh.position.set(0, -0.07, 0.002)
+  wristMesh.position.set(...WRIST_MM.pos.map(mmToRig))
   wrist.add(wristMesh)
 
-  const forearmGeo = new THREE.CapsuleGeometry(0.032, 0.16, 6, 12)
+  const forearmGeo = new THREE.CapsuleGeometry(
+    mmToRig(FOREARM_MM.dia / 2),
+    mmToRig(FOREARM_MM.len),
+    6,
+    12,
+  )
   const forearm = new THREE.Mesh(forearmGeo, forearmMaterial)
-  forearm.position.set(0, -0.19, 0.004)
+  forearm.position.set(...FOREARM_MM.pos.map(mmToRig))
   // The forearm is the only writer of forearmMaterial.opacity (the wrist stub
   // shares the material and rides this value, it has the same axis, being a
   // sibling under the same wrist group with no local rotation of its own).

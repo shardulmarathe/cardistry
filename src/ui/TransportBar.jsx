@@ -24,6 +24,7 @@ export default function TransportBar() {
   const durationMs = usePlayer((s) => s.durationMs)
   const stepIndex = usePlayer((s) => s.stepIndex)
   const playing = usePlayer((s) => s.playing)
+  const started = usePlayer((s) => s.started)
   const speed = usePlayer((s) => s.speed)
   const mixing = useMixingView((s) => s.enabled)
 
@@ -88,6 +89,29 @@ export default function TransportBar() {
           </p>
         )}
       </div>
+
+      {/* Before the first play the panel offers ONE action, at full primary
+          weight, instead of a row of five equal-sized glyph buttons in which
+          the only one that matters is 24px wide. After that it is a transport
+          and the controls below are the right affordance. */}
+      {!started && (
+        <div className="transport-start">
+          <button type="button" className="start-btn" onClick={() => p.play()} autoFocus>
+            <span className="start-btn-glyph" aria-hidden="true">
+              ▶
+            </span>
+            <span className="start-btn-text">
+              <span className="start-btn-title">Play demo</span>
+              <span className="start-btn-sub">
+                {steps.length} steps · {fmt(durationMs)}
+              </span>
+            </span>
+          </button>
+          <p className="start-hint">
+            Or scrub and step through it yourself — nothing moves until you say so.
+          </p>
+        </div>
+      )}
 
       <div className="transport-controls">
         <div className="transport-buttons">

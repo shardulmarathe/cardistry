@@ -156,6 +156,22 @@ export const GRIP_FRAME_TYPES = {
     pitchGain: 0.08,
     pressure: { index: 1, middle: 1, ring: 0.8, pinky: 0.5, thumb: 0.2 },
   },
+  // STRADDLE (edge grip): the deck is clamped between the thumb on one long
+  // edge, the index over the far short end, and the PALM under the bottom face.
+  // See straddleGrip in authoring/contacts.js and TECHNIQUE_REFERENCE.md.
+  //
+  // `tips` and `pressure` deliberately list only the fingers that are really on
+  // the cards. Middle, ring and pinky lie ALONG the far long edge and touch it
+  // with their lateral surfaces, not their pads, so scoring their fingertips
+  // (which every other frame here does) would demand a grip no hand uses and
+  // report a correct straddle as a hover. Middle carries a token pressure weight
+  // because it does tighten visibly; it just isn't a fingertip contact.
+  straddle: {
+    tips: { thumb: 0.45, index: 0.55 },
+    pitchFrom: ['index'],
+    pitchGain: 0.25,
+    pressure: { thumb: 1, index: 0.85 },
+  },
   // Charlier pivot: the packet rides the INDEX fingertip, and extending the
   // finger swings it, the high pitch gain converts the index's curl change
   // into the packet's up-and-over rotation (one-handed cuts).
@@ -360,6 +376,81 @@ export function solveFingerTo(pose, side, name, targetWorld, { splay = false } =
     error: Math.hypot(ty - y, tz - z) * HAND_SCALE,
     planeError: Math.abs(v.x) * HAND_SCALE,
   }
+}
+
+// ---------------------------------------------------------------------------
+// TASK-SPACE INTERPOLATION FOR A HELD HAND
+//
+// The problem this solves (ARCHITECTURE.md, "Open work"): a grip's keyframes are
+// SOLVED, so at every authored rung each gripping pad sits exactly on the cards.
+// Between rungs the compiler lerps JOINT ANGLES, so each pad swings along a
+// circular arc while the contact frame the packet rides is a weighted MEAN of
+// those pads. A mean of arcs is not the arc of the mean: the pads bow away from
+// the packet mid-segment, and because the contact metric charges a whole capsule
+// radius for a pad centre inside a card, a fraction of a millimetre of bow reads
+// as deep penetration. Every rung measuring 0.000 while the segment between them
+// does not is the signature. Densifying the rungs does not fix it (measured
+// 0.084 at 8 rungs, 0.076 at 14, WORSE at 24 and 40 as per-rung solve noise
+// outgrows the sag) because it is not a sampling error.
+//
+// The fix is to interpolate the pads in TASK SPACE. Take each gripping
+// fingertip's position in WRIST-LOCAL space at both rungs, lerp those POINTS,
+// and re-solve the finger's curl onto the lerped point. Every pad then travels a
+// straight line in the wrist frame, and since the contact frame is a linear
+// combination of pads, so does the frame -- which makes (pad - frame) linear too.
+// It equals "pad on the cards" at both ends, so it stays close to it throughout,
+// instead of bowing.
+//
+// Wrist-local, not world, on purpose: the wrist's own translation and rotation
+// still interpolate exactly as before (position lerp, quaternion slerp), so this
+// changes only the finger curl WITHIN the hand and cannot disturb a carry.
+// Mirror policy is respected: only POINTS cross the left-hand mirror, and the
+// solve happens in the finger's own knuckle frame.
+const _tipsFrom = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()]
+const _tipsTo = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()]
+const _tipLerp = new THREE.Vector3()
+const _tipWorld = new THREE.Vector3()
+
+// Re-solve `out`'s gripping fingers so their tips sit on the straight line
+// between their `from` and `to` tips at blend `e`. `out` must already be the
+// joint-lerped pose of the same two rungs (its wrist is what the tips are
+// measured against). Mutates and returns `out`. Pure and deterministic, so
+// scrub purity and boundary continuity are preserved: at e=0 and e=1 the solve
+// target IS the rung's own tip, so the reseat is a no-op at every boundary.
+// A reseat is only accepted when the solve actually REACHES the chord. This
+// guard is load-bearing, not defensive: where a lerped chord target is outside a
+// finger's reach, solveFingerTo pins its joints against JOINT_LIMITS and the tip
+// lands nowhere near the target -- measured on the overhand's right pinky, whose
+// pad targets sit a card-width past the deck's near edge, an unguarded reseat
+// made the deviation it was meant to remove FIVE TIMES WORSE (17mm -> 83mm).
+// Falling back to the joint lerp there is never worse than today's behaviour.
+//
+// The threshold is on `error`, the in-plane reach residual, and deliberately NOT
+// on `planeError`, the component no amount of curling can reach (splay is fixed
+// by the pose). A thumb whose chord sits off its opposition plane still lands
+// far closer to the chord than its arc did -- the riffle's thumb goes 30mm ->
+// 7mm of residual plane error -- so rejecting on planeError would throw away the
+// biggest win in the catalog.
+const RESEAT_TOL = 0.02 // world units, ~2mm: three card thicknesses
+
+export function reseatGrippingTips(out, from, to, side, e, fingerNames) {
+  for (const name of fingerNames) {
+    if (!out.fingers[name]) continue
+    fingerJointsLocal(from, name, _tipsFrom)
+    fingerJointsLocal(to, name, _tipsTo)
+    _tipLerp.lerpVectors(_tipsFrom[3], _tipsTo[3], e)
+    wristLocalToWorld(out, side, _tipLerp, _tipWorld)
+    const s = solveFingerTo(out, side, name, _tipWorld)
+    if (s.error <= RESEAT_TOL) out.fingers[name] = s.angles
+  }
+  return out
+}
+
+// The fingers a grip frame actually claims to be holding with -- the same set
+// the contact metric scores, so this is the set worth keeping on the cards.
+export function grippingFingers(frameType) {
+  const spec = GRIP_FRAME_TYPES[frameType]
+  return spec?.pressure ? Object.keys(spec.pressure) : null
 }
 
 // Thumb IK: the thumb's curl plane is set by its opposition (thumbOpp swings

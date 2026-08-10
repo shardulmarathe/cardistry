@@ -36,8 +36,21 @@ export const riffleLesson = {
     'The bend stores elastic spring energy — release it evenly and the cards cascade; crease it and you ruin the card.',
   ],
   build: (deck) => {
-    const G = 0.5 // half-deck center x, landscape halves, inner ends at ±0.06
+    // Half-deck centre x. The halves are LANDSCAPE, so each reaches
+    // (CARD_H/2)·cos(YAW) = 0.437 from its own centre along x, and G is what
+    // decides whether their inner short ends MEET or sit in mid-air.
+    //
+    // It was 0.5, which parked the two inner ends 0.12 apart — a fifth of a card
+    // width of bare felt between the halves, so the "interlace" happened across a
+    // visible gap and read as two separate fans flicking at each other rather
+    // than one shuffle. A real table riffle brings the corners into contact
+    // BEFORE the thumbs release; the interleave is what happens where they touch.
+    // Derived from the card, not typed, so it tracks CARD_H and YAW.
     const YAW = 0.12 // inward angle off 90°: inner short ends point at each other
+    const HALF_REACH_X = (CARD_H / 2) * Math.cos(YAW)
+    // A hair of overlap, not a gap: the corners of a real riffle interleave, so
+    // the halves want to be very slightly inside each other at the junction.
+    const G = HALF_REACH_X - 0.012
     const TILT = 0.3 // thumbs lift the INNER end this far while loading
 
     // --- Card-derived hand heights (the thing this file is really about) ----
