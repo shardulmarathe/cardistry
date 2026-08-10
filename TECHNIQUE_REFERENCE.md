@@ -133,6 +133,35 @@ check caught two false passes.
 `axis: 'end'` is what an in-hands riffle needs (each half held by its short ends),
 so the riffle rebuild is unblocked on the pinch even though the straddle is not.
 
+**But the pinch is only solved in the CANONICAL card frame, and the riffle's halves
+are yawed.** Measured on a 26-card half in the air, axis `end`:
+
+| packet orientation | reach | pads |
+|---|---|---|
+| canonical portrait (the validated frame) | 0.0004 | 3/3 |
+| + a roll about world Z (the thumb tilt) | 0.0006 | 3/3 |
+| yawed 90deg about world Y (a riffle half) | **0.3429** | 2/3 |
+| yawed + rolled | **0.4359** | 2/3 |
+
+A roll is harmless; a YAW is not. The hand placement is expressed in world axes, so
+a yaw about Y decouples the hand from the card and the pads miss by a third to a
+half of a card. Naively pointing the pinch at a riffle half would produce exactly
+the silent failure the new reach gate exists to catch.
+
+**The fix is a rigid transform, and it is verified:** solve in the canonical frame,
+then rotate the SOLVED hand and its packet together about world Y. This is the same
+trick `tableGrip`'s `tilt` uses ("TILT MOVES THE SOLVED HAND, it does not re-solve
+it"). Measured at yaws of 0, 0.79, 1.35 and 1.57 rad, the pad gaps are IDENTICAL
+(0.0168 / 0.0165 / 0.0165) and 3/3 throughout — a rigid transform preserves a rigid
+grip exactly.
+
+**The open question is the LEFT hand**, and the codebase already documents the trap:
+`grips.js` mirrors a grip frame's POSITION but not its QUATERNION, so a rotation
+applied to a left-hand grip turns the hand one way on screen and the packet it is
+holding the other — tableGrip records a 2x error from precisely this, putting 0.17
+of finger inside the riffle's own halves. The riffle needs both hands, so resolving
+that mirror behaviour is the first task of the rebuild, not an afterthought.
+
 ### Two open measurement problems, both flagged and neither fixed
 
 - **`PRESSURE_CURL` (0.14 rad) moves a pad ~0.05 world at full squeeze**, twice the
