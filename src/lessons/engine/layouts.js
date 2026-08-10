@@ -47,32 +47,82 @@ export function twoHalvesLayout(deck, gap = 0.95, baseY = 0.02) {
   })
 }
 
-// On-edge orientations for a riffle grip: the card long axis (local Y) points
-// up (world +Y) and the FACE (local +Z normal) points to the side (world ±X)
-// toward each hand, a real bridge, not a flat pile facing the ceiling. Built
-// as a ±90° turn about world Y. With faces along ±X, the existing long-axis
-// bend bows the standing card so its arch profile faces the dealer (normal ≈
-// world Z), the bow "faces the sides", per design.
-export const ON_EDGE = {
-  left: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2),
-  right: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2),
+
+
+// IN-HANDS riffle: two half-decks held IN THE AIR, one per hand, brought corner
+// to corner ready to interlace. This is the version people mean by "riffle
+// shuffle", and it is a different object from `tableRiffleLayout` in three ways
+// that all matter:
+//
+//   * The halves are OFF THE FELT (`baseY` ~ 1.0), so nothing here may rely on
+//     the table to hold a card up, and `clampAboveFelt` never fires.
+//   * They meet at a shallow V, not parallel. Reference footage shows the two
+//     packets butt-jointed at their inner corners forming a dog-leg of ~2*`yaw`,
+//     which is what lets a single corner of each interleave with the other while
+//     the far ends stay apart in the hands.
+//   * Each half is ROLLED about its own long axis (`tilt`), inner edge up: that
+//     is the thumbs loading the spring. The roll is per-half and mirrored, so the
+//     two inner edges rise toward each other.
+//
+// Cards stack along the half's own face NORMAL (not world Y), because a packet
+// held at a tilt is a slab in its own frame — stacking along world Y would shear
+// it. `telescope` is how far each half slides inward for the finishing push.
+// How far a landscape half reaches along world X from its own centre, given the
+// inward yaw and the roll. DERIVED by evaluating the card's four corners rather
+// than typed: the roll about world Z changes the x extent too, so the closed form
+// is not just (CARD_H/2)*cos(yaw), and a typed gap silently stops meaning "the
+// ends touch" the moment either angle is tuned. (Measured the wrong way first:
+// a typed 0.42 overlapped the two halves by 0.156.)
+export function inHandsHalfReachX(yaw = 0.22, tilt = 0.3, stack = 0) {
+  const q = faceQuat(false, Math.PI / 2 - yaw)
+  q.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -tilt))
+  const v = new THREE.Vector3()
+  let reach = 0
+  for (const sx of [-1, 1]) {
+    for (const sy of [-1, 1]) {
+      v.set((sx * CARD_W) / 2, (sy * CARD_H) / 2, 0).applyQuaternion(q)
+      reach = Math.max(reach, Math.abs(v.x))
+    }
+  }
+  // A ROLLED STACK LEANS. Cards are stacked along the half's own face normal, and
+  // once the half is rolled that normal has an x component, so the outermost card
+  // of a 26-card half sits further out than the innermost. Ignoring it cost 0.022
+  // per side and the "just touching" default overlapped by 0.064.
+  v.set(0, 0, 1).applyQuaternion(q)
+  return reach + Math.abs(v.x) * stack
 }
 
-// Two on-edge half-decks, one per hand, ready to bow into a riffle bridge. Each
-// half is stacked along world X (its face-normal axis) so cards don't z-fight.
-export function riffleGripLayout(deck, { gap = 0.5, baseY = 0.5, lean = 0 } = {}) {
+export function inHandsRiffleLayout(
+  deck,
+  { gap = null, baseY = 1.0, yaw = 0.22, tilt = 0.3, z = 0, telescope = 0, overlap = 0.01 } = {},
+) {
   const mid = Math.floor(deck.length / 2)
+  // Default: inner ends just touching, minus a hair of bite. A real riffle brings
+  // the corners into contact BEFORE the thumbs release; the interleave happens
+  // where they touch.
+  const centre = gap ?? inHandsHalfReachX(yaw, tilt, (mid - 1) * CARD_GAP) - overlap
+  const _n = new THREE.Vector3()
   return deck.map((card, i) => {
     const inLeft = i < mid
     const local = inLeft ? i : i - mid
-    const sign = inLeft ? -1 : 1
-    const quat = ON_EDGE[inLeft ? 'left' : 'right'].clone()
-    if (lean) {
-      quat.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -sign * lean))
-    }
+    const s = inLeft ? -1 : 1
+    // LANDSCAPE, like tableRiffleLayout: `faceQuat`'s own yaw is measured off the
+    // portrait orientation, whose long axis runs along world Z, so a small yaw
+    // leaves the halves side by side across their WIDTH and their short ends
+    // never meet. It has to be a quarter turn MINUS the inward angle, which puts
+    // the long axes along X with the inner ends pointing at each other.
+    const quat = faceQuat(false, s * (Math.PI / 2 - yaw))
+    quat.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -s * tilt))
+    // Stack along this half's own face normal.
+    _n.set(0, 0, 1).applyQuaternion(quat).multiplyScalar(local * CARD_GAP)
+    // `telescope` is a DISTANCE each half slides inward, not a fraction of the
+    // gap: the finishing push moves the halves together by about a tenth of a
+    // card, and scaling the whole gap by a progress term drove them a full card
+    // length through each other.
+    const reach = centre - telescope
     return {
       id: card.id,
-      pos: new THREE.Vector3(sign * gap + sign * local * CARD_GAP, baseY, 0),
+      pos: new THREE.Vector3(s * reach + _n.x, baseY + _n.y, z + _n.z),
       quat,
       bend: 0,
     }
@@ -256,32 +306,7 @@ export function charlierLayout(deck, progress = 1, baseY = 0.02) {
   })
 }
 
-// Spring arch: the whole deck bowed between two hands.
-export function springArchLayout(deck, bend = 2.8, baseY = 0.02) {
-  return deck.map((card, i) => ({
-    id: card.id,
-    pos: new THREE.Vector3(0, baseY + i * CARD_GAP, 0),
-    quat: faceQuat(card.isFaceUp),
-    bend,
-  }))
-}
 
-// Cascade release: cards fan out downward between hands.
-export function cascadeLayout(deck, progress = 1) {
-  const n = deck.length
-  return deck.map((card, i) => {
-    const t = i / Math.max(1, n - 1)
-    const x = (t - 0.5) * 1.8 * progress
-    const y = 0.35 - t * 0.55 * progress
-    const z = 0.15 + Math.sin(t * Math.PI) * 0.4 * progress
-    return {
-      id: card.id,
-      pos: new THREE.Vector3(x, y, z),
-      quat: faceQuat(card.isFaceUp, (t - 0.5) * 0.6 * progress),
-      bend: Math.sin(t * Math.PI) * 1.8 * progress,
-    }
-  })
-}
 
 export const VISUALIZER_LAYOUTS = [
   { id: 'fan', label: 'Fan' },

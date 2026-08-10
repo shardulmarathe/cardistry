@@ -44,6 +44,12 @@ export const CAMERA_PRESETS = {
   dealerPOV: { position: [0, 3.4, 5.4], target: [0, 0.35, -0.2], fov: 38 },
   closeUp: { position: [0, 2.5, 3.6], target: [0, 0.3, 0], fov: 34 },
   topDown: { position: [0, 6.2, 0.4], target: [0, 0, 0], fov: 40 },
+  // IN-HANDS work, which is a different shot from anything on the felt: the
+  // packets live at y ~ 1.0 and span roughly x +/-0.5, so a table preset aimed at
+  // y ~ 0.3 puts the whole move in the top of the frame over empty felt. Aimed at
+  // the packets, and only mildly above them - the interleave is a side-on event,
+  // and looking down at it flattens the two halves into one line.
+  inHands: { position: [0, 1.9, 4.2], target: [0, 1.0, 0], fov: 34 },
 }
 
 // OrbitControls constraints so users never go under the table or behind the cards.
