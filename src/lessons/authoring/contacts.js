@@ -597,6 +597,7 @@ function faceQuatAt(cy, tilt = 0) {
   if (tilt) q.premultiply(new THREE.Quaternion().setFromAxisAngle(_Z, -tilt))
   return q
 }
+const _fwd = new THREE.Vector3()
 const _long = new THREE.Vector3()
 const _wide = new THREE.Vector3()
 const _k = new THREE.Vector3()
@@ -794,6 +795,14 @@ export function cageGrip({ topY = 0.3, squeeze = 0 } = {}) {
   return { pose, anchor }
 }
 
+// TOTAL residual of an IK solve, in world units: the in-plane miss AND the
+// sideways component a fixed curl plane can never reach. Both grip builders gate
+// their placement sweeps on this. Reading `error` alone (which is what they did)
+// makes the gate blind to the failure it exists to catch: a pad 0.09 to the side
+// of its target reports 0.0000, so every placement looks equally reachable and
+// the sweep ends up ranking on contact alone.
+const miss = (s) => Math.hypot(s.error, s.planeError ?? 0)
+
 // --- Straddle grip (edge grip) -----------------------------------------------
 // THE GRIP EVERY OTHER GRIP IN THIS FILE IS NOT. See TECHNIQUE_REFERENCE.md.
 //
@@ -962,9 +971,14 @@ export function straddleGrip({
   // Report whether the two real contacts actually REACHED. An unreached target
   // is not a loose grip, it is a finger pointing somewhere else entirely (see
   // solveFingerTo's JOINT_LIMITS pinning), and it is silent unless measured.
+  // `miss`, not `.error`: `error` is only the IN-PLANE residual, and `planeError`
+  // is the sideways component a fixed curl plane can never reach. Reading error
+  // alone made this gate blind to exactly the failure it exists to catch -- a pad
+  // 0.09 to the side of its target reported a reach of 0.0000, so every placement
+  // in the sweep looked equally reachable and `autoPlace` ranked on contact alone.
   const reach = Math.max(
-    solveThumbTo(pose, 'right', contacts.thumb, { oppRange: 1.1, steps: 33 }).error,
-    solveFingerTo(pose, 'right', 'index', contacts.index, { splay: true }).error,
+    miss(solveThumbTo(pose, 'right', contacts.thumb, { oppRange: 1.1, steps: 33 })),
+    miss(solveFingerTo(pose, 'right', 'index', contacts.index, { splay: true })),
   )
   // Resolve against THIS DECK ONLY, and emphatically NOT against a solid column
   // down to the felt the way `tableGrip` does. That column is correct there
@@ -990,18 +1004,114 @@ export function straddleGrip({
 //   sides between the top joints of the thumb and second finger, the forefinger
 //   resting on the top of the pack"
 //
-// So: thumb on one long edge, MIDDLE on the opposite long edge, index laid on the
-// top face near the far edge to stop the packet pivoting. Ring and pinky trail
-// free, as the sources say outright ("the third and fourth fingers resting free")
-// — so, as with the straddle, they get no fingertip target and are not scored.
+// So: thumb on one long edge, MIDDLE on the opposite long edge, index laid along
+// the top face to stop the packet pivoting about them. Ring and pinky trail free,
+// as the sources say outright ("the third and fourth fingers resting free") — so,
+// as with the straddle, they get no fingertip target and are not scored.
 //
 // Two opposing pads is the whole point of a pinch, and unlike the straddle's far
 // long edge these two ARE reachable: they face each other across the deck's
 // width, so each pad arrives along its own curl plane rather than sideways.
-// `u`, not `v` -- see the note on STRADDLE_THUMB_U.
-const PINCH_THUMB_U = 0.1 // thumb pad this far along the deck from centre
-const PINCH_MIDDLE_U = -0.05 // middle opposes it, a whisker nearer the wrist
-const PINCH_INDEX_U = 0.62 // index lies on the top face, out toward the far edge
+//
+// EITHER PAIR OF OPPOSING FACES WILL DO, and `axis` picks which:
+//   'long'  thumb and middle on the two LONG EDGES (±x), opposing across the
+//           deck's WIDTH. Hindu's holding hand, and hindu/strip's receiving hand.
+//   'end'   thumb and middle on the two SHORT ENDS (±y), opposing along the
+//           deck's LENGTH. The in-hands riffle, where each half is held by its
+//           ends: thumb near one end, the fingers round the other.
+//
+// THE AXIS FACT THAT HAS COST THIS PROJECT TIME TWICE. `FACE_UV` maps the ±x
+// faces to u = local y, v = local z and the ±y faces to u = local x, v = local z.
+// So on BOTH edge-face pairs `v` IS THE CARD NORMAL and a `v` offset moves the
+// target by a fraction of a card THICKNESS -- 0.0015 world units, i.e. nothing.
+// The along-face axis is always `u`. On a long edge that `u` runs ALONG the deck;
+// on a short end it runs ACROSS its width. Every offset below is stated as a
+// world coordinate and converted per face, so neither axis can be written with
+// the other's meaning.
+//
+// The two axes also want the hand in a DIFFERENT PLACE ACROSS THE DECK, because a
+// curl sweeps in a fixed plane and cannot move a pad sideways at all (only splay
+// can, by up to SPLAY_LIMIT of yaw), so where the knuckle row sits decides which
+// faces are reachable at all. `across` is that position, as a signed fraction of a
+// half-width from the deck's centre line, with `'edge'` meaning "the far long edge
+// plus the middle pad's own radius":
+//
+//   'long'  the two pads' x is FIXED by the faces they are on, so the row belongs
+//           at that edge -- `knuckleOut` 0 then puts the middle pad exactly ON the
+//           '+x' face instead of a fingertip radius inside it.
+//   'end'   the pads' x is free (an end face spans the whole width), so the row
+//           can stay over the deck and let each pad's across-width offset be read
+//           off its own knuckle. It still wants to be near the far edge: reaching
+//           a whole card length costs the middle most of its chain, and a row
+//           further in leaves the thumb spanning more than it has.
+const PINCH_FACES = {
+  long: { thumb: '-x', middle: '+x', across: 'edge' },
+  // On the end axis the thumb takes whichever short end is on the WRIST's side and
+  // the middle the far one, because the thumb knuckle sits BEHIND the four (0.64
+  // behind, measured off the rig under this grip's own quaternion) and the fingers
+  // are the ones with the reach. Which world end that is depends on the palm, so
+  // the faces are resolved from the rig at build time rather than typed here.
+  end: { thumb: null, middle: null, across: 1.0 },
+}
+
+// PALM DOWN, NOT PALM UP, and this is the change that made the index possible.
+//
+// A palm-UP pinch (which is what this grip was) puts the wrist BELOW the cards,
+// because the thumb curls toward the palm and so can only reach a target ABOVE its
+// own knuckle: the knuckle row therefore has to sit under the deck, and measured
+// off the rig it lands at least CARD_T*n/2 + 0.039 below the deck's top face -
+// 0.116 for a 52-card deck. From there the index has to climb over a long edge and
+// hook back down onto the top face, and it arrives STEEPLY: the IK puts the tip
+// centre a pad radius above the face, the rest of the distal phalange follows the
+// finger's slope, and its DIP end ends up 0.03 to 0.05 INSIDE the cards while the
+// pad is perfectly tangent. Swept over 23100 palm-up placements, including the
+// index's own reach axis, the best any of them managed was 0.0335 of index
+// penetration -- nearly half a pad radius, on every one.
+//
+// Palm DOWN is both reachable and what the sources describe: hindu's holding hand
+// is a hand OVER the deck ("held face down, middle finger on one long edge and the
+// thumb on the other"), and `tableGrip` already holds a pile this way. The thumb
+// now curls DOWNWARD onto its edge from a wrist above the cards, the four knuckles
+// sit above the top face, and the index lies ALONG that face instead of hooking
+// over an edge to reach it.
+const PINCH_PALM = PALM_DOWN
+// A PINCH GRIPS THE DECK'S INNER END, NOT ITS MIDDLE, and that is not a detail:
+// "take hold of the INNER END of the deck by its sides between the top joints of
+// the thumb and second finger, the forefinger resting on the top". Aiming the two
+// pads at the deck's centre instead (u 0.1 / -0.05, which is what this grip did)
+// drags the whole hand in after them, and then THE KNUCKLE ROW SITS INSIDE THE
+// DECK'S OWN FOOTPRINT: measured at every placement in the old grid, the index
+// knuckle ended up 0.06 from the deck's centre line at deck height with its
+// proximal capsule 0.09 INSIDE the cards. `resolvePenetration` answered the only
+// way it can, by scaling that finger's curl toward straight, and that threw its
+// pad 0.17 off the top face. That is what "the index competes with the pinch on a
+// thick deck" was: not a competition for reach -- reach was 0.0000 -- but a hand
+// parked inside the deck and a backoff pass doing its job.
+//
+// So no pad carries an absolute along-deck constant any more. Each is derived
+// from its OWN KNUCKLE under the swept wrist placement, the way `tableGrip`
+// derives its fingers' `v`, and the numbers below are fractions of a REACHING
+// CHAIN (hand-sized, so they follow HAND_SCALE) rather than fractions of a deck.
+const PINCH_THUMB_LEAD = 0.45 // thumb pad this far forward of its knuckle...
+const PINCH_STAGGER = 0.1 // ...middle opposes it, a whisker further in
+// How far forward the INDEX pad sits, and it is an OPTION rather than a placement
+// axis because the sweep says it does not need to be one -- but only under a
+// palm-down hand, which is worth recording because it was the obvious suspect and
+// it was the wrong one. The IK puts the TIP CENTRE a pad radius above the face and
+// the rest of the distal phalange follows the finger's own slope, so a finger
+// arriving STEEPLY has its DIP end inside the cards while its pad is perfectly
+// tangent. Reaching further should flatten it, so this went into the grid as a
+// fifth axis; palm-up it bought almost nothing (0.0471 of index penetration at the
+// old constant, 0.0335 at the best value anywhere in an 23100-placement sweep) and
+// palm-down every value in 0.1..0.9 is equally clean, all 18 stations passing on
+// this single default. The lesson is the one the file keeps re-learning: a knob
+// that cannot fix a problem is not the problem's cause. The wrist was.
+const PINCH_INDEX_LEAD = 0.35
+// Keep every derived pad ON the card it is aimed at. |u| > 1 is a legal
+// surfaceContact (the target rides the face's PLANE), which is right for the
+// straddle's trailing fingers and wrong here: a pinch pad off the end of the deck
+// is touching nothing at all.
+const PINCH_U_MAX = 0.85
 const PINCH_MAX_DEPTH = 0.012
 const PINCH_SEED = {
   thumb: [0.42, 0.34, 0.24],
@@ -1010,13 +1120,82 @@ const PINCH_SEED = {
   ring: [0.5, 0.7, 0.5],
   pinky: [0.42, 0.6, 0.44],
 }
+// THE PINCH DOES NOT RESERVE THE THUMB'S SQUEEZE TRAVEL, and that is measured,
+// not a shortcut. `squeezeAir` bills the thumb THUMB_RESERVE (1.2) times its
+// frame-relative travel, a figure swept for the `packet` frame on a CARRIED half
+// deck where the thumb is half the frame and meets the NEIGHBOURING pile. Charged
+// to a pinch it comes to 0.0569 of air at squeeze 0.3 and 0.0905 at 0.55, against
+// a CONTACT_AIR of 0.0165: it authors the thumb pad up to 0.074 OFF the very edge
+// it is meant to be pinching, three card widths of it, and no placement in any grid
+// can put it back, because the anchor is derived from that same target. Measured
+// with the placement otherwise unchanged, the thumb's gap went 0.0175 / 0.0571 /
+// 0.0984 across squeeze 0 / 0.3 / 0.55 -- twice and four times outside the 0.025
+// contact band, so the grip silently stopped touching the cards as it gripped
+// harder. That is the second half of "the thumb loses its edge on thin packets"
+// (the first half being that the old `reach` could not see the miss at all).
+//
+// A pinch is also the one grip that does not need the reservation: the deck is
+// trapped BETWEEN two opposing pads, so a squeeze curls them into each other and
+// the CARDS are what stops them, which is the whole reason an edge grip beats a
+// face grip. What the squeeze really costs is a GRAZE, and a graze has to be
+// measured rather than assumed, so `gripProbe.mjs` reports the depth of the
+// SQUEEZED pose (applyGripPressure applied, i.e. the pose that RENDERS) beside the
+// solved one. Priced across all 18 stations: nothing at squeeze 0, at most 0.019
+// at squeeze 0.3, and 0.042-0.048 at 0.55, always the thumb's distal capsule --
+// under a third of a pad radius at 0.3, and about 60% of one at 0.55. That is a
+// real cost and it belongs to the FRAME, not to this standoff: `pinch`'s pressure
+// weights (thumb 1, index 0.9, middle 0.35, in handKinematics.js) are a face
+// grip's weights, and PRESSURE_CURL 0.14 moves a pad ~0.05 at squeeze 0.55, twice
+// the whole contact band. See the NEEDS FROM LEAD note in the handoff.
+const PINCH_RESERVE = 0
+const pinchAir = (name, travel) => CONTACT_AIR + PINCH_RESERVE * (travel?.[name] ?? 0)
+
+// A SHARED GRID FOR THE TWO AXES IS A FICTION. `thumbDrop` is NEGATIVE in both now
+// -- the wrist sits ABOVE the thumb's pad, which is what palm-down means -- but the
+// rest differ: a long-edge pinch takes the deck across its width with the hand
+// square to it, while an end pinch has to span a whole card length and wants the
+// palm rolled toward the deck (roll +0.6 to +0.9) to get the thumb over the near
+// end. Each grid was bounded by sweeping WIDER than itself
+// (`gripProbe.mjs pinchsweep <axis>`, 13k-56k placements) and keeping the region
+// that needs no backoff at all. Winners are reported per station by the probe: the
+// `end` grid deliberately carries cells past its winners (knuckleOut 0.45, roll
+// 1.2, thumbDrop -0.3) BECAUSE they never win -- that is what says the optimum is
+// inside the range rather than pressed against it. `long`'s do sit at the ends of
+// their ranges, but dozens of its cells tie at 3/3 pads and zero penetration, so
+// which one is returned is decided by the reach tie-break, not by the bound.
 const PINCH_GRID = {
-  knuckleOut: [-0.3, -0.1, 0.1, 0.3],
-  thumbDrop: [-0.2, 0, 0.2, 0.4],
-  along: [-0.3, 0, 0.3, 0.6],
-  roll: [-0.6, -0.3, 0, 0.3, 0.6],
+  long: {
+    knuckleOut: [-0.2, -0.1, 0, 0.1],
+    thumbDrop: [-0.8, -0.65, -0.5, -0.35],
+    along: [-0.4, 0, 0.4, 0.8],
+    roll: [-0.9, -0.6, -0.3],
+  },
+  end: {
+    knuckleOut: [0, 0.15, 0.3, 0.45],
+    thumbDrop: [-0.9, -0.75, -0.6, -0.45, -0.3],
+    along: [0, 0.4, 0.8, 1.2],
+    roll: [0.3, 0.6, 0.9, 1.2],
+  },
 }
 
+// MEASURED, self-placing, per station, by `gripProbe.mjs pinch`. Three stations x
+// three squeezes x both axis modes, and for each: the worst reach residual over the
+// three claimed pads, how many of them are inside the 0.025 contact band, the
+// deepest capsule AS SOLVED, and -- the check that makes the rest mean anything --
+// which FACE each pad actually ended up on.
+//
+//   axis    station         squeeze     reach    pads  deepest  faces
+//   long    52-card deck    0/.3/.55    0.0011   3/3   0.0000   -x / +x / -z
+//   long    20-card block   0/.3/.55    0.0007   3/3   0.0000   -x / +x / -z
+//   long    8-card packet   0/.3/.55    0.0003   3/3   0.0000   -x / +x / -z
+//   end     52-card deck    0/.3/.55    0.0013   3/3   0.0000   -y / +y / -z
+//   end     20-card block   0/.3/.55    0.0004   3/3   0.0000   -y / +y / -z
+//   end     8-card packet   0/.3/.55    0.0004   3/3   0.0000   -y / +y / -z
+//
+// Every pad gap is 0.0153-0.0172, i.e. CONTACT_AIR and nothing else: the pads are
+// exactly where they were aimed, and `resolvePenetration` has nothing to do at any
+// of the eighteen. For comparison, the table this replaces (TECHNIQUE_REFERENCE.md)
+// read 2/3, 1/3, 2/3 with pads 0.173, 0.174 and 0.175 off the cards.
 export function edgePinchGrip({
   centerX = 0,
   centerZ = 0,
@@ -1024,58 +1203,122 @@ export function edgePinchGrip({
   deckH = 0,
   squeeze = 0,
   cardQuat = null,
+  // Which opposing face pair the thumb and middle take. See PINCH_FACES.
+  axis = 'long',
   knuckleOut = 0,
   thumbDrop = 0,
   along = 0,
   roll = 0,
+  indexLead = PINCH_INDEX_LEAD,
 } = {}) {
-  const quat = eulerYXZ(PALM_UP, 0, roll)
+  const faces = PINCH_FACES[axis]
+  if (!faces) throw new Error(`edgePinchGrip: axis must be 'long' or 'end', got '${axis}'`)
+  const quat = eulerYXZ(PINCH_PALM, 0, roll)
   const seed = seeded('deckRest', PINCH_SEED, 0.1)
   const M = rigMetrics(seed, quat)
   const travel = squeezeTravel(seed, 'right', 'pinch', squeeze)
+  const air = {}
+  for (const name of FINGER_NAMES) air[name] = pinchAir(name, travel)
   const cq = cardQuat ?? PORTRAIT_FACE_DOWN
   const cardAt = (h) => ({ pos: [centerX, baseY + h, centerZ], quat: cq })
   const mid = cardAt(deckH * 0.5)
   const topCard = cardAt(deckH)
 
-  const ax = centerX + CARD_W / 2 + knuckleOut - M.knuckle.middle.x
+  // ACROSS the deck's width. On the long axis, park the knuckle row outside the
+  // far long edge BY THE MIDDLE PAD'S OWN RADIUS (plus its standoff), so
+  // knuckleOut = 0 puts that pad exactly on the '+x' face rather than a fingertip
+  // radius inside it: a curl cannot move a pad in x at all, so this is the one
+  // offset the sweep must not have to discover, it is hand-sized (0.079 at
+  // HAND_SCALE 11) and it belongs in the formula. On the end axis the row sits at a
+  // fraction of a half-width instead, and each pad's across-width offset is read
+  // off its own knuckle from there.
+  const acrossRef =
+    faces.across === 'edge'
+      ? CARD_W / 2 + FINGERS.middle.rad[2] * HAND_SCALE + air.middle
+      : (CARD_W / 2) * faces.across
+  const ax = centerX + acrossRef + knuckleOut - M.knuckle.middle.x
   const az = centerZ + (CARD_H / 2) * along - M.knuckle.middle.z
-  // Thumb on the NEAR long edge (-x), middle on the FAR one (+x): opposed.
-  const thumb = surfaceContact(mid, {
-    finger: 'thumb',
-    face: '-x',
-    u: PINCH_THUMB_U,
-    clearance: squeezeAir('thumb', travel),
-  })
-  const ay = thumb.y - M.knuckle.thumb.y - chainLen('thumb') * thumbDrop
-  const anchor = [ax, ay, az]
+
+  // Face coordinates from WORLD coordinates, for the portrait face-down deck
+  // these offsets are stated against (local x = world x across the width, local
+  // y = world z along the deck, local z the face normal).
+  const clampU = (u) => Math.min(PINCH_U_MAX, Math.max(-PINCH_U_MAX, u))
+  const alongU = (z) => clampU((z - centerZ) / (CARD_H / 2))
+  const acrossU = (x) => clampU((x - centerX) / (CARD_W / 2))
+  // Which way the fingers point, READ OFF THE WRIST QUATERNION rather than assumed:
+  // local +y is finger extension, and the sign of its world z flips with the palm.
+  // Hard-coding it is how an "along the deck" offset silently becomes an offset
+  // backwards along the deck the moment the hand is turned over.
+  const fwdZ = _fwd.set(0, 1, 0).applyQuaternion(quat).z
+  // A pad leads its own knuckle by a fraction of its own chain, in that direction.
+  const lead = (name, frac) => az + M.knuckle[name].z + fwdZ * chainLen(name) * frac
+  const pinchAlong = alongU(lead('thumb', PINCH_THUMB_LEAD))
+  // On the end axis, the thumb takes the short end on the wrist's side. `fwdZ > 0`
+  // means the fingers reach toward +z, so the wrist is at -z and the thumb takes
+  // the deck's '-y' face (local +y maps to world +z for a face-down portrait deck).
+  const thumbFace = faces.thumb ?? (fwdZ > 0 ? '-y' : '+y')
+  const middleFace = faces.middle ?? (fwdZ > 0 ? '+y' : '-y')
 
   const contacts = {
-    thumb,
+    // The two opposing pads. On the long edges their free coordinate is the
+    // position ALONG the deck; on the short ends it is the position ACROSS its
+    // width, and that one is set by the finger's own knuckle because x is exactly
+    // what a curl cannot change.
+    thumb: surfaceContact(mid, {
+      finger: 'thumb',
+      face: thumbFace,
+      u: axis === 'long' ? pinchAlong : acrossU(ax + M.knuckle.thumb.x),
+      clearance: air.thumb,
+    }),
     middle: surfaceContact(mid, {
       finger: 'middle',
-      face: '+x',
-      u: PINCH_MIDDLE_U,
-      clearance: squeezeAir('middle', travel),
+      face: middleFace,
+      u: axis === 'long' ? clampU(pinchAlong - PINCH_STAGGER) : acrossU(ax + M.knuckle.middle.x),
+      clearance: air.middle,
     }),
+    // The index lies on the deck's TOP face and stops the packet pivoting about
+    // the pinch. Both of its coordinates are derived: `u` across the width from
+    // its own knuckle (unreachable by curl), `v` along the deck from how far
+    // forward its chain reaches. On the top face `v` IS the along-deck axis --
+    // this is the one face where that is true, which is exactly why the note
+    // above is worth re-reading before editing any of it.
     index: surfaceContact(topCard, {
       finger: 'index',
-      u: PINCH_INDEX_U,
-      clearance: squeezeAir('index', travel),
+      u: acrossU(ax + M.knuckle.index.x),
+      v: alongU(lead('index', indexLead)),
+      clearance: air.index,
     }),
   }
+  const ay = contacts.thumb.y - M.knuckle.thumb.y - chainLen('thumb') * thumbDrop
+  const anchor = [ax, ay, az]
 
   const pose = poseWithContacts(seed, 'right', { anchor, quat, splay: true }, contacts)
+  // REACH IS hypot(error, planeError), NOT error. `solveFingerTo` splits its
+  // residual in two: `error` is what the curls failed to close inside the
+  // finger's own plane, `planeError` the component that plane cannot reach at all.
+  // Reading `error` alone reported 0.0000 for a thumb whose pad was sitting 0.174
+  // off the edge it was supposed to be pinching, because the whole miss was
+  // sideways -- and `autoPlace` gates on this number, so every placement in the
+  // grid looked equally reachable and it ranked them on contact alone. That was
+  // the other half of "the thumb loses its edge on thin packets".
   const reach = Math.max(
-    solveThumbTo(pose, 'right', contacts.thumb, { oppRange: 1.1, steps: 33 }).error,
-    solveFingerTo(pose, 'right', 'middle', contacts.middle, { splay: true }).error,
-    solveFingerTo(pose, 'right', 'index', contacts.index, { splay: true }).error,
+    miss(solveThumbTo(pose, 'right', contacts.thumb, { oppRange: 1.1, steps: 33 })),
+    miss(solveFingerTo(pose, 'right', 'middle', contacts.middle, { splay: true })),
+    miss(solveFingerTo(pose, 'right', 'index', contacts.index, { splay: true })),
   )
   // A pinch holds the deck AWAY from the hand, so unlike the straddle there is no
   // palm under it and no reason to model anything but the deck itself.
   const column = [topCard, mid, cardAt(0)]
+  // Keep the pose AS SOLVED, before the backoff. `reach` says the IK hit every
+  // target; it does not say the pad is still THERE afterwards, because
+  // resolvePenetration scales curl and so moves the pads with it. Handing both
+  // poses back is what lets gripProbe.mjs attribute a lost pad to the placement or
+  // to the backoff instead of guessing between them -- and, more importantly, what
+  // lets `autoPlace` score the depth this placement really has rather than the ~0
+  // the backoff leaves behind (see its note).
+  const preResolve = cloneHandPose(pose)
   resolvePenetration(pose, 'right', column)
-  return { pose, anchor, contacts, reach, column }
+  return { pose, anchor, contacts, reach, column, preResolve, air }
 }
 
 // --- Self-placing straddle ----------------------------------------------------
@@ -1127,51 +1370,110 @@ function padGap(pose, side, name, cards) {
   return best - FINGERS[name].rad[2] * HAND_SCALE
 }
 
+// Every combination in a placement grid, keys in declaration order with the last
+// varying fastest -- i.e. exactly the order the nested loops this replaces
+// visited, so a grip whose ranking ends in a first-seen tie keeps the same answer.
+// Written as a product rather than four fixed loops because the grids are NOT the
+// same shape: the pinch needs a fifth axis (see PINCH_INDEX_LEAD) and the straddle
+// does not, and a grip should be able to say which knobs it has.
+function gridPlacements(grid) {
+  let out = [{}]
+  for (const key of Object.keys(grid)) {
+    const next = []
+    for (const partial of out) for (const v of grid[key]) next.push({ ...partial, [key]: v })
+    out = next
+  }
+  return out
+}
+
 // Shared self-placing sweep for the edge grips. `build` is the grip builder,
 // `scored` the fingers whose pads that grip really claims, `grid` its placement
 // axes and `maxDepth` its skin-deep gate.
-function autoPlace(build, scored, grid, maxDepth, opts) {
+//
+// `byGap` (opt-in) adds a final tie-break on the WORST scored pad gap. Without it
+// the ranking stops at "same number of pads inside the 0.025 band, same depth" and
+// then keeps whichever candidate the grid happened to visit first, which on the
+// pinch meant picking a pad 0.022 off the cards over an otherwise identical
+// placement that had it at 0.001. It is off by default so `straddleGripAuto`
+// keeps returning exactly the placement it was measured on.
+function autoPlace(build, scored, grid, maxDepth, opts, { byGap = false } = {}) {
   let best = null
-  for (const knuckleOut of grid.knuckleOut) {
-    for (const thumbDrop of grid.thumbDrop) {
-      for (const along of grid.along) {
-        for (const roll of grid.roll) {
-          const g = build({ ...opts, knuckleOut, thumbDrop, along, roll })
-          let deepest = 0
-          for (const name of FINGER_NAMES) {
-            deepest = Math.max(deepest, fingerDepth(g.pose, 'right', name, g.column, 6))
-          }
-          const touching = scored.filter(
-            (n) => Math.abs(padGap(g.pose, 'right', n, g.column)) < 0.025,
-          ).length
-          const cand = { g, reach: g.reach, touching, deepest, placement: { knuckleOut, thumbDrop, along, roll } }
-          if (!best) {
-            best = cand
-            continue
-          }
-          const gate = (c) => (c.reach <= 0.02 ? 0 : 2) + (c.deepest <= maxDepth ? 0 : 1)
-          if (gate(cand) !== gate(best)) {
-            if (gate(cand) < gate(best)) best = cand
-            continue
-          }
-          if (cand.touching !== best.touching) {
-            if (cand.touching > best.touching) best = cand
-            continue
-          }
-          if (cand.deepest < best.deepest - 1e-9) best = cand
-        }
-      }
+  for (const placement of gridPlacements(grid)) {
+    const g = build({ ...opts, ...placement })
+    // MEASURE THE POSE AS SOLVED, NOT AFTER THE BACKOFF. `resolvePenetration`
+    // drives every depth to ~0 by construction, so scoring the returned pose asks
+    // "did the backoff run?" (it always did) instead of "did this placement need
+    // it?" -- and the backoff's bill is paid in PADS: it scales curl, so the
+    // finger it rescues comes off the cards with it. Scoring the solved pose is
+    // what lets the sweep prefer a hand that was never inside the deck.
+    const scoredPose = g.preResolve ?? g.pose
+    let deepest = 0
+    for (const name of FINGER_NAMES) {
+      deepest = Math.max(deepest, fingerDepth(scoredPose, 'right', name, g.column, 6))
     }
+    const gaps = scored.map((n) => padGap(g.pose, 'right', n, g.column))
+    const touching = gaps.filter((v) => Math.abs(v) < 0.025).length
+    const worstGap = Math.max(...gaps.map(Math.abs))
+    const cand = { g, reach: g.reach, touching, deepest, worstGap, placement }
+    if (!best) {
+      best = cand
+      continue
+    }
+    const gate = (c) => (c.reach <= 0.02 ? 0 : 2) + (c.deepest <= maxDepth ? 0 : 1)
+    if (gate(cand) !== gate(best)) {
+      if (gate(cand) < gate(best)) best = cand
+      continue
+    }
+    if (cand.touching !== best.touching) {
+      if (cand.touching > best.touching) best = cand
+      continue
+    }
+    if (Math.abs(cand.deepest - best.deepest) > 1e-9) {
+      if (cand.deepest < best.deepest) best = cand
+      continue
+    }
+    if (!byGap) continue
+    // REACH BEFORE GAP, and the order is not arbitrary. Once a grip is placing
+    // itself well, DOZENS of cells tie at 3/3 pads and zero penetration, and both
+    // of these measure the same thing -- is the pad where it was aimed -- but
+    // `reach` measures it against the TARGET while `worstGap` measures it against
+    // the nearest card, and the gap of a pad sitting exactly on target is
+    // CONTACT_AIR, not zero. Ranking on the gap first therefore trades real reach
+    // for noise: it picked a 20-card placement 0.0166 off its targets over one
+    // 0.0013 off them, to buy 0.002 of gap. Without either, a first-seen tie-break
+    // returns whichever cell the grid lists first, which looks exactly like an
+    // optimum pinned to the edge of a range.
+    if (Math.abs(cand.reach - best.reach) > 1e-9) {
+      if (cand.reach < best.reach) best = cand
+      continue
+    }
+    if (cand.worstGap < best.worstGap - 1e-9) best = cand
   }
   return {
     ...best.g,
     placement: best.placement,
-    measured: { reach: best.reach, touching: best.touching, of: scored.length, deepest: best.deepest },
+    measured: {
+      reach: best.reach,
+      touching: best.touching,
+      of: scored.length,
+      deepest: best.deepest,
+      worstGap: best.worstGap,
+    },
   }
 }
 
+// Self-placing pinch. Takes everything `edgePinchGrip` does; `axis` selects the
+// opposing face pair ('long', the default, or 'end') and picks that axis's own
+// placement grid with it, because the two want the hand in different places.
 export const edgePinchGripAuto = (opts = {}) =>
-  autoPlace(edgePinchGrip, ['thumb', 'middle', 'index'], PINCH_GRID, PINCH_MAX_DEPTH, opts)
+  autoPlace(
+    edgePinchGrip,
+    ['thumb', 'middle', 'index'],
+    PINCH_GRID[opts.axis ?? 'long'] ?? PINCH_GRID.long,
+    PINCH_MAX_DEPTH,
+    opts,
+    { byGap: true },
+  )
 
 export const straddleGripAuto = (opts = {}) =>
   autoPlace(straddleGrip, ['thumb', 'index'], STRADDLE_GRID, STRADDLE_MAX_DEPTH, opts)

@@ -120,11 +120,25 @@ export function meanCurl(pose, names) {
 // Weights per frame type: which fingertips define the carry position, and
 // which fingers a grip's `pressure` visibly tightens.
 export const GRIP_FRAME_TYPES = {
+  // PINCH: the deck is clamped between two OPPOSING pads. Those pads are the
+  // THUMB and the MIDDLE (see edgePinchGrip in authoring/contacts.js and
+  // TECHNIQUE_REFERENCE.md); the index only lies on the top face to stop the
+  // packet pivoting. This used to weight `tips` {thumb, index}, so a carried
+  // packet rode the wrong pair of fingers entirely, and `pressure` curled the
+  // stabiliser hard (index 0.9) while barely closing the clamp (middle 0.35).
+  //
+  // Pressure is also deliberately gentler than the other frames. PRESSURE_CURL
+  // moves a pad ~0.05 world at full squeeze, twice the 0.025 band anything can
+  // call contact, and on a pinch there is no slack to absorb it: opposing pads
+  // are already stopped by the cards. Measured on the solved pinch, the squeezed
+  // pose grazes 0.000 at squeeze 0, 0.0155 at 0.3 and 0.042 at 0.55 (always the
+  // thumb's distal), so a lesson wanting a hard pinch squeeze must expect a
+  // graze and price it, the way charlier's THUMB_GRAZE does.
   pinch: {
-    tips: { thumb: 0.5, index: 0.5 },
-    pitchFrom: ['thumb', 'index'],
+    tips: { thumb: 0.45, middle: 0.45, index: 0.1 },
+    pitchFrom: ['thumb', 'middle'],
     pitchGain: 0.3,
-    pressure: { thumb: 1, index: 0.9, middle: 0.35 },
+    pressure: { thumb: 0.6, middle: 0.6, index: 0.15 },
   },
   packet: {
     tips: { thumb: 0.5, index: 0.25, middle: 0.25 },

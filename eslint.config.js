@@ -31,4 +31,20 @@ export default defineConfig([
     files: ['vite.config.js'],
     languageOptions: { globals: globals.node },
   },
+  {
+    // .mjs WAS NOT LINTED AT ALL. The block above matches `**/*.{js,jsx}`, so
+    // every script in `scripts/` - the verify harness, the capture harness, the
+    // grip probe - was invisible to eslint, and `npx eslint scripts/` exited 0
+    // while linting nothing. Proven by dropping a file with an undefined call
+    // into scripts/ and watching it pass.
+    files: ['**/*.mjs'],
+    extends: [js.configs.recommended],
+    languageOptions: {
+      globals: { ...globals.node, ...globals.browser },
+      parserOptions: { ecmaVersion: 'latest', sourceType: 'module' },
+    },
+    rules: {
+      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+    },
+  },
 ])

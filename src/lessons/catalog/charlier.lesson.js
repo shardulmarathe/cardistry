@@ -63,7 +63,7 @@ export const charlierLesson = {
   id: 'charlier',
   title: 'Charlier Cut',
   technique: 'charlier',
-  randomizes: 'None — a cut',
+  randomizes: 'None',
   seed: 14,
   // NOT `handCut`: that preset sits 3.7 from its target with a 32° fov, i.e. a
   // half-height of 1.05, it was framed for a hand a third of this size, and at

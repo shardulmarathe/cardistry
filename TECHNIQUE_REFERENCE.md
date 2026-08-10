@@ -44,7 +44,7 @@ looking at:
 **The fix is not more tuning of the existing grips.** It is a contact vocabulary
 that aims at edges, with the wrist placed behind the deck rather than above it.
 
-### `straddleGrip` — built, measured, not yet adopted by a lesson
+### `straddleGrip` — built, and NOT yet validated (see the correction below)
 
 `straddleGrip` in `authoring/contacts.js` is that vocabulary, plus a `straddle`
 entry in `GRIP_FRAME_TYPES`. Three things came out of building it that are worth
@@ -62,47 +62,92 @@ demands five pads on the deck is asking for a grip no hand uses — which is par
 of why `CONTACT_FLOOR` has been such a fight.
 
 **A wrist ROLL is the degree of freedom that makes it work.** With the palm flat
-under the deck, both pads reach their targets perfectly and the thumb's *proximal
-capsule still sits 4.2mm inside the cards* — and `resolvePenetration` cannot fix
-that, because it scales curl and a thumb base is placed by the wrist. Rolling the
-palm brings the thumb around the near edge from outside, the way a real thumb
-clears it. With roll in the sweep, penetration goes to **0.0000**.
+under the deck, both pads reach their targets and the thumb's *proximal capsule
+still sits 4.2mm inside the cards* — and `resolvePenetration` cannot fix that,
+because it scales curl and a thumb base is placed by the wrist. Rolling the palm
+brings the thumb around the near edge from outside, the way a real thumb clears it.
 
-**The placement is squeeze-dependent, so the grip places ITSELF.**
-`squeezeAir` moves every target off its surface as squeeze rises, and the anchor
-is derived *from* the thumb target, so the whole placement shifts — the optimum
-swept at squeeze 0 puts the thumb 0.12 **inside** the deck at squeeze 0.55. Four
-magic numbers per station that silently stop being right is the exact class of bug
-this codebase is a monument to, so `straddleGripAuto` sweeps them at compile time
-against the station's own geometry, gating on reach **and** depth before ranking
-by contact. Measured across four different decks, heights and squeezes:
+### CORRECTION: the straddle is NOT validated on real lesson geometry
 
-| station | reach | pads | deepest |
-|---|---|---|---|
-| portrait deck in air, squeeze 0.20 | 0.0000 | 2/2 | 0.0000 |
-| same deck, squeeze 0.55 | 0.0000 | 2/2 | 0.0000 |
-| 20-card block, squeeze 0.30 | 0.0000 | 2/2 | 0.0000 |
-| high hold, squeeze 0 | 0.0000 | 2/2 | 0.0000 |
+Earlier numbers here claimed the straddle beat the face grip on charlier geometry
+(60% -> 100% contact, 0.0000 deep). **That was measured two ways that both
+flattered it**, and both are now fixed:
 
-~250ms per station, once per lesson compile. `scripts/inspect/gripProbe.mjs` is
-the tool for inspecting a placement by hand.
+- **The reach gate was blind to sideways misses.** It read `solveFingerTo().error`,
+  the in-plane residual, and ignored `planeError` — the component a fixed curl
+  plane can never reach. A pad 0.09 to the side of its target reported a reach of
+  0.0000, so every placement in the sweep looked equally reachable and the sweep
+  ranked on contact alone. Both builders now gate on `hypot(error, planeError)`.
+- **Depth was scored after `resolvePenetration`**, which drives depth to ~0 by
+  construction. A placement that only worked because the backoff dragged a finger
+  out of the deck scored identically to one that was never in it — and the
+  backoff's bill is paid in pads, since it scales curl. Placements are now scored
+  as-solved.
 
-**Do not resolve a straddle against a column down to the felt.** `tableGrip` does,
-correctly, because that hand comes from *above*, so anything under the pile is
-somewhere the hand has no business being. A straddle is the opposite — the palm is
-underneath — so that phantom column claims cards exactly where the hand must be.
-It made every placement measure ~0.10 deep and drove the auto-placer to prefer a
-hand parked beside the deck over one actually holding it.
+Re-measured honestly on charlier's own deck: **60% -> 50% contact, 0.0000 ->
+0.1190 deep.** The straddle is currently WORSE than the face grip it was meant to
+replace. It still measures 2/2 pads and 0.0000 on the synthetic probe deck, which
+is precisely the point: passing one hand-picked station is not validation.
 
-Head to head on identical charlier geometry, each grip judged by the fingers its
-own frame claims to be holding with:
+**The likely cause is known**, from the pinch work below: the straddle is
+**palm-UP**, and a palm-up thumb curls toward the palm, so it can only reach
+targets above its knuckle — which forces the knuckle row below the deck's top face
+and makes the other fingers arrive steeply. Swept over 23,100 palm-up placements
+for the pinch, the best index penetration anywhere was 0.0335, half a pad radius.
+Palm-DOWN fixed the pinch outright. The straddle very likely needs the same
+inversion and a re-sweep. Until then, treat the straddle as unproven.
 
-| | scored pads in contact | deepest capsule |
-|---|---|---|
-| `packetGrip` (face grip, current) | 3/5 — **60%** | 0.0000 |
-| `straddleGrip` (edge grip, new) | 2/2 — **100%** | 0.0000 |
+### `edgePinchGrip` IS validated: 18/18 stations
 
-with the thumb pad 0.0001 off its edge and the index 0.0008.
+The pinch — thumb and middle as opposing pads, index on the top face as a
+stabiliser, ring and pinky free — is finished and measured across a 52-card deck,
+a 20-card block and an 8-card packet, at squeezes 0 / 0.3 / 0.55, on BOTH axes:
+
+| axis | station | reach | pads | deepest |
+|---|---|---|---|---|
+| long | all three | <= 0.0011 | 3/3 | 0.0000 |
+| end | all three | <= 0.0013 | 3/3 | 0.0000 |
+
+Every gap is 0.0153-0.0172, which is `CONTACT_AIR` and nothing else, so
+`resolvePenetration` has nothing to do at any of the eighteen. The placement is
+squeeze-independent. Four causes were fixed to get there, beyond the two scoring
+bugs above:
+
+- **Palm-DOWN, not palm-up** (the wall described above). This is also what hindu's
+  holding hand actually is, and what `tableGrip` already used.
+- **Pads were aimed at the deck's middle**, which drags the hand in after them and
+  parks the knuckle row inside the deck footprint — the index's proximal capsule
+  sat 0.09 inside the cards at every cell of the old grid. Pads are now derived
+  from their own knuckles.
+- **The thumb's `squeezeAir` reservation was swept for the carried `packet`
+  frame**, and charged a pinch 0.057 of air at squeeze 0.3 — authoring the pad off
+  the very edge it was pinching, with the anchor derived from that same target so
+  no placement could recover it. A pinch needs no reservation: opposing pads are
+  stopped by the cards.
+
+The probe also now checks **which face each pad is on**, not just its distance:
+`tipGap` measures the nearest card and does not care which side, which is how the
+old placer scored a finger lying on the deck's *back* as a pad in contact. That
+check caught two false passes.
+
+`axis: 'end'` is what an in-hands riffle needs (each half held by its short ends),
+so the riffle rebuild is unblocked on the pinch even though the straddle is not.
+
+### Two open measurement problems, both flagged and neither fixed
+
+- **`PRESSURE_CURL` (0.14 rad) moves a pad ~0.05 world at full squeeze**, twice the
+  0.025 band anything can call contact. On the solved pinch the squeezed pose (what
+  actually renders) grazes 0.000 at squeeze 0, 0.0155 at 0.3 and 0.042 at 0.55,
+  always the thumb's distal. Softening the `pinch` frame's pressure weights helps;
+  a lesson wanting a hard squeeze must price the graze the way charlier's
+  `THUMB_GRAZE` does.
+- **`cardDepth` measures depth past the NEAREST FACE PLANE, while `padGap`
+  measures true box distance.** Near an edge or a corner the plane rule roughly
+  doubles the reported penetration (measured: 0.021 reported against 0.010 true).
+  That systematically over-charges exactly the edge and corner contacts this
+  project is moving toward, and it is what `resolvePenetration` acts on. Fixing it
+  moves every lesson's poses and must be done together with the same rule in
+  `verifyTracks.mjs`, so it needs its own pass with a re-baseline.
 
 **No lesson uses it yet, and picking the first adopter took some elimination:**
 

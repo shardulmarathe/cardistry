@@ -11,6 +11,7 @@
 // the authoring path printed either.
 //
 // Run: node --import ./scripts/verify/register.mjs scripts/inspect/gripProbe.mjs
+//      ...gripProbe.mjs pinch      just the edge-pinch station table (fast)
 import * as THREE from 'three'
 import { FINGER_NAMES, FINGERS, HAND_SCALE } from '../../src/hands/handRigSpec.js'
 import {
@@ -18,9 +19,18 @@ import {
   fingertipWorld,
   solveFingerTo,
   solveThumbTo,
+  applyGripPressure,
+  GRIP_FRAME_TYPES,
 } from '../../src/hands/handKinematics.js'
-import { getHandPose, cloneHandPose } from '../../src/hands/handPoses.js'
-import { surfaceContact, cardSurfaceExtents, straddleGrip, packetGrip } from '../../src/lessons/authoring/contacts.js'
+import { cloneHandPose } from '../../src/hands/handPoses.js'
+import {
+  cardSurfaceExtents,
+  straddleGrip,
+  packetGrip,
+  edgePinchGrip,
+  edgePinchGripAuto,
+} from '../../src/lessons/authoring/contacts.js'
+import { faceQuat } from '../../src/lessons/engine/layouts.js'
 import { CARD_W, CARD_H, CARD_T, CARD_GAP } from '../../src/lib/constants.js'
 
 const MM = 63.5 / CARD_W
@@ -107,6 +117,39 @@ function tipGap(pose, side, name, cards) {
   return best - FINGERS[name].rad[2] * HAND_SCALE
 }
 
+// WHICH FACE a pad is actually resting on. `tipGap` measures the distance to the
+// nearest card SURFACE and does not care which one, so a finger buried against the
+// deck's top face scores exactly like a finger pinching the edge it was aimed at -
+// and that is not hypothetical: it is how the pinch's own auto-placer came to
+// prefer a middle finger lying on the deck's back over one on its long edge, and
+// report it as a pad in contact. A grip claims a FACE per finger; check the face.
+const FACE_OF = { x: ['-x', '+x'], u: ['-y', '+y'], n: ['-z', '+z'] }
+function padFace(pose, side, name, cards) {
+  fingertipWorld(pose, side, name, _t)
+  let best = null
+  for (const c of cards) {
+    const pos = Array.isArray(c.pos) ? new THREE.Vector3(...c.pos) : c.pos
+    const lp = new THREE.Vector3().copy(_t).sub(pos)
+      .applyQuaternion(_q.set(-c.quat.x, -c.quat.y, -c.quat.z, c.quat.w))
+    const e = cardSurfaceExtents(lp, c.bend ?? 0)
+    const ox = Math.max(e.x, 0)
+    const ou = Math.max(e.u, 0)
+    const on = Math.max(e.n, 0)
+    const out = Math.hypot(ox, ou, on)
+    const g = out > 0 ? out : Math.max(e.x, e.u, e.n)
+    if (best && g >= best.g) continue
+    // The face the pad is outside of by the most: on an edge contact that is the
+    // edge, on a face contact the face. `u` is local y in the flat case.
+    const sign = [lp.x, lp.y, lp.z]
+    const keys = ['x', 'u', 'n']
+    const vals = [e.x, e.u, e.n]
+    let k = 0
+    for (let i = 1; i < 3; i++) if (vals[i] > vals[k]) k = i
+    best = { g, face: FACE_OF[keys[k]][sign[k] >= 0 ? 1 : 0] }
+  }
+  return best.face
+}
+
 // Re-solve each contact on the FINAL pose and report the residual. Solving is
 // order-dependent (each solve sees the wrist the previous ones left), so the
 // honest number is measured against the pose as it ends up.
@@ -151,6 +194,308 @@ function report(label, pose, side, contacts, cards) {
       `   worst reach residual ${worstReach.toFixed(4)} (${(worstReach * MM).toFixed(1)}mm)` +
       `   deepest ${Math.max(...Object.values(dep)).toFixed(4)}`,
   )
+}
+
+// --- Edge pinch: every station, every squeeze, both axis modes ---------------
+// The pinch's own acceptance table. `edgePinchGripAuto` places itself, so there
+// is nothing to sweep here: the question is only whether the placement it picks
+// puts all THREE claimed pads on the cards without burying a phalange, and it
+// has to answer that on a thick deck and a thin packet alike, on either axis.
+//
+// Prints the pads BEFORE and AFTER resolvePenetration. That distinction is the
+// whole diagnostic: `reach` 0.0000 with a 0.17 gap means the IK hit the target
+// and the backoff then walked the finger off it, which is a different bug from a
+// placement the hand cannot reach.
+const PINCH_SCORED = ['thumb', 'middle', 'index']
+const PINCH_BAND = 0.025
+const PINCH_DEPTH_GATE = 0.012
+const PINCH_STATIONS = [
+  { label: '52-card deck', n: 52, baseY: 1.0 },
+  { label: '20-card block', n: 20, baseY: 0.9 },
+  { label: '8-card packet', n: 8, baseY: 0.85 },
+]
+const PINCH_SQUEEZES = [0, 0.3, 0.55]
+// The face each claimed pad must end up on, per axis mode. Anything else is a
+// finger touching the deck somewhere it was not aimed, which is not a grip.
+const PINCH_WANT_FACE = {
+  long: { thumb: '-x', middle: '+x', index: '-z' },
+  // Palm down puts the wrist at -z, so the thumb takes the deck's '-y' short end
+  // (the one on its own side) and the middle reaches past the '+y' one.
+  end: { thumb: '-y', middle: '+y', index: '-z' },
+}
+
+function pinchSection() {
+  console.log('########## edgePinchGripAuto: stations x squeezes x axis modes ##########')
+  console.log(
+    `(pads within ${PINCH_BAND} of a card count as touching; deepest capsule must stay <= ${PINCH_DEPTH_GATE})`,
+  )
+  console.log(
+    'distal radii (world): ' +
+      FINGER_NAMES.map((n) => `${n} ${(FINGERS[n].rad[2] * HAND_SCALE).toFixed(4)}`).join('  '),
+  )
+  const cq = faceQuat(false)
+  let fails = 0
+  let rows = 0
+  for (const axis of ['long', 'end']) {
+    console.log(`\n--- axis '${axis}' ---`)
+    console.log(
+      pad('station', 15) +
+        pad('sq', 6) +
+        pad('reach', 8) +
+        pad('pads', 6) +
+        pad('deepest', 9) +
+        pad('where', 18) +
+        pad('thumb', 9) +
+        pad('middle', 9) +
+        pad('index', 9) +
+        'placement   (gap is suffixed with the face the pad is really on)',
+    )
+    for (const st of PINCH_STATIONS) {
+      const deckH = (st.n - 1) * CARD_GAP
+      for (const squeeze of PINCH_SQUEEZES) {
+        const opts = { centerX: 0, centerZ: 0, baseY: st.baseY, deckH, squeeze, cardQuat: cq, axis }
+        const g = edgePinchGripAuto(opts)
+        const dw = deepestWhere(g.pose, 'right', g.column)
+        const gaps = PINCH_SCORED.map((n) => tipGap(g.pose, 'right', n, g.column))
+        const faces = PINCH_SCORED.map((n) => padFace(g.pose, 'right', n, g.column))
+        const wrongFace = PINCH_SCORED.filter((n, i) => faces[i] !== PINCH_WANT_FACE[axis][n])
+        const touching = gaps.filter((x) => Math.abs(x) < PINCH_BAND).length
+        const bad = touching < 3 || dw.worst > PINCH_DEPTH_GATE || wrongFace.length > 0
+        rows++
+        if (bad) fails++
+        console.log(
+          pad(st.label, 15) +
+            pad(squeeze.toFixed(2), 6) +
+            pad(g.measured.reach.toFixed(4), 8) +
+            pad(`${touching}/3${bad ? ' !' : ''}`, 6) +
+            pad(dw.worst.toFixed(4), 9) +
+            pad(dw.where, 18) +
+            gaps.map((v, i) => pad(`${v.toFixed(4)}${faces[i]}`, 9)).join('') +
+            JSON.stringify(g.placement),
+        )
+        if (wrongFace.length) {
+          console.log(
+            pad('', 15) +
+              `WRONG FACE: ` +
+              wrongFace
+                .map((n) => `${n} on ${faces[PINCH_SCORED.indexOf(n)]}, wanted ${PINCH_WANT_FACE[axis][n]}`)
+                .join('; '),
+          )
+        }
+        // Where did a lost pad go? Compare the solved pose with the backed-off
+        // one, and name the capsule that forced the backoff.
+        if (g.preResolve) {
+          const pre = PINCH_SCORED.map((n) => tipGap(g.preResolve, 'right', n, g.column))
+          const pdw = deepestWhere(g.preResolve, 'right', g.column)
+          const moved = pre.some((v, i) => Math.abs(v - gaps[i]) > 0.002)
+          if (moved || bad) {
+            console.log(
+              pad('', 15) +
+                pad('as solved', 6 + 8) +
+                pad('', 6) +
+                pad(pdw.worst.toFixed(4), 9) +
+                pad(pdw.where, 18) +
+                pre.map((v) => pad(v.toFixed(4), 9)).join(''),
+            )
+          }
+        }
+        // THE PRICE OF NOT RESERVING SQUEEZE AIR. The runtime sampler adds curl to
+        // a gripping finger AFTER the pose is solved (applyGripPressure), so the
+        // pose that RENDERS is not the pose that was measured. A pinch authored
+        // tangent therefore grazes, and a graze is only defensible if it is
+        // bounded: this is the number that bounds it.
+        if (squeeze) {
+          const tight = applyGripPressure(cloneHandPose(g.pose), 'pinch', squeeze)
+          const tdw = deepestWhere(tight, 'right', g.column)
+          const tg = PINCH_SCORED.map((n) => tipGap(tight, 'right', n, g.column))
+          console.log(
+            pad('', 15) +
+              pad(`+squeeze`, 6 + 8) +
+              pad('', 6) +
+              pad(tdw.worst.toFixed(4), 9) +
+              pad(tdw.where, 18) +
+              tg.map((v) => pad(v.toFixed(4), 9)).join(''),
+          )
+        }
+        if (bad) {
+          // As-solved, per finger: which finger the backoff had a reason to move,
+          // and therefore which pad it is allowed to have taken with it.
+          const dep = depths(g.preResolve ?? g.pose, 'right', g.column)
+          const face = PINCH_SCORED.map((n) => padFace(g.preResolve ?? g.pose, 'right', n, g.column))
+          console.log(
+            pad('', 15) +
+              'as-solved depth  ' +
+              FINGER_NAMES.map((n) => `${n} ${dep[n].toFixed(4)}`).join(' ') +
+              `  faces ${face.join('/')}` +
+              `  air ${PINCH_SCORED.map((n) => g.air[n].toFixed(4)).join('/')}`,
+          )
+        }
+      }
+    }
+  }
+  console.log(`\n${rows - fails}/${rows} stations hit 3/3 pads within ${PINCH_BAND} and <= ${PINCH_DEPTH_GATE} deep`)
+  return fails
+}
+
+// --- Edge pinch: raw placement sweep ----------------------------------------
+// What the acceptance table cannot tell you: whether a placement exists that
+// needs NO backoff at all. `autoPlace` measures penetration on the pose AFTER
+// resolvePenetration, which is always ~0 by construction, so its depth term
+// cannot distinguish a hand that never touched the cards' insides from one the
+// backoff dragged out of them -- and the backoff's bill is paid in pads. This
+// sweep scores the pose AS SOLVED, and prints where each pad ended up, so the
+// question "is 3/3 with a flat index reachable here" gets an answer instead of an
+// opinion. Run: gripProbe.mjs pinchsweep [axis]
+function pinchSweepSection(axis = 'long') {
+  const cq = faceQuat(false)
+  const st = { label: '52-card deck', n: 52, baseY: 1.0 }
+  const deckH = (st.n - 1) * CARD_GAP
+  const rows = []
+  const range = (a, b, s) => {
+    const out = []
+    for (let v = a; v <= b + 1e-9; v += s) out.push(Number(v.toFixed(3)))
+    return out
+  }
+  const grid =
+    axis === 'long'
+      ? { ko: range(-0.45, 0.3, 0.15), td: range(-1.4, 0.3, 0.15), al: range(0, 1.6, 0.4), rl: range(-1.2, 0.6, 0.3), il: range(0, 0.9, 0.2) }
+      : { ko: range(-0.45, 0.45, 0.15), td: range(-1.2, 0.1, 0.15), al: range(-0.8, 1.2, 0.4), rl: range(-0.6, 1.2, 0.3), il: range(0, 0.9, 0.2) }
+  for (const knuckleOut of grid.ko) {
+    for (const thumbDrop of grid.td) {
+      for (const along of grid.al) {
+        for (const roll of grid.rl) {
+         for (const indexLead of grid.il) {
+          const g = edgePinchGrip({
+            centerX: 0, centerZ: 0, baseY: st.baseY, deckH, squeeze: 0, cardQuat: cq, axis,
+            knuckleOut, thumbDrop, along, roll, indexLead,
+          })
+          const solved = g.preResolve
+          const dep = depths(solved, 'right', g.column)
+          const solvedDeep = Math.max(...FINGER_NAMES.map((n) => dep[n]))
+          const sGaps = PINCH_SCORED.map((n) => tipGap(solved, 'right', n, g.column))
+          const sFaces = PINCH_SCORED.map((n) => padFace(solved, 'right', n, g.column))
+          const gaps = PINCH_SCORED.map((n) => tipGap(g.pose, 'right', n, g.column))
+          const faces = PINCH_SCORED.map((n) => padFace(g.pose, 'right', n, g.column))
+          const right = PINCH_SCORED.every((n, i) => faces[i] === PINCH_WANT_FACE[axis][n])
+          const sRight = PINCH_SCORED.every((n, i) => sFaces[i] === PINCH_WANT_FACE[axis][n])
+          rows.push({
+            knuckleOut, thumbDrop, along, roll, indexLead,
+            reach: g.reach,
+            solvedDeep,
+            indexDeep: dep.index,
+            thumbDeep: dep.thumb,
+            touching: gaps.filter((v) => Math.abs(v) < PINCH_BAND).length,
+            sTouching: sGaps.filter((v) => Math.abs(v) < PINCH_BAND).length,
+            right,
+            sRight,
+            gaps,
+            sGaps,
+            faces,
+            sFaces,
+          })
+         }
+        }
+      }
+    }
+  }
+  const reachable = rows.filter((r) => r.reach <= 0.02)
+  const solvedOk = reachable.filter((r) => r.sRight && r.sTouching === 3)
+  console.log(
+    `\n########## pinch raw sweep, axis '${axis}', ${st.label} ##########\n` +
+      `swept ${rows.length}; ${reachable.length} reach all three targets; ` +
+      `${solvedOk.length} of those put 3/3 pads on the RIGHT faces AS SOLVED`,
+  )
+  const clean = solvedOk.filter((r) => r.solvedDeep <= PINCH_DEPTH_GATE)
+  console.log(
+    `${clean.length} of those need no backoff at all (as-solved depth <= ${PINCH_DEPTH_GATE});` +
+      ` ${solvedOk.filter((r) => r.right && r.touching === 3).length} survive the backoff with 3/3 on the right faces`,
+  )
+  const nRight = (r) => PINCH_SCORED.filter((n, i) => r.sFaces[i] === PINCH_WANT_FACE[axis][n]).length
+  const top = (clean.length ? clean : solvedOk.length ? solvedOk : reachable)
+    .sort((a, b) => nRight(b) - nRight(a) || a.solvedDeep - b.solvedDeep || Math.max(...a.gaps.map(Math.abs)) - Math.max(...b.gaps.map(Math.abs)))
+    .slice(0, 14)
+  console.log(
+    '\n' + pad('kOut', 7) + pad('tDrop', 7) + pad('along', 7) + pad('roll', 7) + pad('iLead', 7) +
+      pad('reach', 8) + pad('deep(idx/thb)', 15) + pad('post-backoff gaps', 26) + 'faces after',
+  )
+  for (const r of top) {
+    console.log(
+      pad(r.knuckleOut.toFixed(2), 7) + pad(r.thumbDrop.toFixed(2), 7) + pad(r.along.toFixed(2), 7) +
+        pad(r.roll.toFixed(2), 7) + pad(r.indexLead.toFixed(2), 7) + pad(r.reach.toFixed(4), 8) +
+        pad(`${r.indexDeep.toFixed(4)}/${r.thumbDeep.toFixed(4)}`, 15) +
+        pad(r.gaps.map((v) => v.toFixed(4)).join(' '), 26) + r.faces.join('/') + '  solved ' + r.sFaces.join('/'),
+    )
+  }
+}
+
+// --- Edge pinch: one placement, joint by joint -------------------------------
+// When a finger's pad is exactly on target and the finger is still inside the
+// cards, the only useful question is WHICH PART, and against WHICH card. Prints
+// every joint of every scored finger in the TOP card's own frame (so z is height
+// above its mid-plane and a joint is inside the deck when |x| < 0.315,
+// |y| < 0.44 and z is between the top and bottom cards), with each phalange's
+// radius beside it. Run: gripProbe.mjs pinchone [axis] [k=v ...]
+function pinchOneSection(axis, over) {
+  const cq = faceQuat(false)
+  const baseY = 1.0
+  const deckH = 51 * CARD_GAP
+  const g = edgePinchGrip({ centerX: 0, centerZ: 0, baseY, deckH, squeeze: 0, cardQuat: cq, axis, ...over })
+  const solved = g.preResolve
+  const top = g.column[0]
+  const topPos = new THREE.Vector3(...top.pos)
+  const inv = _q.set(-top.quat.x, -top.quat.y, -top.quat.z, top.quat.w).clone()
+  console.log(`\n########## pinch, axis '${axis}', ${JSON.stringify(over)} ##########`)
+  console.log(`deck: 52 cards, top card at y=${topPos.y.toFixed(4)}, bottom at y=${baseY.toFixed(4)}`)
+  console.log(`half-extents x ${(CARD_W / 2).toFixed(3)}  y ${(CARD_H / 2).toFixed(3)}  z ${(CARD_T / 2).toFixed(4)}`)
+  console.log(`reach ${g.reach.toFixed(4)}   anchor ${g.anchor.map((v) => v.toFixed(3)).join(', ')}`)
+  for (const name of PINCH_SCORED) {
+    const t = new THREE.Vector3().copy(g.contacts[name]).sub(topPos).applyQuaternion(inv)
+    console.log(
+      `\n${name}: target in top-card frame  x ${t.x.toFixed(4)}  y ${t.y.toFixed(4)}  z ${t.z.toFixed(4)}` +
+        `   (pad radius ${(FINGERS[name].rad[2] * HAND_SCALE).toFixed(4)})`,
+    )
+    fingerJointsWorld(solved, 'right', name, _j)
+    const label = ['knuckle', 'PIP', 'DIP', 'tip']
+    for (let i = 0; i < 4; i++) {
+      const l = new THREE.Vector3().copy(_j[i]).sub(topPos).applyQuaternion(inv)
+      const r = FINGERS[name].rad[Math.min(i, 2)] * HAND_SCALE
+      let worst = 0
+      for (const c of g.column) {
+        const pos = Array.isArray(c.pos) ? new THREE.Vector3(...c.pos) : c.pos
+        const lp = new THREE.Vector3().copy(_j[i]).sub(pos)
+          .applyQuaternion(_q.set(-c.quat.x, -c.quat.y, -c.quat.z, c.quat.w))
+        const e = cardSurfaceExtents(lp, c.bend ?? 0)
+        if (e.x > r || e.u > r || e.n > r) continue
+        worst = Math.max(worst, Math.min(-e.x, -e.u, -e.n) + r)
+      }
+      console.log(
+        `  ${pad(label[i], 8)} x ${l.x.toFixed(4)}  y ${l.y.toFixed(4)}  z ${l.z.toFixed(4)}` +
+          `   r ${r.toFixed(4)}   joint depth ${worst.toFixed(4)}`,
+      )
+    }
+    console.log(`  as-solved worst capsule depth ${depths(solved, 'right', g.column)[name].toFixed(4)}`)
+  }
+}
+
+// `pinch` alone skips the straddle sweeps below (they cost ~10s and are not this
+// grip's business).
+const ONLY = process.argv.slice(2)
+if (ONLY.includes('pinchone')) {
+  const over = {}
+  for (const a of ONLY.slice(2)) {
+    const [k, v] = a.split('=')
+    over[k] = Number(v)
+  }
+  pinchOneSection(ONLY[1] ?? 'long', over)
+  process.exit(0)
+}
+if (ONLY.includes('pinchsweep')) {
+  pinchSweepSection(ONLY[1] ?? 'long')
+  process.exit(0)
+}
+if (ONLY.includes('pinch')) {
+  process.exitCode = pinchSection() ? 1 : 0
+  process.exit(process.exitCode)
 }
 
 // --- The candidate ----------------------------------------------------------
@@ -204,7 +549,6 @@ function score(g) {
   }
 }
 
-let best = null
 const results = []
 for (let ko = -0.3; ko <= 0.4001; ko += 0.1) {
   for (let td = 0.0; td <= 0.7001; td += 0.1) {
@@ -246,9 +590,6 @@ console.log(`deepest capsule: ${dw.where} at ${dw.worst.toFixed(4)} (${(dw.worst
 // near one) under the `packet` frame, which scores all five fingertips. Compare
 // that with the straddle on identical geometry, each judged by the fingers ITS
 // OWN frame claims to be holding.
-import { GRIP_FRAME_TYPES } from '../../src/hands/handKinematics.js'
-import { faceQuat } from '../../src/lessons/engine/layouts.js'
-
 const CH = { x: 0.05, y: 0.85, z: 0.1 }
 const chQ = faceQuat(false)
 const chCard = (h) => ({ pos: [CH.x, CH.y + h, CH.z], quat: chQ })
@@ -259,7 +600,6 @@ for (let h = -CARD_GAP * 4; CH.y + h > 0.012; h -= CARD_GAP * 4) chColumn.push(c
 
 function judge(label, pose, frameType, cards) {
   const scored = Object.keys(GRIP_FRAME_TYPES[frameType].pressure)
-  const dep = depths(pose, 'right', cards)
   const gaps = {}
   for (const n of FINGER_NAMES) gaps[n] = tipGap(pose, 'right', n, cards)
   const touching = scored.filter((n) => Math.abs(gaps[n]) < 0.025)
@@ -291,7 +631,6 @@ console.log(
 // derived FROM the thumb target, so the whole placement shifts. Swept per
 // station is the only honest way to place this grip.
 console.log('\n\n########## re-sweep: charlier geometry, squeeze 0.55 ##########')
-let bestCh = null
 const rows = []
 for (let ko = -0.3; ko <= 0.4001; ko += 0.1) {
   for (let td = 0.0; td <= 0.7001; td += 0.1) {
@@ -324,3 +663,6 @@ if (best2[0]) {
   const g = straddleGrip({ centerX: CH.x, centerZ: CH.z, baseY: CH.y, deckH, squeeze: 0.55, cardQuat: chQ, knuckleOut: r.ko, thumbDrop: r.td, along: r.al, roll: r.rl })
   judge('straddleGrip (re-swept for charlier)', g.pose, 'straddle', chColumn)
 }
+
+console.log('\n')
+pinchSection()

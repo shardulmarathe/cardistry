@@ -432,9 +432,13 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
+  /* NOT flex-wrap: wrap. A long mixing label used to push the meter onto a second
+     line, which made that one card taller than its row-mates. The title truncates
+     instead: a clipped technique name is still readable, a ragged grid is not. */
+  flex-wrap: nowrap;
   gap: 6px 12px;
   width: 100%;
+  min-width: 0;
   padding: 9px 13px;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.04);
@@ -479,6 +483,11 @@
   font-size: 15.5px;
   line-height: 1.2;
   color: var(--bone);
+  /* Gives way before the meter does, so a card is always one line tall. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Mixing strength as a real signal: four pips + the authored word. */
@@ -507,6 +516,7 @@
   background: var(--gold-bright);
 }
 .mix-value {
+  white-space: nowrap;
   font-family: var(--font-mono);
   font-size: 10.5px;
   line-height: 1.3;
@@ -966,10 +976,19 @@
   .catalog:not(.has-selection):not(.is-guide) .catalog-col--aside {
     display: none;
   }
-  /* Wide sheets: pair the techniques up and keep prose to a readable measure. */
+  /* Wide sheets: pair the techniques up and keep prose to a readable measure.
+     EXACTLY two columns, not auto-fit. There are four techniques, and auto-fit
+     with a 17rem minimum lands on three in a wide sheet, orphaning the fourth on
+     a row of its own. Two columns give a 2x2 at any sheet width, and collapse to
+     one below 34rem where two would be too narrow to read. */
   .catalog-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  @media (max-width: 34rem) {
+    .catalog-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
   .detail-card,
   .guide-panel {
