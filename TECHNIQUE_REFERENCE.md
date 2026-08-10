@@ -170,13 +170,18 @@ that mirror behaviour is the first task of the rebuild, not an afterthought.
   always the thumb's distal. Softening the `pinch` frame's pressure weights helps;
   a lesson wanting a hard squeeze must price the graze the way charlier's
   `THUMB_GRAZE` does.
-- **`cardDepth` measures depth past the NEAREST FACE PLANE, while `padGap`
-  measures true box distance.** Near an edge or a corner the plane rule roughly
-  doubles the reported penetration (measured: 0.021 reported against 0.010 true).
-  That systematically over-charges exactly the edge and corner contacts this
-  project is moving toward, and it is what `resolvePenetration` acts on. Fixing it
-  moves every lesson's poses and must be done together with the same rule in
-  `verifyTracks.mjs`, so it needs its own pass with a re-baseline.
+- ~~`cardDepth` measures depth past the nearest face plane~~ **FIXED.** The rule
+  was `min(-ex,-eu,-en) + r`, correct only for a centre inside the shell or outside
+  across ONE axis. Outside across two — an EDGE — it billed `r - max(ex,eu)` where
+  the truth is `r - hypot(ex,eu)`, so it over-charged precisely the edge contacts
+  the new grip vocabulary is built on, and `resolvePenetration` acted on the same
+  wrong number and backed fingers off edges harder than the geometry warranted.
+  Both sites were fixed together (they must agree or the harness and the authoring
+  pass disagree about what "touching" means). Effect: overhand's worst contact went
+  **0.0201 -> 0.0079**, and all three raised budgets ratcheted down (overhand 0.021
+  -> 0.009, charlier 0.02 -> 0.017, riffle 0.025 -> 0.021). Charlier and riffle's
+  own worst contacts did not move, which is the expected signature: theirs are
+  face-region contacts, outside across a single axis, where the old rule was right.
 
 **No lesson uses it yet, and picking the first adopter took some elimination:**
 

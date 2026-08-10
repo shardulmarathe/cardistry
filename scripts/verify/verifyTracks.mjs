@@ -154,35 +154,33 @@ function assertAboveFelt(scene, label) {
 const PENETRATION_BUDGET = {
   default: 0.085,
   wash: 0.002, // measured 0.0000, re-authored onto contact-height anchors
-  // --- KNOWN REGRESSION, RAISED ON PURPOSE, MUST COME BACK DOWN -------------
-  // 0.002 held (measured 0.0016) until CARD_T and CARD_GAP were corrected to a
-  // real card. A 52-card deck is now 15.3mm rather than 20.8mm, so every pose
-  // solved against the old taller stack re-solved lower, and the DRAWING hand's
-  // middle pad now grazes the deck it is peeling from by up to 0.0201 across 24
-  // of ~200,000 samples.
+  // RATCHETED DOWN from 0.021, and the raise it is coming down from is worth
+  // keeping in view. It was raised when CARD_T/CARD_GAP were corrected to a real
+  // card: poses solved against the old, taller stack re-solved lower and the
+  // drawing hand's middle pad grazed the deck by 0.0201.
   //
-  // It is recorded rather than tuned because this lesson is queued to be
-  // RE-MODELLED, not adjusted: the sourced mechanics say the real overhand is a
-  // bottom grasp-and-release onto a cradled pile, not the top peel this file
-  // implements (see TECHNIQUE_REFERENCE.md). Tuning the peel's middle pad means
-  // tuning code that is about to be deleted.
+  // Most of that 0.0201 was never real. The penetration rule measured depth past
+  // the NEAREST FACE PLANE, which over-charges every edge and corner contact
+  // (outside across two axes it bills r - max(ex,ey) where the truth is
+  // r - hypot(ex,ey)), and a pad grazing a card's EDGE is precisely that case.
+  // With true sphere-vs-shell depth the same contact measures 0.0079 - and the
+  // solved poses improved too, because `resolvePenetration` had been acting on
+  // the same wrong number and backing fingers off edges harder than warranted.
   //
-  // The re-model must bring this back under 0.005 and this entry with it. If you
-  // are reading this and the re-model has happened, that is the number to hold.
-  //
-  // The corrected card was still a clear win for this lesson: its hover halved,
-  // contact 4% -> 8% and median gap 0.241 -> 0.156.
-  overhand: 0.021, // measured 0.0201 — see the paragraph above before touching
+  // Still above the 0.005 target, and this lesson is still queued to be
+  // RE-MODELLED (its top peel is the wrong move; see TECHNIQUE_REFERENCE.md), so
+  // the remaining 0.0079 is expected to go with the re-model rather than be tuned.
+  overhand: 0.009, // measured 0.0079
   // (was 0.0016 before the card correction, via the holding cradle's thumb
   // `tighten` coming down 0.05 -> 0.012 and its idle to 0.3: that thumb is
   // seated TANGENT on the deck's near end face, so every radian of squeeze on
   // top is penetration by construction.)
-  charlier: 0.02, // measured 0.0162 (was 0.0355 on the over-fat rig)
+  charlier: 0.017, // measured 0.0162 (was 0.0355 on the over-fat rig)
   // Real contact grazes: flesh compresses and capsules do not, so a pad
   // genuinely ON a card reads as a small overlap here. This is raised as the
   // deliberate price of contact, and the contact it buys is asserted from below
   // by CONTACT_FLOOR. Well under the 0.0812 ceiling, so still binding.
-  riffle: 0.025, // measured 0.0203 (was 0.0440); buys 31% contact
+  riffle: 0.021, // measured 0.0205 (was 0.0440); buys 31% contact
 }
 
 const CARD_HX = CARD_W / 2
@@ -248,7 +246,23 @@ function assertNoPenetration(scene, label, budget) {
             const ey = e.u
             const ez = e.n
             if (ex > r || ey > r || ez > r) continue // clear of the card
-            const depth = Math.min(-ex, -ey, -ez) + r
+            // TRUE sphere-vs-shell depth, not depth past the NEAREST FACE PLANE.
+            // `min(-ex,-ey,-ez) + r` is right for a centre inside the shell or
+            // outside across ONE axis, and over-charges every edge and corner:
+            // outside across two axes it bills `r - max(ex,ey)` where the truth is
+            // `r - hypot(ex,ey)`. Measured roughly DOUBLE on a real sample (0.021
+            // against 0.010 true). It over-charged exactly the edge contacts this
+            // catalog is moving to, and `resolvePenetration` in contacts.js acted
+            // on the same wrong rule, so grips were being backed off harder than
+            // the geometry warranted. Both sites fixed together, on purpose: they
+            // have to agree or the harness and the authoring pass disagree about
+            // what "touching" means.
+            const ox = Math.max(ex, 0)
+            const oy = Math.max(ey, 0)
+            const oz = Math.max(ez, 0)
+            const outside = Math.hypot(ox, oy, oz)
+            const depth =
+              outside > 0 ? Math.max(0, r - outside) : Math.min(-ex, -ey, -ez) + r
             if (depth > worst) {
               worst = depth
               where = `${side} ${name}[${PHALANGE[s]}] into card ${id}`

@@ -190,10 +190,30 @@ function surfaceExtents(local, bend) {
 // Penetration depth of a sphere (p, r) into one card: 0 when clear, else how
 // far the finger's surface has sunk past the nearest face. Depth 0 = exactly
 // tangent, which is the goal. `card.bend` (default 0) bows it.
+// TRUE sphere-vs-shell penetration, not depth past the NEAREST FACE PLANE.
+//
+// The old rule was `min(-ex, -eu, -en) + r`, which is right in exactly two cases:
+// the centre inside the shell, or outside across a single axis (a face region).
+// Outside across TWO axes -- an EDGE -- it charges `r - max(ex, eu)` where the
+// truth is `r - hypot(ex, eu)`, and near a corner it is worse. Measured on a real
+// index sample: 0.021 reported against 0.010 true, roughly double.
+//
+// That mattered more and more as this project moved from face grips to EDGE grips,
+// because it over-charges precisely the contacts the new vocabulary is built on,
+// and it is the number `resolvePenetration` acts on -- so every solved grip was
+// being backed off an edge harder than the geometry warranted. `padGap`, twenty
+// lines below, has always done this correctly; the two disagreed.
 function cardDepth(p, r, card) {
   _local.copy(p).sub(cardPosOf(card)).applyQuaternion(_invQ.copy(card.quat).invert())
   const e = surfaceExtents(_local, card.bend ?? 0)
   if (e.x > r || e.u > r || e.n > r) return 0
+  const ox = Math.max(e.x, 0)
+  const ou = Math.max(e.u, 0)
+  const on = Math.max(e.n, 0)
+  const outside = Math.hypot(ox, ou, on)
+  // Centre outside the shell: penetration is what the radius still spans.
+  if (outside > 0) return Math.max(0, r - outside)
+  // Centre inside the shell: the radius plus the distance to the nearest face.
   return Math.min(-e.x, -e.u, -e.n) + r
 }
 
