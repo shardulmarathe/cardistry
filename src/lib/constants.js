@@ -79,6 +79,18 @@ export const CAMERA_PRESETS = {
   // the middle of the two and offset in x so the pile is not stranded at the frame
   // edge with empty felt opposite it.
   overhandDraw: { position: [0.42, 2.7, 4.9], target: [0.42, 0.5, 0], fov: 34 },
+  // The overhand as two packets held IN THE AIR, one above the other. This subject is
+  // DEEP rather than wide, and that is what no existing preset frames. Measured on the
+  // rebuilt track: cards span z -0.44..0.62 (both packets lie flat, so each contributes
+  // its full 0.88 of card height in z) against x -0.32..0.00. `framing.mjs` reserves
+  // the bottom 40% of the frame for the transport panel, so `inHands` offers only 0.97
+  // of usable depth against a 1.06 subject - it was the one lesson in the catalog the
+  // tool flagged as OVERFLOWS - while leaving 2.25 of width completely unused.
+  //
+  // So this pulls back and widens rather than re-aiming: at d 5.67 and fov 36 the
+  // usable half-height is 1.11, which clears 1.06. Aimed at y 0.96, the aim the tool
+  // wants for a subject whose cards sit at 0.02..1.00 with a wrist median of 1.32.
+  overhandBulk: { position: [0, 2.7, 5.4], target: [0, 0.96, 0], fov: 36 },
 }
 
 // OrbitControls constraints so users never go under the table or behind the cards.

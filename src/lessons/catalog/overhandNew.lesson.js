@@ -134,7 +134,7 @@ export const overhandNewLesson = {
   technique: 'overhand',
   randomizes: 'Weak',
   seed: 11,
-  cameraPreset: 'inHands',
+  cameraPreset: 'overhandBulk',
   summary:
     'The everyday shuffle: lift most of the deck away in one hand, then let small packets drop back onto the pile in the other. Easy to do — but it only moves blocks, so it barely randomizes.',
   facts: [
@@ -146,8 +146,16 @@ export const overhandNewLesson = {
     // Both packets live in the air, the bulk above and slightly behind the pile so
     // packets fall down and forward onto it. The z offset is what keeps the two
     // hands, each sitting BESIDE its own packet, out of each other.
-    const PILE = { x: -0.28, y: 0.92, z: 0.0 }
-    const BULK = { x: -0.28, y: 1.34, z: 0.34 }
+    // HEIGHTS ARE SET BY THE CAMERA, not picked to look right in isolation. The
+    // `inHands` preset targets y 1.28, and `framing.mjs` wants the wrist median near
+    // that; at y 0.92/1.34 the wrists sat at a median of 1.74 and this was the only
+    // lesson in the catalog the tool flagged as OVERFLOWS - hands off all four edges
+    // with the forearms filling the top corners. A hand sits ABOVE the packet it grips
+    // from the side, so the packets have to be authored well below the camera target
+    // rather than at it. The 0.42 separation between them is preserved: that is what
+    // gives a packet somewhere to fall from.
+    const PILE = { x: -0.28, y: 0.5, z: 0.0 }
+    const BULK = { x: -0.28, y: 0.92, z: 0.18 }
     const SQUEEZE = 0.3
     // Real overhand cadence: a packet every ~200ms, and packets of UNEVEN size.
     // Deliberately a fixed uneven pattern rather than equal blocks: a real shuffler

@@ -139,10 +139,20 @@ export const WRIST_MM = { dia: 50, len: 30, pos: [0, -72, 2] }
 // across the frame whatever its alpha, and it was the most intrusive thing left in
 // shot after the hands themselves.
 //
-// 95mm still reads as an arm entering frame and still hides the wrist joint, at
-// roughly half the screen area. Diameter is left at the anatomical 72mm: the stub
-// is short, not thin, so it still connects to a hand of the right size.
-export const FOREARM_MM = { dia: 72, len: 95, pos: [0, -134, 4] }
+// 58mm, trimmed again from 95mm. Be clear about what this did and did not fix: the two
+// large pale slabs that dominate the top corners of the overhand's frame are the PALMS,
+// not the forearms. A palm is 80 x 106mm, so it is card-sized by construction, and at a
+// camera looking slightly down on two hands whose fingers reach DOWN around their
+// packets the palms are broadside and above everything else in shot. That is correct
+// anatomy, not an artefact - going 95 -> 58mm was measured against a capture and barely
+// changed those corners.
+//
+// The trim is still right on its own terms: 58mm is a wrist cuff rather than an arm, it
+// still hides the wrist joint, which is the entire reason the stub exists, and it stops
+// contributing screen area at cameras that see it flat-on and so never fade it.
+// Diameter stays at the anatomical 72mm - the stub is short, not thin, so it still
+// connects to a hand of the right size.
+export const FOREARM_MM = { dia: 72, len: 58, pos: [0, -112, 4] }
 
 // Opposable thumb: swing the metacarpal across + forward so its curl presses
 // toward the fingers, a real pinch/grip rather than a spike. The rig applies
