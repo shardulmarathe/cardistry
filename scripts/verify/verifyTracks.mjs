@@ -180,10 +180,10 @@ const PENETRATION_BUDGET = {
   // genuinely ON a card reads as a small overlap here. This is raised as the
   // deliberate price of contact, and the contact it buys is asserted from below
   // by CONTACT_FLOOR. Well under the 0.0812 ceiling, so still binding.
-  // The riffle is now the IN-HANDS shuffle, and it beat the tabled one it replaced
-  // on every axis: contact 31% -> 90%, median gap 0.088 -> 0.009, penetration
-  // 0.0205 -> 0.0162, worst boundary jump 0.0243 -> 0.0043.
-  riffle: 0.017, // measured 0.0162
+  // The riffle is TABLED again, on user feedback (see CONTACT_FLOOR for the full
+  // note). Unchanged at 0.017 and still binding: the tabled rebuild measures 0.0135,
+  // which is tighter than the in-hands version's 0.0162 that this budget was set for.
+  riffle: 0.017, // measured 0.0135
 }
 
 const CARD_HX = CARD_W / 2
@@ -319,9 +319,27 @@ const CONTACT_BAND = 0.025 // within this of a card surface = touching
 const CONTACT_FLOOR = {
   default: 0,
   charlier: 0.65, // measured 0.69, median gap 0.014
-  // 90%, from a hold whose pads are on the packet's LONG EDGES so both short ends
-  // stay clear of the release path. See the lesson header.
-  riffle: 0.87, // measured 0.90, median gap 0.009
+  // RE-BASELINED DOWNWARD, 0.87 -> 0.50, and that needs justifying because floors in
+  // this table otherwise only ever rise.
+  //
+  // The riffle was replaced on direct user feedback: the in-hands version put the
+  // shuffle in mid-air with the two hands overlapping in the middle of frame and no
+  // visible card bend, none of which is what a basic riffle looks like. The tabled
+  // version that replaced it is a DIFFERENT MOVE, so the 0.87 described a lesson that
+  // no longer exists rather than a standard this one is failing.
+  //
+  // The drop is structural, not slack. A bend is only expressible along a card's own
+  // long axis (the shader maps local y, so the cylinder axis is local x), which forces
+  // the thumb and fingers to the two SHORT ENDS - `axis: 'end'`. That axis is harder to
+  // score than the `long` axis validated across 18/18 stations: the pinch's three
+  // scored pads sit at 50% in band through the bend and weave regardless of squeeze
+  // (swept 0.26 / 0.38 / 0.50), while the MEDIAN gap stays inside the 0.025 band at
+  // 0.018. So the typical pad is on the cards and one pad of three is not.
+  //
+  // What did NOT get relaxed: penetration. The tabled version measures 0.0135 worst
+  // against the same 0.017 budget, which is better than the in-hands version's 0.0162,
+  // with 0 cards pierced.
+  riffle: 0.5, // measured 0.54, median gap 0.018
   // OVERHAND STILL SHIPS A HOVER and this floor records it rather than blessing
   // it. Its receiving hand models a top PEEL, and the sourced mechanics say the
   // real move is a bottom grasp-and-release onto a cradled pile (see

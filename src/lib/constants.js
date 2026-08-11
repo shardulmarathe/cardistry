@@ -102,6 +102,21 @@ export const CAMERA_PRESETS = {
   // Pulled back and widened to suit: d 6.88 and fov 38 give a usable half-height of
   // 1.42. Aimed at y 0.1, just above the felt, because the cards never leave it.
   washTable: { position: [0, 4.6, 5.2], target: [0, 0.1, 0], fov: 38 },
+  // The TABLE riffle. Everything happens on the felt, so this aims low - but not
+  // straight down: the whole point of the move is that the cards BEND, and a bow is
+  // only visible from a shallow angle. So this sits lower and closer than `overview`
+  // (which looks down from 4.3) to catch the arch in silhouette, and wide enough for
+  // two halves side by side with a hand outboard of each.
+  // Measured, not eyeballed: the subject is two landscape halves at x +-0.52 (so
+  // +-0.96 of cards) with a hand outboard of each, and the hands stand ~1.0 tall. At
+  // d 3.75 and fov 36 the usable half-height was only 0.73 once the transport panel
+  // takes the bottom 40%, and both hands were cropped at the top of frame. d 6.28 and
+  // fov 34 give 1.15 of usable height and 2.68 of half-width.
+  //
+  // It stays LOW rather than looking down like `overview`: the whole point of this
+  // move is that the cards visibly BEND, and a bow only reads in silhouette from a
+  // shallow angle.
+  riffleTable: { position: [0, 2.6, 5.8], target: [0, 0.2, 0], fov: 34 },
 }
 
 // OrbitControls constraints so users never go under the table or behind the cards.
