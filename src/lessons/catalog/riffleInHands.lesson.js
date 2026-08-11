@@ -77,17 +77,31 @@ import { CARD_GAP, CARD_H } from '../../lib/constants'
 //   * the release trajectory - swept arcLift 0.02..0.2: held 0.0751..0.0757, flat
 // It is also invariant to the hands rising and separating as the deck accumulates.
 //
-// That invariance across every authored parameter IS the finding, and the number
-// says the rest: 0.0754 is almost exactly the thumb's distal pad radius (0.074).
-// A depth equal to the whole radius is the signature of the metric charging a FULL
-// CAPSULE RADIUS the moment a pad centre crosses a card's 0.3mm slab - the
-// documented over-charge in ARCHITECTURE.md's "Open work" - rather than a pad
-// buried in the cards. A thumb releasing a card it is springing off IS touching it.
+// A sixth was rejected too: holding the hands BENT through the whole weave instead
+// of un-rotating them (0.0753 -> 0.0752, and it simply moved to a different finger).
 //
-// So the next move is not another authored parameter. It is either the deck-envelope
-// metric (measure against the union of the cards a hand is touching, not each card
-// individually) or a re-authored release path that carries the card away along the
-// pad's own normal. Do not wire this in until that is settled.
+// THE CAUSE IS THE GRIP, NOT A PARAMETER. Two clues converge. First, 0.075 is
+// almost exactly a distal pad radius plus half a card thickness (0.074 + 0.0015),
+// which is what the metric charges when a pad CENTRE lands on a card's mid-plane -
+// so the released cards are passing THROUGH the pads, not grazing them. Second, and
+// this is the part that names it: `arcLift` had no effect at any value, and it
+// cannot have. arcLift lifts a travelling card in WORLD Y, but an `end` pinch holds
+// the card by its SHORT END FACE, so the card leaves along its own long axis -
+// straight out of the pinch. No amount of vertical lift separates a card from a pad
+// that is sitting in its exit path.
+//
+// So the `end` pinch is the right grip for CARRYING a packet and the wrong grip for
+// RELEASING one card at a time. A real riffle's thumb sits on the packet's BROAD
+// FACE at the inner corner, and the cards slide out from UNDER it; the pad is beside
+// the exit path, not in it. That is exactly what the tabled riffle used for its
+// weave (`frame: 'thumbPeel'`), and it is why that beat measured 0.0205 while this
+// one measures 0.074 with a far better carry.
+//
+// NEXT STEP, and it is a design change rather than a tune: keep the pinch for
+// square/cut/address/bend, and hand the packets over to a thumb-on-the-face frame
+// for the weave itself. The engine already supports the handover (a grip ends, the
+// next begins, and `bakeHoldReleases` makes the seam exact). Do not wire this in
+// before that; the carry numbers are excellent and the release beat is not finished.
 export const riffleInHandsLesson = {
   id: 'riffle',
   title: 'Riffle Shuffle',
