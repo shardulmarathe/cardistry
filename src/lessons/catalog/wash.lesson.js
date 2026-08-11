@@ -130,7 +130,7 @@ const restAt = (x, y, z) => padAt('deckRest', null, DECK_REST_DROP, x, y, z)
 // half off the table. The right hand's pads orbit C=(CX,CZ); the left hand is
 // the engine's x-mirror, so its centre is −CX and its visual direction is
 // reversed. `cyc` (+1/−1) is the authored orbit sign.
-const AMP = 0.28
+const AMP = 0.45
 // Both palms reach their inner point at the SAME instant, so the only thing
 // keeping them from merging into one translucent mass is how close the
 // inboard-most part of one hand gets to the centre line. Under the inward yaw
@@ -208,17 +208,28 @@ function passTime(orbit, a) {
   return mod(orbit.dir * (a - orbit.v0), TAU) / TAU
 }
 
-// Scatter every card across the felt, face-down, at random spots + angles.
+// TWO ROWS ACROSS A WIDE FIELD, not a round heap. A uniform disc of radius 1.0 read as
+// one clumped pile in the middle of the table, which is not what a wash looks like: the
+// cards go out over as much felt as the arms can cover, and a dealer's spread ends up
+// wide and shallow rather than circular. Splitting the deck between two z bands and
+// spreading it to +-1.34 in x gives that, and it fits the frame - `washTable` allows
+// 3.31 of half-width against the 2.14 this reaches once the smoosh moves cards around.
+//
+// The direction of the widening is set by what the CAMERA can see: after the near-side
+// rework the wash had 1.42 of usable depth and was already using 1.27 of it, while
+// leaving most of its width unused. So this spends width, which was free, and leaves z
+// close to where it was.
+const SPREAD_X = 1.34
+const ROW_Z = [-0.3, 0.2]
+const ROW_HALF = 0.2
 function scatterLayout(deck, rng, spread = 1.0) {
-  return deck.map((card) => {
-    const r = spread * Math.sqrt(rng())
-    const a = rng() * Math.PI * 2
+  return deck.map((card, i) => {
     return {
       id: card.id,
       pos: new THREE.Vector3(
-        Math.cos(a) * r,
+        (rng() * 2 - 1) * SPREAD_X * spread,
         0.02 + rng() * 0.014,
-        Math.sin(a) * r * 0.7,
+        ROW_Z[i % 2] + (rng() - 0.5) * 2 * ROW_HALF,
       ),
       quat: faceQuat(false, (rng() - 0.5) * Math.PI),
       bend: (rng() - 0.5) * 0.7,
@@ -354,7 +365,7 @@ export const washLesson = {
     // read as a palm on the felt. Its pads start OUTSIDE the spread and finish
     // on the heap they just built, both card-sized distances, so they say what
     // they mean at any hand scale.
-    const PLOW_FROM = 1.0 + CARD_W / 2 // just past the spread's outer edge
+    const PLOW_FROM = SPREAD_X + CARD_W / 2 // just past the spread's outer edge
     const PLOW_TO = CARD_W * 0.3 // on top of the heap
     const WALL_X = 0.075 + CARD_W // the far side of the heap, where cards stop
     const plowAt = (padX, padZ) => openAt(padX, HEAP_TOP, padZ, PLOW_LIFT)
