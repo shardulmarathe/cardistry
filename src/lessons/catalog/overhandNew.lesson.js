@@ -61,11 +61,26 @@ import { CARD_GAP } from '../../lib/constants'
 //      Anchoring by the top was tried and rejected (0.1057 -> 0.1056): it only moved
 //      the disagreement to the other end.
 //
-// WHAT IS LEFT: ~0.09 of penetration at every beat, now the left thumb rather than
-// the middle. Both hands hold packets barely 0.4 apart in a move where they close on
-// each other, so the next suspect is hand-versus-OTHER-packet rather than
-// hand-versus-own, which `scripts/inspect/deepFrame.mjs` reports directly (it names
-// the packet each hit belongs to). Do not wire this in until it is under ~0.01.
+// WHAT IS LEFT: ~0.09 of penetration at every beat, and it is the LEFT HAND'S INDEX
+// against the pile it is holding - 0.0799 into the top card's broad face at the drop
+// beats, which is that capsule's own radius plus half a card, so the capsule CENTRE
+// is on the card plane rather than the finger merely grazing.
+//
+// A FIFTH HYPOTHESIS WAS TESTED AND REJECTED, and it is worth recording because it
+// sounded right. In a `long` pinch the index lies on the packet's TOP FACE as a
+// stabiliser, and this hand is the RECEIVING hand - packets land on that face - so
+// the index looked like it was simply in the landing path. `edgePinchGrip` gained a
+// `stabilise: false` option to omit it (kept: it is the correct option for a
+// receiving hand and the pinch's own 18/18 acceptance is unchanged by default).
+// Measured, it made things WORSE: contact 82% -> 68% and the index's PROXIMAL
+// capsule 0.1006 in, the same full-radius signature one segment further back.
+//
+// The lesson: un-aiming a finger does not move it. Without a target the index keeps
+// its seeded curl and lies through the stack anyway; it has to be actively CURLED
+// CLEAR, which is a change to the seed or a `resolvePenetration` pass against the
+// pile size the hand actually rides at - not to which contacts are declared.
+//
+// Do not wire this in until it is under ~0.01.
 export const overhandNewLesson = {
   id: 'overhand',
   title: 'Overhand Shuffle',
@@ -94,8 +109,9 @@ export const overhandNewLesson = {
     // takes the remainder whatever the deck size.
     const PATTERN = [8, 6, 9, 7, 6]
 
-    const pinchAt = (c, count) =>
+    const pinchAt = (c, count, stabilise = true) =>
       edgePinchGripAuto({
+        stabilise,
         centerX: c.x,
         centerZ: c.z,
         baseY: c.y,

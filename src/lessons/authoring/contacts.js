@@ -1230,6 +1230,13 @@ export function edgePinchGrip({
   along = 0,
   roll = 0,
   indexLead = PINCH_INDEX_LEAD,
+  // Omit the index stabiliser. The index normally lies on the packet's TOP FACE to
+  // stop it pivoting, which is right for a hand that only HOLDS. It is wrong for a
+  // RECEIVING hand: in an overhand the packets land on that very face, so a finger
+  // resting there sits in the landing path - measured, the pile hand's index middle
+  // phalange 0.0799 inside the top card. Omitted, the pinch is thumb against middle
+  // across the long edges and the top is completely open.
+  stabilise = true,
 } = {}) {
   const faces = PINCH_FACES[axis]
   if (!faces) throw new Error(`edgePinchGrip: axis must be 'long' or 'end', got '${axis}'`)
@@ -1302,12 +1309,15 @@ export function edgePinchGrip({
     // forward its chain reaches. On the top face `v` IS the along-deck axis --
     // this is the one face where that is true, which is exactly why the note
     // above is worth re-reading before editing any of it.
-    index: surfaceContact(topCard, {
+  }
+  // The stabiliser, unless the caller is a RECEIVING hand (see `stabilise`).
+  if (stabilise) {
+    contacts.index = surfaceContact(topCard, {
       finger: 'index',
       u: acrossU(ax + M.knuckle.index.x),
       v: alongU(lead('index', indexLead)),
       clearance: air.index,
-    }),
+    })
   }
   const ay = contacts.thumb.y - M.knuckle.thumb.y - chainLen('thumb') * thumbDrop
   const anchor = [ax, ay, az]
@@ -1324,7 +1334,9 @@ export function edgePinchGrip({
   const reach = Math.max(
     miss(solveThumbTo(pose, 'right', contacts.thumb, { oppRange: 1.1, steps: 33 })),
     miss(solveFingerTo(pose, 'right', 'middle', contacts.middle, { splay: true })),
-    miss(solveFingerTo(pose, 'right', 'index', contacts.index, { splay: true })),
+    contacts.index
+      ? miss(solveFingerTo(pose, 'right', 'index', contacts.index, { splay: true }))
+      : 0,
   )
   // A pinch holds the deck AWAY from the hand, so unlike the straddle there is no
   // palm under it and no reason to model anything but the deck itself.
@@ -1488,7 +1500,7 @@ function autoPlace(build, scored, grid, maxDepth, opts, { byGap = false } = {}) 
 export const edgePinchGripAuto = (opts = {}) =>
   autoPlace(
     edgePinchGrip,
-    ['thumb', 'middle', 'index'],
+    opts.stabilise === false ? ['thumb', 'middle'] : ['thumb', 'middle', 'index'],
     PINCH_GRID[opts.axis ?? 'long'] ?? PINCH_GRID.long,
     PINCH_MAX_DEPTH,
     opts,
