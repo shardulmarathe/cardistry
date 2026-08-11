@@ -91,6 +91,17 @@ export const CAMERA_PRESETS = {
   // usable half-height is 1.11, which clears 1.06. Aimed at y 0.96, the aim the tool
   // wants for a subject whose cards sit at 0.02..1.00 with a wrist median of 1.32.
   overhandBulk: { position: [0, 2.7, 5.4], target: [0, 0.96, 0], fov: 36 },
+  // A NEAR-SIDE WASH IS DEEPER THAN A TABLE PRESET CAN SEE. Once the hands come in
+  // from the near side rather than sweeping in from left and right, they push cards
+  // along z as well as x: measured, the spread runs z -0.83..0.59, a span of 1.27
+  // against the 1.21 of depth `overview` leaves once the transport panel takes the
+  // bottom 40% of the frame. That is not a tuning error in the wash - a wash spreads
+  // cards in two dimensions, which is the entire reason it randomises so well, so the
+  // subject is genuinely as deep as it is wide.
+  //
+  // Pulled back and widened to suit: d 6.88 and fov 38 give a usable half-height of
+  // 1.42. Aimed at y 0.1, just above the felt, because the cards never leave it.
+  washTable: { position: [0, 4.6, 5.2], target: [0, 0.1, 0], fov: 38 },
 }
 
 // OrbitControls constraints so users never go under the table or behind the cards.

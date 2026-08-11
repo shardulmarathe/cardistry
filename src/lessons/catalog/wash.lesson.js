@@ -25,7 +25,7 @@ import { fingerJointsWorld, fingertipWorld } from '../../hands/handKinematics'
 // −z. Authored ONCE, for the right hand: the engine's x-mirror gives the left
 // hand the correct opposite yaw (never mirror a quaternion by hand).
 const PALM_DOWN = Math.PI / 2
-const REACH_IN = -Math.PI / 2
+const REACH_IN = Math.PI
 const PRESS_QUAT = new THREE.Quaternion().setFromEuler(
   new THREE.Euler(PALM_DOWN + 0.06, REACH_IN, 0, 'YXZ'),
 )
@@ -172,7 +172,14 @@ const PAD_LEAD = Math.max(
   inboardOf(rakePose(RAKE_BASE + RAKE_AMP, 0.62)),
 )
 const CX = AMP + PAD_LEAD + PALM_GAP / 2 // pad-orbit centre
-const CZ = 0.25
+// The pad-orbit centre in z. 0.25 was tuned for hands reaching in from the SIDES,
+// where z only had to clear the spread. Reaching in from the NEAR side the wrist
+// trails almost a hand-length toward the camera behind its pads, so at 0.25 both
+// palms sat off the bottom of frame with only fingertips showing among the cards.
+// Set BEHIND the spread's centre so the trailing wrists land inside the frame:
+// centring the orbit on the spread was still not enough, because the transport panel
+// takes the bottom 40% and that is exactly where a near-side wrist sits.
+const CZ = -0.15
 // The spread's cards scatter to y = 0.02..0.034 (card centres); the palms have
 // to clear the highest of them for the whole sweep.
 const SPREAD_TOP = 0.034
@@ -493,7 +500,7 @@ export const washLesson = {
         reorder: () => finalOrder,
         to: () => gatherRight,
         stagger: { by: 'card', spread: 0.55, span: 0.45 },
-        camera: 'overview',
+        camera: 'washTable',
         hands: {
           right: [
             { at: 0.15, pose: 'deckApproach', anchor: plowAt(PLOW_FROM, 0.2) },
