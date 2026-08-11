@@ -180,7 +180,10 @@ const PENETRATION_BUDGET = {
   // genuinely ON a card reads as a small overlap here. This is raised as the
   // deliberate price of contact, and the contact it buys is asserted from below
   // by CONTACT_FLOOR. Well under the 0.0812 ceiling, so still binding.
-  riffle: 0.021, // measured 0.0205 (was 0.0440); buys 31% contact
+  // The riffle is now the IN-HANDS shuffle, and it beat the tabled one it replaced
+  // on every axis: contact 31% -> 90%, median gap 0.088 -> 0.009, penetration
+  // 0.0205 -> 0.0162, worst boundary jump 0.0243 -> 0.0043.
+  riffle: 0.017, // measured 0.0162
 }
 
 const CARD_HX = CARD_W / 2
@@ -316,7 +319,9 @@ const CONTACT_BAND = 0.025 // within this of a card surface = touching
 const CONTACT_FLOOR = {
   default: 0,
   charlier: 0.65, // measured 0.69, median gap 0.014
-  riffle: 0.3, // measured 0.31, median gap 0.127
+  // 90%, from a hold whose pads are on the packet's LONG EDGES so both short ends
+  // stay clear of the release path. See the lesson header.
+  riffle: 0.87, // measured 0.90, median gap 0.009
   // OVERHAND STILL SHIPS A HOVER and this floor records it rather than blessing
   // it. Its receiving hand models a top PEEL, and the sourced mechanics say the
   // real move is a bottom grasp-and-release onto a cradled pile (see

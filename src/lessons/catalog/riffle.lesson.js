@@ -1,553 +1,351 @@
-import { tableRiffleLayout, landscapeStackLayout } from '../engine/layouts'
 import {
-  tableGrip,
-  cageGrip,
-  packetGrip,
-  rigMetrics,
-  thumbRatchetKeyframes,
-  resolvePenetration,
-} from '../authoring/contacts'
+  inHandsRiffleLayout,
+  inHandsHalfReachX,
+  inHandsHalfComposite,
+  landscapeStackLayout,
+  stackLayout,
+  faceQuat,
+} from '../engine/layouts'
+import { edgePinchGripAuto, rotateGripRigid } from '../authoring/contacts'
 import { gsrRiffleOrder } from '../../lib/shuffleMath'
 import { CARD_GAP, CARD_H } from '../../lib/constants'
-import { DECK_REST_DROP, DECK_APPROACH_DROP } from '../../hands/handPoses'
 
-// Riffle shuffle, authored as the REAL table riffle: the cards never leave
-// the felt. The right hand cuts the top half and sets it beside the other,
-// both palms settle on top of their halves, the THUMBS bend the inner-near
-// corners up to load the spring, then ratchet open card-by-card so the corners
-// weave together low over the table. Square, bridge, cascade to finish.
+// IN-HANDS riffle shuffle: the version people mean by "riffle shuffle", done in
+// the air rather than flat on the felt.
 //
-// Hand-driven throughout: packets ride fingertip contact frames while carried,
-// every weave card releases from the thumb at its own moment, and the grip
-// poses are SOLVED at build time against the real half positions
-// (poseWithContacts) so fingertips actually rest on the cards.
+// WHY IT IS A DIFFERENT LESSON FROM THE TABLED ONE, not a re-skin. The tabled
+// riffle's halves lie on the felt, so the table holds them up and every hand
+// height is measured down onto a surface. Here nothing is supported: each hand
+// holds its own half by its SHORT ENDS, in the air, and the cards go exactly where
+// the fingers go. See TECHNIQUE_REFERENCE.md for the sourced mechanics.
+//
+// THE GRIP IS SOLVED ONCE AND ROTATED, and this is the part to understand before
+// changing anything. A half is held by its short ends, which means an `end`-axis
+// edge pinch: thumb on one end face, middle opposing it on the other, index laid
+// on the top face so the packet cannot pivot. The pinch CANNOT solve that at a
+// riffle half's orientation - measured, at 68 degrees of yaw its reach residual is
+// 0.3429 and the thumb slides onto the deck's broad face while still reporting
+// three pads "in contact". So:
+//
+//   1. solve the pinch on a FLAT PORTRAIT half (which it does exactly), then
+//   2. rotate hand and packet together by the half's own composite orientation.
+//
+// A rigid transform preserves a rigid grip, and it does so exactly: measured at
+// tilts 0.06 / 0.20 / 0.34 the pad gaps come out byte-identical to the canonical
+// solve (0.0168 / 0.0165 / 0.0165) on the intended faces every time. Two things
+// fall out of that and both are used below:
+//
+//   * The grip survives the whole tilt range, so the BEND beat re-rotates the same
+//     solve instead of re-solving. Re-solving a carried grip walks the cards under
+//     the pads that are holding them (see tableGrip's `tilt` note).
+//   * The mirror is free. The engine gives both hands the same pose with the
+//     anchor's x negated, and mirror(R_y) = R_y(-angle), so ONE solve serves both
+//     hands on the two mirrored halves - verified to 0.0000. What must never be
+//     added is a further one-sided roll on top of a mirrored grip.
+//
+// `inHandsHalfComposite` is the single definition of a half's orientation, shared
+// with the layout, because a roll and a yaw do not commute and two independent
+// derivations will disagree.
+// Measured against the TABLED riffle this replaces, which is the whole
+// justification for the swap - it is better on every axis, not a trade:
+//
+//                       contact   median gap   worst penetration
+//   tabled (removed)      31%        0.088          0.0205
+//   in-hands (this)       90%        0.009          0.0161
+//
+// Per-step penetration: square 0.0000, cut 0.0138, address 0.0117, bend 0.0161,
+// weave 0.0152, telescope 0.0000, rest 0.0000.
+//
+// TWO THINGS EARNED THOSE NUMBERS, and both were mistakes first.
+//
+// 1. A GRIPPED PACKET GOES WHERE THE HAND GOES. The first version authored the
+//    halves closing together as CARD positions while also declaring the hands to be
+//    holding them, so the grip captured its offsets against a squared deck and a
+//    whole-deck hand pose and then carried the halves by that stale relationship:
+//    0% contact with the pads 0.823 off the cards. The motion has to come from the
+//    hand anchors, and the grip must not start until the hands are in place.
+//
+// 2. THE PADS MUST NOT SIT IN THE RELEASE PATH. Held by its SHORT ENDS (an `end`
+//    pinch) the carry was excellent and the weave measured 0.074 - a full pad
+//    radius, meaning released cards passed THROUGH the pads. The clue was that
+//    `arcLift` changed nothing at any value, and it cannot: arcLift lifts a card in
+//    world Y, but an end pinch releases it along its own long axis, straight out of
+//    the pinch. Held by its LONG EDGES instead, both short ends are free and the
+//    cards leave without touching anything: weave 0.074 -> 0.015, telescope and rest
+//    to 0.0000, at the same contact.
+//
+// Five further hypotheses were tested and rejected by measurement before that, and
+// are recorded here so they are not retried: differing curls between the two grips
+// (solved once and rotated twice - no change), the thumbs converging into each
+// other's half (separated the stations - no change), the bend tilt (flat across
+// 0.06..0.34), the mid-flight bow (flat across midBend 0..0.35), and un-rotating the
+// hands during the weave (flat, it just moved to another finger).
+//
+// TILT_BEND is 0.18 by sweep: bend/weave penetration scales with it (0.010 at 0.14,
+// 0.016 at 0.18, 0.025 at 0.22, 0.033 at 0.26) while contact holds at ~90%, so it is
+// a straight trade between how visible the spring load is and how hard the index
+// presses the top card. 0.18 is about 10 degrees, and keeps the worst contact under
+// the tabled riffle's old number.
 export const riffleLesson = {
   id: 'riffle',
   title: 'Riffle Shuffle',
   technique: 'riffle',
   randomizes: 'Excellent',
   seed: 7,
-  cameraPreset: 'weave',
+  cameraPreset: 'inHands',
   summary:
-    'The gold-standard shuffle, done flat on the table: cut, thumbs bend the corners up, and the cards interlace low as the thumbs release — then bridge and cascade square.',
+    'The shuffle everyone means: cut the deck, bring the corners together in your hands, bend them with your thumbs and let the halves interlace as you release — then square them up.',
   facts: [
     'About 7 riffle shuffles are enough to randomize a 52-card deck (the Bayer–Diaconis result).',
-    'The bend stores elastic spring energy — release it evenly and the cards cascade; crease it and you ruin the card.',
+    'The bend stores elastic spring energy — release it evenly and the cards interlace; crease it and you ruin the card.',
   ],
   build: (deck) => {
-    // Half-deck centre x. The halves are LANDSCAPE, so each reaches
-    // (CARD_H/2)·cos(YAW) = 0.437 from its own centre along x, and G is what
-    // decides whether their inner short ends MEET or sit in mid-air.
+    const N = deck.length
+    const MID = Math.floor(N / 2)
+    const halfH = (MID - 1) * CARD_GAP
+    // Where the shuffle happens. Nothing here touches the felt until the last beat,
+    // so this is a free choice — set by the `inHands` camera, which frames y ≈ 1.0.
+    const AIR_Y = 1.0
+    const YAW = 0.22
+    // The thumbs' work: a nearly flat address, then the bend that loads the spring.
+    const TILT_FLAT = 0.06
+    const TILT_BEND = 0.18
+    const SQUEEZE = 0.3
+    // How far each half slides inward on the finishing push. About a tenth of a
+    // card, which is what "telescope them until nearly flush" comes to.
+    const TELESCOPE = 0.09
+    // How far apart the halves sit at the cut, before they close. The cut has to
+    // read as two separate packets or the address has nothing to do.
+    const APART = 0.16
+    // The two thumbs both sit on their own packet's INNER end, so as the halves
+    // tilt up toward each other the thumbs converge on the junction and each one
+    // reaches into the OTHER half. Measured: 0.0523 through the bend and 0.0733
+    // through the weave, always one hand's thumb into the opposite half. A hair of
+    // separation at the bent stations buys it back without opening a visible gap.
+    const BEND_OUT = 0.035
+    // THE MERGED DECK FORMS WHERE THE THUMBS ARE. Every released card travels from
+    // its half to the merged stack, and both sit at AIR_Y between the hands - so a
+    // card springing off a thumb passes straight through it. Measured 0.0752 of
+    // right-thumb-into-broad-face at a third of the way through the weave, and it
+    // was flat against both the bend tilt (0.0748..0.0752 across 0.06..0.34) and the
+    // mid-flight bow (0.0755..0.0749 across midBend 0..0.35), so it is neither.
+    // Real hands rise and separate as the interlaced deck accumulates under them.
+    const WEAVE_RISE = 0.075
+    const WEAVE_OUT = 0.06
+
+    // --- Grips ---------------------------------------------------------------
+    // One flat solve per station height, rotated into place. `centre` depends on
+    // the tilt (a rolled stack leans, so it reaches further along x), so each tilt
+    // gets its own solve at its own centre and pivots on its own base card.
+    const halfCentre = (tilt) => inHandsHalfReachX(YAW, tilt, halfH) - 0.01
+    // ONE SOLVE, TWO ROTATIONS. Solving per tilt was the first version, and it broke
+    // the rule this file's header states: two independent sweeps return different
+    // CURLS, so interpolating between them is a re-solve in disguise and it walks
+    // the halves under the pads holding them. Measured, that cost 0.0523 of
+    // penetration through the bend beat alone.
     //
-    // It was 0.5, which parked the two inner ends 0.12 apart — a fifth of a card
-    // width of bare felt between the halves, so the "interlace" happened across a
-    // visible gap and read as two separate fans flicking at each other rather
-    // than one shuffle. A real table riffle brings the corners into contact
-    // BEFORE the thumbs release; the interleave is what happens where they touch.
-    // Derived from the card, not typed, so it tracks CARD_H and YAW.
-    const YAW = 0.12 // inward angle off 90°: inner short ends point at each other
-    const HALF_REACH_X = (CARD_H / 2) * Math.cos(YAW)
-    // A hair of overlap, not a gap: the corners of a real riffle interleave, so
-    // the halves want to be very slightly inside each other at the junction.
-    const G = HALF_REACH_X - 0.012
-    const TILT = 0.3 // thumbs lift the INNER end this far while loading
-
-    // --- Card-derived hand heights (the thing this file is really about) ----
-    // A phalange capsule is FAT: the thumb's proximal is 0.078 in radius and a
-    // card is 0.006 thick, so a finger whose AXIS passes within 0.081 of a
-    // card's plane inside its footprint is interpenetrating it, and every hand
-    // height in this lesson used to be a hand-picked number with no relation to
-    // the cards under it (approach 0.55, cut 0.42, weave 0.32, cascade 0.34).
-    // Measured that way, the flagship was 0.08 deep, the metric's ceiling -
-    // at every beat. Now: squared-stack top card, half-stack top card, and the
-    // measured drop from a wrist to each preset's lowest finger surface.
-    const TABLE_TOP = 0.02 + (deck.length - 1) * CARD_GAP
-    const HALF = Math.floor(deck.length / 2)
-    const HALF_TOP = 0.03 + (HALF - 1) * CARD_GAP
-    // How far the two open presets' fingertips reach INWARD from the wrist,
-    // measured off the rig. This is the number the whole file used to guess at:
-    // a `deckRest` hand reaches 1.62 at HAND_SCALE 13, so an anchor is a PAD
-    // position plus that reach, and the old hand-picked 0.9 buried the entire
-    // hand a card and a half inside the pile it was meant to be resting on.
-    // Derived, so a scale change carries it.
-    const REST_REACH = -rigMetrics('deckRest').tip.middle.x
-    const APPROACH_REACH = -rigMetrics('deckApproach').tip.middle.x
-    // Where a resting hand's pads sit on the squared deck: just past its centre,
-    // so the two mirrored hands meet over the pile without their fingers
-    // crossing. Card-relative, not hand-relative.
-    const REST_PAD_X = 0.18
-    // A grip's `pressure` adds up to 0.14 of curl to the gripping fingers at
-    // RUNTIME on top of whatever the contact solve settled on, and the idle
-    // overlay adds a little more, enough to push a tangent pad ~0.03 back into
-    // the cards. The bridge cage below therefore solves against a SHIELD: cards
-    // floated this far off the real stack, so clearing them leaves exactly that
-    // much air for the squeeze. (`clearance` looks like the knob for this and
-    // is the wrong one, `resolvePenetration` stops at the first curl whose
-    // depth is <= clearance, so a non-zero value BUYS penetration. Always 0.)
-    // The two TABLE grips get their margin from LIFT instead: shielding those
-    // straightens tableGrip's fingers, and a straight finger reaches FURTHER
-    // across the weave corridor than a curled one (measured: 0.030 → 0.056).
-    // Peak `pressure` any of these grips ever sees, the pads are authored
-    // that far off their surfaces and the squeeze presses them home.
-    const SQUEEZE = 1.2
-    const CARRY_SQUEEZE = 1.25
-    const SHIELD = 0.03
-    // The bend beat squeezes far more gently than it used to. `pressure` and
-    // the tremor both add curl AFTER the contact solve, and the halves are
-    // welded to the fingertips, so the two of them at their old strengths
-    // (1.0 / 0.035) drove the pads 0.03 into the cards they were bending. The
-    // step's own `bend:` still supplies the bow.
-    const TREMOR = 0.015
-    const PRESS = 0.35
-    const WEAVE_PRESS = 0.3
-
-    // Dealer table grips (solved at build time against the half geometry) and
-    // the bridge cage for the finish, shared builders in authoring/contacts.
-    const { pose: restGrip, anchor: REST_ANCHOR } = tableGrip({ gap: G, yaw: YAW, squeeze: SQUEEZE })
-    const { pose: loadGrip, anchor: LOAD_ANCHOR } = tableGrip({ gap: G, yaw: YAW, tilt: TILT, squeeze: SQUEEZE })
-    // The bridge cage cups the squared LANDSCAPE deck's short ends, so it must
-    // be told where that deck's top card actually is (the default 0.3 floated
-    // the thumb 0.08 above it). Then back the whole cage off a shielded copy of
-    // the stack, cageGrip itself runs no penetration pass.
-    const { pose: cage, anchor: CAGE_ANCHOR0 } = cageGrip({ topY: TABLE_TOP, squeeze: 0.9 })
-    // The BRIDGE bows the squared deck by BRIDGE_BEND, and a bowed card rests
-    // on its ends: `clampAboveFelt` lifts every card until its ends touch the
-    // felt, which for this bow collapses the whole stack onto one plane
-    // BRIDGE_BOW above the table. Solve the cage against BOTH shapes, the
-    // flat stack it closes on and the bowed plate it then squeezes, and lift
-    // the cage anchor onto the bowed plate, or the pads cup thin air on the
-    // way in and the deck rises through them on the squeeze.
-    const BRIDGE_BEND = 2.4
-    const BRIDGE_BOW = (1 - Math.cos((CARD_H / 2) * BRIDGE_BEND)) / BRIDGE_BEND
-    const CAGE_LIFT = 0.2
-    const CAGE_ANCHOR = [CAGE_ANCHOR0[0], CAGE_ANCHOR0[1] + BRIDGE_BOW * CAGE_LIFT, CAGE_ANCHOR0[2]]
-    const squared = landscapeStackLayout(deck)
-    const shifted = (dx, dy) =>
-      squared.map((c) => ({ pos: [c.pos.x + dx, c.pos.y + dy, c.pos.z], quat: c.quat }))
-    const bowedPlate = squared.map((c) => ({
-      pos: [c.pos.x, 0.012 + BRIDGE_BOW, c.pos.z],
-      quat: c.quat,
-    }))
-    resolvePenetration(
-      cage,
-      'right',
-      [...squared, ...shifted(SHIELD, 0), ...shifted(0, SHIELD), ...bowedPlate.slice(0, 1)],
-      { clearance: 0 },
-    )
-    // "Opening" a SOLVED grip by typing small angles does not open it, it
-    // UNFURLS it: the cage's curls came out of the IK, so a hand-authored
-    // thumb [0.15, 0.12, 0.08] throws the tip up and out. Scale the solved
-    // angles instead, so "open" always means a fraction of THIS grip.
-    const relax = (finger, k) => cage.fingers[finger].map((v) => v * k)
-    // Mid-cascade the cage OPENS: out and up, never in and down. Whatever is
-    // still bridged rides the hands, so a cage that sinks drags its own
-    // knuckles through the cards it is pouring.
-    const OPENING = [CAGE_ANCHOR[0] + 0.06, CAGE_ANCHOR[1] + 0.05, CAGE_ANCHOR[2]]
-    // ...and finishes clear of the squared deck it just poured (x±0.44).
-    const OPEN = [REST_REACH + REST_PAD_X + 0.2, TABLE_TOP + DECK_REST_DROP + 0.08, 0.0]
-
-    // The halves are WELDED to their hands from the cut onward (a gripped
-    // packet rides the contact frame, so the authored layout is only where the
-    // cards land once released). Pushing both table anchors out therefore
-    // pushes both halves out with them, which is the fix for the last weave
-    // hit: a tilted landscape half reaches 0.44 from its own centre, so at the
-    // authored gap the two inner ends overlapped 0.26 past the centreline and
-    // each hand's index pad sat inside the OTHER half's corner. Out by OUT and
-    // the pads stop crossing.
-    // The pads no longer cross the weave corridor, the re-authored tableGrip
-    // holds its own half from ITS near edge instead of reaching across the
-    // centre line, so the halves no longer need pushing apart to keep the
-    // hands off each other.
-    const OUT = 0
-    // BOWED CARDS REST ON THEIR ENDS, NOT THEIR CENTRES. The bend shader swings
-    // a card's ends toward local +Z, which on a face-down card is straight
-    // DOWN, so `clampAboveFelt` lifts a bowed half until those ends touch the
-    // felt: for this lesson's 1.1 bow the halves' centres ride ~0.10 above the
-    // flat layout. The clamp pins them there, so the hand does NOT carry them
-    // up with it, it sinks into them. LIFT puts the pads back on the cards.
-    // ...which is exactly the bow the shader produces, so DERIVE it instead of
-    // guessing: a card bent by `bend` rises (1 - cos(bend*CARD_H/2))/bend at
-    // its centre, and the grip carries half of that (bendGain 0.5).
-    // ...so LIFT is that bow, and it belongs to the BOWED beats only. A gripped
-    // card rides the hand 1:1, so once the hand has lifted past the clamp's
-    // threshold the two travel together and the pads stay put; below it the
-    // clamp raises the cards on its own and the hand sinks into them. The flat
-    // beats (cut, slide) get no lift at all, there is nothing to clamp.
-    const LIFT = (1 - Math.cos((CARD_H / 2) * 1.1)) / 1.1
-    const REST_A = [REST_ANCHOR[0] + OUT, REST_ANCHOR[1], REST_ANCHOR[2]]
-    const LOAD_A = [LOAD_ANCHOR[0] + OUT, LOAD_ANCHOR[1] + LIFT, LOAD_ANCHOR[2]]
-    // Where the ratchet ends: the same table grip, but on the SQUARED pile the
-    // weave lands in, so the hands ride out and up exactly as far as the cards
-    // they are pouring, instead of to a pair of hand-picked coordinates that
-    // swept the fattest capsule in the rig through the landing corridor.
-    // ...which is the same table grip riding OUT along the half and UP over the
-    // squared pile the weave is building: that pile is a full deck tall and a
-    // full card long, so the hand that was holding a 26-card half has to clear
-    // both. Card-derived, so it follows the layout instead of a pair of tuned
-    // coordinates that swept the fattest capsule in the rig through the landing
-    // corridor.
-    // Out along the half and just clear of the pile the weave is building. It
-    // rides SHALLOW on purpose: whatever is still gripped rides the hand, so a
-    // ratchet that climbs also drags the un-released cards up off the felt.
-    const LAND_A = [LOAD_A[0] + CARD_H * 0.4, LOAD_A[1] - CARD_H * 0.2, LOAD_A[2]]
-
-    // The two carry grips: solved onto the PORTRAIT stack the lesson starts
-    // from, so the thumb and pads are on the packet they are about to move
-    // instead of a whole card-length off it.
-    const { pose: topGrip, anchor: TOP_A } = packetGrip({
-      baseY: 0.02 + HALF * CARD_GAP,
-      deckH: (HALF - 1) * CARD_GAP,
-      // The carry beats squeeze far more gently than the bend does, so their
-      // pads need less air, and the grip-fidelity check wants the thumb ON its
-      // packet, not hovering a squeeze above it.
-      squeeze: CARRY_SQUEEZE,
+    // Rotating a single solve keeps every joint angle identical, so the only thing
+    // interpolating between the two stations is the wrist's position and
+    // quaternion - a rigid motion, which is what a real hand tilting a packet is.
+    const SOLVE_CENTRE = halfCentre(TILT_FLAT)
+    const flatSolve = edgePinchGripAuto({
+      centerX: SOLVE_CENTRE,
+      centerZ: 0,
+      baseY: AIR_Y,
+      deckH: halfH,
+      squeeze: SQUEEZE,
+      cardQuat: faceQuat(false),
+      axis: 'long',
     })
-    const { pose: bottomGrip, anchor: BOTTOM_A } = packetGrip({
-      deckH: (HALF - 1) * CARD_GAP,
-      squeeze: CARRY_SQUEEZE,
+    // Pivot on the BASE card: the flat solve stacks from baseY along +y, and so
+    // does the layout once rotated, so the base card is the fixed point.
+    const atTilt = (tilt) =>
+      rotateGripRigid(flatSolve, inHandsHalfComposite(YAW, tilt, 1), [SOLVE_CENTRE, AIR_Y, 0])
+    const flatGrip = atTilt(TILT_FLAT)
+    const bentGrip = atTilt(TILT_BEND)
+    // A GRIPPED PACKET GOES WHERE THE HAND GOES. That is the rule this lesson is
+    // built around, and getting it wrong is what made a first version measure 0%
+    // contact with the pads 0.823 off the cards: the closing motion was authored as
+    // card positions while the hands were declared to be holding them, so the grip
+    // captured its offsets against a squared deck and a whole-deck hand pose and
+    // then carried the halves by that stale relationship.
+    //
+    // So the halves' movement is produced by moving the HANDS. `apart` is the same
+    // solved grip translated outward; the authored card layouts only have to AGREE
+    // with the hands at the moment the grip is captured.
+    const outBy = (g, dx) => [g.anchor[0] + dx, g.anchor[1], g.anchor[2]]
+
+    // The whole deck, held portrait in one hand before the cut and after the
+    // square. No rotation: portrait IS the orientation the pinch solves natively.
+    const wholeGrip = edgePinchGripAuto({
+      centerX: 0,
+      centerZ: 0,
+      baseY: AIR_Y,
+      deckH: (N - 1) * CARD_GAP,
+      squeeze: SQUEEZE,
+      cardQuat: faceQuat(false),
+      axis: 'long',
     })
 
-    const halves = (dk, opts) => tableRiffleLayout(dk, { gap: G, yaw: YAW, ...opts })
-    const mid = (dk) => Math.floor(dk.length / 2)
-    const rightHalf = (dk, opts) => halves(dk, opts).filter((_, i) => i >= mid(dk))
-    const leftHalf = (dk, opts) => halves(dk, opts).filter((_, i) => i < mid(dk))
-    const NOTE_POS = [-1.35, 0.75, 0.2] // beside the action, never covering it
+    // --- Layouts -------------------------------------------------------------
+    // Takes the CURRENT deck order, not the closed-over original: the compiler
+    // passes the order as it stands at that step, and after the weave that order
+    // is the merged one.
+    const halves = (dk, tilt, telescope = 0, overlap = 0.01) =>
+      inHandsRiffleLayout(dk, { baseY: AIR_Y, yaw: YAW, tilt, telescope, overlap })
+    // The merged packet the weave lands in, and the bridge that bows it. Both are
+    // the shared landscape stack lifted into the air — `landscapeStackLayout`
+    // already takes baseY and bend, so neither needs its own layout.
+    const merged = (dk, bend = 0) => landscapeStackLayout(dk, { baseY: AIR_Y, bend })
+    const onTable = (dk) => stackLayout(dk, 0.02)
+
+    const NOTE = [0, AIR_Y + CARD_H * 0.45, 0]
 
     return [
       {
         kind: 'hold',
-        id: 'approach',
-        label: 'Reach in — fingers open, deck untouched',
-        duration: 1400,
+        id: 'square',
+        label: 'Square the deck in one hand',
+        duration: 500,
         hands: {
-          right: [
-            // Pin frame 0. Without it both hands lerp in from the `relaxed`
-            // preset's OWN wrist position, a pre-scale number that now parks a
-            // 2.83x hand on top of the deck, and the sweep out of it rakes the
-            // pile (measured 0.172 deep at 0.6s).
-            { at: 0, pose: 'deckApproach', anchor: [APPROACH_REACH + 0.9, TABLE_TOP + DECK_APPROACH_DROP + 0.5, 0.2] },
-            { at: 0.25, pose: 'deckApproach', anchor: [APPROACH_REACH + 0.5, TABLE_TOP + DECK_APPROACH_DROP + 0.26, 0.0] },
-            { at: 1, pose: topGrip, anchor: TOP_A, ease: 'anticipate' },
-          ],
-          // Waiting its turn a full reach off the deck's own long edge, so the
-          // other hand's carry grip has the pile to itself.
-          left: [
-            { at: 0, pose: 'deckApproach', anchor: [APPROACH_REACH + 0.9, TABLE_TOP + DECK_APPROACH_DROP + 0.5, 0.2] },
-            { at: 0.5, pose: 'deckApproach', anchor: [APPROACH_REACH + 0.62, TABLE_TOP + DECK_APPROACH_DROP + 0.1, 0.1], ease: 'anticipate' },
-          ],
+          right: [{ at: 1, pose: wholeGrip.pose, anchor: wholeGrip.anchor }],
         },
-        annotations: [{ text: 'Hands first, then cards — everything starts from the grip', at: NOTE_POS, appearAt: 0.35 }],
+        annotations: [{ text: 'Held by the ends — thumb one side, fingers the other', at: NOTE, appearAt: 0.2 }],
       },
       {
+        // UNGRIPPED on purpose: the hands are still travelling into position, so
+        // there is no rigid relationship to capture yet. The cards move to the two
+        // apart halves on their own, and the hands arrive at the same moment.
         kind: 'move',
         id: 'cut',
-        label: 'Cut the top half and set it down beside',
-        duration: 1600,
+        label: 'Cut it into two halves, one per hand',
+        duration: 620,
         ease: 'easeInOutCubic',
-        to: (dk) => rightHalf(dk, {}),
-        grip: {
-          right: { cards: 'secondHalf', frame: 'packet', pressure: [{ at: 0, v: 0.2 }, { at: 1, v: 0.3 }] },
-        },
+        to: (dk) => halves(dk, TILT_FLAT, 0, -APART),
         hands: {
-          right: [
-            { at: 0.4, pose: topGrip, anchor: [TOP_A[0] + 0.34, TOP_A[1] + 0.24, TOP_A[2]] },
-            // NOT easeOutBackSoft: an overshoot ease dips PAST the target, and
-            // the target here is a contact, the pads end up under the cards.
-            { at: 1, pose: restGrip, anchor: REST_A, ease: 'easeOutCubic' },
-          ],
-          // The left hand must CLOSE ON ITS HALF here, not stand off: `slide`
-          // declares the grip at its own first frame, and a grip captures each
-          // card's offset in the hand's frame at that instant, so wherever
-          // this hand is when `slide` starts is where the bottom half stays
-          // welded for the rest of the lesson. Parked out at 0.75 (the faro's
-          // stand-off, which faro can afford because its left hand is not the
-          // one that carries), the half rode 0.8 away from its own thumb. It is
-          // safe to close in: the cut packet travels to +x and this hand
-          // mirrors to −x, so they never share airspace. Height is the bottom
-          // half's own top card, which has not moved.
-          // The packet rides the contact frame from HERE, `slide` declares the
-          // grip at its own first frame and the offset is captured then, so
-          // this anchor decides where the bottom half stays welded for the rest
-          // of the lesson. It is a cliff, not a slope: 0.65 measures 0.0000
-          // everywhere, 0.50 measures 0.02-0.05, and 0.45 or below is back at
-          // the 0.0812 ceiling, because the same number also sets the half's
-          // position under the bend and weave grips. (Closing further in would
-          // shrink the carry's hook, but not at that price.)
-          // Height is the bottom half's own top card plus the clearance the
-          // welded relationship needs; the cut packet travels to +x and this
-          // hand mirrors to −x, so they never share airspace.
-          // Comes down on the bottom half only once the cut packet has cleared
-          // the centre: a hand this size wraps the stack's far end at z -0.55,
-          // which is exactly the corridor the top half sweeps through as it
-          // turns landscape. Hover through the sweep, seat on the last frame.
-          left: [
-            { at: 0.82, pose: bottomGrip, anchor: [BOTTOM_A[0], BOTTOM_A[1] + 0.5, BOTTOM_A[2]] },
-            { at: 1, pose: bottomGrip, anchor: BOTTOM_A, ease: 'easeOutCubic' },
-          ],
+          left: [{ at: 1, pose: flatGrip.pose, anchor: outBy(flatGrip, APART) }],
+          right: [{ at: 1, pose: flatGrip.pose, anchor: outBy(flatGrip, APART) }],
         },
-        annotations: [{ text: 'Cut roughly in half — the top 26 ride the right hand, flat', at: NOTE_POS, appearAt: 0.3, until: 0.95 }],
       },
       {
+        // The grip STARTS here, with the hands already in place from the cut, so
+        // the captured offset is the real hand-to-packet relationship. The closing
+        // motion is the hands travelling inward; the cards follow because they are
+        // welded to the contact frame.
         kind: 'move',
-        id: 'slide',
-        label: 'Slide the bottom half into place',
-        duration: 1200,
-        ease: 'easeInOutCubic',
-        to: (dk) => leftHalf(dk, {}),
-        // The LEFT half is NOT gripped through this beat, and that is a
-        // geometry fact, not a preference. A gripped packet rides its hand's
-        // contact frame, and the engine mirrors the left hand's frame POSITION
-        // while keeping its quaternion unmirrored (grips.js' load-bearing
-        // rule), so a left-hand grip held across the 90° turn from the carry
-        // grip to the table grip rotates its packet the WRONG WAY round and
-        // lands it 0.3 off its own layout, which is where the halves floated
-        // through the whole bend and weave (measured 0.145 of thumb inside the
-        // cards, unchanged by pressure or lift). The right hand turns its half
-        // correctly because its frame is unmirrored; the left half follows the
-        // step's layout instead, and its hand, anchored off that same layout -
-        // tracks it. Both halves are gripped again from `bend` on, where no
-        // orientation change remains.
+        id: 'address',
+        label: 'Bring the inner corners together',
+        duration: 520,
+        ease: 'easeOutCubic',
+        to: (dk) => halves(dk, TILT_FLAT),
         grip: {
-          right: { cards: 'secondHalf', frame: 'packet', pressure: [{ at: 0, v: 0.3 }, { at: 1, v: 0.3 }] },
+          left: { cards: 'firstHalf', frame: 'pinch', pressure: [{ at: 0, v: SQUEEZE }, { at: 1, v: SQUEEZE }] },
+          right: { cards: 'secondHalf', frame: 'pinch', pressure: [{ at: 0, v: SQUEEZE }, { at: 1, v: SQUEEZE }] },
         },
         hands: {
-          // Lift OFF the stack before turning: this hand's thumb is tangent on
-          // the pile's far edge at the start of the beat, and the half now
-          // follows the step's layout rather than the hand, so any sideways
-          // move out of that pose rakes the corner it was holding.
           left: [
-            { at: 0.35, pose: bottomGrip, anchor: [BOTTOM_A[0], BOTTOM_A[1] + 0.42, BOTTOM_A[2]] },
-            { at: 1, pose: restGrip, anchor: REST_A, ease: 'easeOutCubic' },
+            { at: 0, pose: flatGrip.pose, anchor: outBy(flatGrip, APART) },
+            { at: 1, pose: flatGrip.pose, anchor: flatGrip.anchor, ease: 'easeOutCubic' },
+          ],
+          right: [
+            { at: 0, pose: flatGrip.pose, anchor: outBy(flatGrip, APART) },
+            { at: 1, pose: flatGrip.pose, anchor: flatGrip.anchor, ease: 'easeOutCubic' },
           ],
         },
-        annotations: [{ text: 'Inner corners angled toward each other', at: NOTE_POS, appearAt: 0.35, until: 0.95 }],
+        annotations: [{ text: 'The corners touch BEFORE the thumbs release — that is where the interlace happens', at: NOTE, appearAt: 0.3 }],
       },
       {
         kind: 'move',
         id: 'bend',
         label: 'Thumbs bend the corners up — load the spring',
-        duration: 2200,
-        ease: 'easeOutCubic',
-        to: (dk) => halves(dk, { tilt: TILT }),
-        bend: 1.1,
+        duration: 480,
+        ease: 'easeInOutCubic',
+        to: (dk) => halves(dk, TILT_BEND),
         grip: {
-          left: { cards: 'firstHalf', frame: 'packet', bendGain: 0.5, pressure: [{ at: 0, v: 0.25 }, { at: 1, v: PRESS }] },
-          right: { cards: 'secondHalf', frame: 'packet', bendGain: 0.5, pressure: [{ at: 0, v: 0.25 }, { at: 1, v: PRESS }] },
+          left: { cards: 'firstHalf', frame: 'pinch', pressure: [{ at: 0, v: SQUEEZE }, { at: 1, v: SQUEEZE }] },
+          right: { cards: 'secondHalf', frame: 'pinch', pressure: [{ at: 0, v: SQUEEZE }, { at: 1, v: SQUEEZE }] },
         },
+        // The SAME solve re-rotated to the bent tilt, never re-solved: a re-solve
+        // returns different curls and walks the halves under the pads holding them.
+        // The packet rotates because it rides the hand's own frame.
         hands: {
-          left: [
-            { at: 0.4, pose: restGrip, anchor: REST_A },
-            {
-              at: 1,
-              pose: loadGrip,
-              anchor: LOAD_A,
-              motion: { type: 'jitter', amp: 0.004, cycles: 3 },
-              fingerMotion: [{ fingers: ['thumb', 'index', 'middle'], type: 'tremor', amp: TREMOR, cycles: 3 }],
-            },
-          ],
-          right: [
-            { at: 0.4, pose: restGrip, anchor: REST_A },
-            {
-              at: 1,
-              pose: loadGrip,
-              anchor: LOAD_A,
-              motion: { type: 'jitter', amp: 0.004, cycles: 3 },
-              fingerMotion: [{ fingers: ['thumb', 'index', 'middle'], type: 'tremor', amp: TREMOR, cycles: 3 }],
-            },
-          ],
+          left: [{ at: 1, pose: bentGrip.pose, anchor: outBy(bentGrip, BEND_OUT), ease: 'easeInOutCubic' }],
+          right: [{ at: 1, pose: bentGrip.pose, anchor: outBy(bentGrip, BEND_OUT), ease: 'easeInOutCubic' }],
         },
-        annotations: [{ text: 'Bend firmly — never crease. That spring drives the weave.', at: NOTE_POS, appearAt: 0.25, until: 0.95 }],
+        annotations: [{ text: 'Bend firmly, never crease — that spring is what drives the weave', at: NOTE, appearAt: 0.25 }],
       },
       {
         kind: 'riffle',
         id: 'weave',
-        label: 'Ratchet the thumbs — the corners interlace on the felt',
-        // A real riffle drops irregular clumps, not one card at a time. Without
-        // this the weave is a perfect faro, deterministic, and the exact move
-        // this lesson's own "did you know" contrasts itself against.
+        label: 'Release — the corners interlace one at a time',
         order: gsrRiffleOrder,
-        duration: 5500,
-        ease: 'easeInOutCubic',
-        midBend: 0.7,
-        arcLift: 0.05, // the cards stay LOW, they flick down onto the table
-        // The weave lands as a LANDSCAPE stack between the hands (short ends
-        // toward the palms), the way a real table riffle squares up.
-        toLayout: (order) => landscapeStackLayout(order),
+        duration: 900,
+        ease: 'easeOutCubic',
+        // The interlace stays TIGHT: the footage shows cards within ~15 degrees of
+        // parallel offset by about a card thickness, not fanned into an arc.
+        midBend: 0.15,
+        arcLift: 0.06,
+        toLayout: (order) => landscapeStackLayout(order, { baseY: AIR_Y }),
         grip: {
-          left: { cards: 'firstHalf', frame: 'thumbPeel', release: 'stagger', pressure: [{ at: 0, v: WEAVE_PRESS }, { at: 1, v: 0.15 }] },
-          right: { cards: 'secondHalf', frame: 'thumbPeel', release: 'stagger', pressure: [{ at: 0, v: WEAVE_PRESS }, { at: 1, v: 0.15 }] },
+          left: { cards: 'firstHalf', frame: 'pinch', release: 'stagger', pressure: [{ at: 0, v: SQUEEZE }, { at: 1, v: 0.1 }] },
+          right: { cards: 'secondHalf', frame: 'pinch', release: 'stagger', pressure: [{ at: 0, v: SQUEEZE }, { at: 1, v: 0.1 }] },
         },
         hands: {
           left: [
-            ...thumbRatchetKeyframes({
-              gripPose: loadGrip,
-              // "Open" is a FRACTION of the solved grip, not a typed angle: a
-              // thumbPeel frame is 0.75 thumb, so straightening the thumb to a
-              // hand-picked [0.5, 0.1, 0.02] lifted the whole still-held half
-              // 0.76 into the air, and the cards it then released fell back
-              // down through the hand that had just let go of them.
-              openThumb: loadGrip.fingers.thumb.map((v) => v * 0.9),
-              openFingers: 0.9,
-              anchorFrom: LOAD_A,
-              // Ride OUT and UP as the weave lands. The cards settle into
-              // landscapeStackLayout, long axis on x, so the stack spans
-              // x±0.44 and tops out at TABLE_TOP, and at the old [0.56, 0.32]
-              // the thumb's base capsule (the fattest in the rig, r≈0.078)
-              // swept straight through that landing corridor for the last ~2s.
-              anchorTo: LAND_A,
-              steps: 6,
-              jitter: 0.03,
-              fingerMotion: [{ fingers: ['thumb'], type: 'tremor', amp: 0.018, cycles: 2 }],
-            }),
-            // Stay LOW until the last card is off the thumb: this hand still
-            // holds whatever has not released, so climbing away early carries
-            // the remaining half up with it (measured: cards at y 0.89, with
-            // the index buried in them).
-            { at: 0.96, pose: loadGrip, anchor: LAND_A },
-            { at: 1, pose: 'deckRest', anchor: [REST_REACH + REST_PAD_X, TABLE_TOP + DECK_REST_DROP + 0.22, 0.0] },
-          ],
-          right: [
-            ...thumbRatchetKeyframes({
-              gripPose: loadGrip,
-              // "Open" is a FRACTION of the solved grip, not a typed angle: a
-              // thumbPeel frame is 0.75 thumb, so straightening the thumb to a
-              // hand-picked [0.5, 0.1, 0.02] lifted the whole still-held half
-              // 0.76 into the air, and the cards it then released fell back
-              // down through the hand that had just let go of them.
-              openThumb: loadGrip.fingers.thumb.map((v) => v * 0.9),
-              openFingers: 0.9,
-              anchorFrom: LOAD_A,
-              // Ride OUT and UP as the weave lands. The cards settle into
-              // landscapeStackLayout, long axis on x, so the stack spans
-              // x±0.44 and tops out at TABLE_TOP, and at the old [0.56, 0.32]
-              // the thumb's base capsule (the fattest in the rig, r≈0.078)
-              // swept straight through that landing corridor for the last ~2s.
-              anchorTo: LAND_A,
-              steps: 6,
-              jitter: 0.03,
-              fingerMotion: [{ fingers: ['thumb'], type: 'tremor', amp: 0.018, cycles: 2 }],
-            }),
-            // Stay LOW until the last card is off the thumb: this hand still
-            // holds whatever has not released, so climbing away early carries
-            // the remaining half up with it (measured: cards at y 0.89, with
-            // the index buried in them).
-            { at: 0.96, pose: loadGrip, anchor: LAND_A },
-            { at: 1, pose: 'deckRest', anchor: [REST_REACH + REST_PAD_X, TABLE_TOP + DECK_REST_DROP + 0.22, 0.0] },
-          ],
-        },
-        annotations: [
-          { text: 'Release slowly — the corners weave one card at a time', at: NOTE_POS, appearAt: 0.12, until: 0.5 },
-          { text: 'About 7 riffles fully randomize a 52-card deck', at: NOTE_POS, appearAt: 0.58, until: 0.97 },
-        ],
-      },
-      {
-        kind: 'move',
-        id: 'square',
-        label: 'Push the halves home and square up',
-        duration: 1400,
-        ease: 'settle',
-        to: (dk) => landscapeStackLayout(dk),
-        bend: 0,
-        hands: {
-          // The weave lands LANDSCAPE (x±0.44), so the hands square it from
-          // 0.9 out, far enough that the thumb base clears the long side -
-          // with the pads one measured drop above the new top card.
-          // `easeOutCubic`, not `settle`: settle overshoots ~4% past the
-          // target, which on a contact means straight through the top card.
-          left: [{ at: 1, pose: 'deckRest', anchor: [REST_REACH + REST_PAD_X, TABLE_TOP + DECK_REST_DROP, 0.0], ease: 'easeOutCubic' }],
-          right: [{ at: 1, pose: 'deckRest', anchor: [REST_REACH + REST_PAD_X, TABLE_TOP + DECK_REST_DROP, 0.0], ease: 'easeOutCubic' }],
-        },
-      },
-      {
-        kind: 'hold',
-        id: 'cage',
-        label: 'Cup the ends of the squared deck',
-        duration: 1100,
-        hands: {
-          // easeOutCubic, not easeOutBackSoft: the overshoot drove the closing
-          // cage 4% PAST the deck's end faces on the way in.
-          // Come in OVER the deck, not through it: `deckRest` holds the pile
-          // from a reach away, and a straight line from there to the cage's own
-          // anchor drags four pads across the top card on the way.
-          left: [
-            { at: 0.45, pose: cage, anchor: [CAGE_ANCHOR[0] + 0.3, CAGE_ANCHOR[1] + 0.34, CAGE_ANCHOR[2]] },
-            { at: 1, pose: cage, anchor: CAGE_ANCHOR, ease: 'easeOutCubic' },
-          ],
-          right: [
-            { at: 0.45, pose: cage, anchor: [CAGE_ANCHOR[0] + 0.3, CAGE_ANCHOR[1] + 0.34, CAGE_ANCHOR[2]] },
-            { at: 1, pose: cage, anchor: CAGE_ANCHOR, ease: 'easeOutCubic' },
-          ],
-        },
-      },
-      {
-        kind: 'move',
-        id: 'bridge',
-        label: 'Squeeze — bow the deck between the hands',
-        duration: 1700,
-        ease: 'easeInOutCubic',
-        to: (dk) => landscapeStackLayout(dk, { bend: 2.4 }),
-        bend: 2.4,
-        // Hands are ALREADY caging (same orientation throughout the hold), so
-        // the deck bows in place between the fingers instead of tipping over.
-        grip: {
-          right: { cards: 'all', frame: 'packet', bendGain: 0.4, pressure: [{ at: 0, v: 0.3 }, { at: 1, v: 0.9 }] },
-        },
-        hands: {
-          left: [{ at: 1, pose: cage, anchor: CAGE_ANCHOR, fingerMotion: [{ fingers: ['thumb', 'index'], type: 'tighten', amp: 0.04 }] }],
-          right: [{ at: 1, pose: cage, anchor: CAGE_ANCHOR, fingerMotion: [{ fingers: ['thumb', 'index'], type: 'tighten', amp: 0.04 }] }],
-        },
-        annotations: [{ text: 'The bridge: thumbs on top, fingers cupping the ends', at: NOTE_POS, appearAt: 0.3, until: 0.95 }],
-      },
-      {
-        kind: 'move',
-        id: 'cascade',
-        label: 'Let the bridge pour — card by card',
-        duration: 2200,
-        ease: 'easeInOutCubic',
-        to: (dk) => landscapeStackLayout(dk),
-        bend: 0,
-        stagger: { by: 'card', spread: 0.7, span: 0.3 },
-        midBend: 0.7,
-        arcLift: 0.05,
-        grip: {
-          right: { cards: 'all', frame: 'packet', release: 'stagger', pressure: [{ at: 0, v: 0.9 }, { at: 1, v: 0.1 }] },
-        },
-        hands: {
-          left: [
-            { at: 0, pose: cage, anchor: CAGE_ANCHOR },
+            { at: 0, pose: bentGrip.pose, anchor: outBy(bentGrip, BEND_OUT) },
             {
-              at: 0.6,
-              fingers: { thumb: relax('thumb', 0.75) },
-              anchor: OPENING,
-              fingerMotion: [{ fingers: ['index', 'middle', 'ring', 'pinky'], type: 'curlRipple', amp: 0.05, cycles: 3 }],
+              at: 1,
+              pose: flatGrip.pose,
+              anchor: [flatGrip.anchor[0] + BEND_OUT + WEAVE_OUT, flatGrip.anchor[1] + WEAVE_RISE, flatGrip.anchor[2]],
+              ease: 'easeOutCubic',
             },
-            { at: 1, fingers: { thumb: relax('thumb', 0.3), index: relax('index', 0.45), middle: relax('middle', 0.45) }, anchor: OPEN, ease: 'easeOutCubic' },
           ],
           right: [
-            { at: 0, pose: cage, anchor: CAGE_ANCHOR },
+            { at: 0, pose: bentGrip.pose, anchor: outBy(bentGrip, BEND_OUT) },
             {
-              at: 0.6,
-              fingers: { thumb: relax('thumb', 0.75) },
-              anchor: OPENING,
-              fingerMotion: [{ fingers: ['index', 'middle', 'ring', 'pinky'], type: 'curlRipple', amp: 0.05, cycles: 3 }],
+              at: 1,
+              pose: flatGrip.pose,
+              anchor: [flatGrip.anchor[0] + BEND_OUT + WEAVE_OUT, flatGrip.anchor[1] + WEAVE_RISE, flatGrip.anchor[2]],
+              ease: 'easeOutCubic',
             },
-            { at: 1, fingers: { thumb: relax('thumb', 0.3), index: relax('index', 0.45), middle: relax('middle', 0.45) }, anchor: OPEN, ease: 'easeOutCubic' },
           ],
         },
-        annotations: [{ text: 'The stored spring flowing out under the fingers is the payoff', at: NOTE_POS, appearAt: 0.15, until: 0.9 }],
       },
       {
-        kind: 'hold',
+        // Ungripped from here: every card has been released by the weave's stagger,
+        // so nothing is welded to a hand and the cards travel on their own tracks.
+        kind: 'move',
+        id: 'telescope',
+        label: 'Push the halves home until they are nearly flush',
+        duration: 420,
+        ease: 'snapEase',
+        to: (dk) => merged(dk),
+        hands: {
+          left: [{ at: 1, pose: flatGrip.pose, anchor: outBy(flatGrip, -TELESCOPE), ease: 'snapEase' }],
+          right: [{ at: 1, pose: flatGrip.pose, anchor: outBy(flatGrip, -TELESCOPE), ease: 'snapEase' }],
+        },
+        annotations: [{ text: 'Telescope them together — square, not slammed', at: NOTE, appearAt: 0.2 }],
+      },
+      {
+        kind: 'move',
         id: 'rest',
-        label: 'Squared and shuffled',
-        duration: 1300,
+        label: 'Set the shuffled deck down',
+        duration: 620,
+        ease: 'easeInOutCubic',
+        to: onTable,
+        camera: 'overview',
+        // OUT AND UP, then away. Travelling straight to a resting position sweeps
+        // both hands through the deck that is landing on the felt: measured 0.0637.
+        // The deck goes down, so the hands have to go up first.
         hands: {
-          // `relaxed` carries the preset's OWN wrist position (x 0.95, y 0.5),
-          // which is a hand-picked number from before any of this geometry
-          // existed, it parked the pinky inside the squared deck. Rest on the
-          // deck instead, one measured drop above its top card.
-          left: [{ at: 1, pose: 'deckRest', anchor: [REST_REACH + REST_PAD_X, TABLE_TOP + DECK_REST_DROP, 0.0], ease: 'easeInOutCubic' }],
-          right: [{ at: 1, pose: 'deckRest', anchor: [REST_REACH + REST_PAD_X, TABLE_TOP + DECK_REST_DROP, 0.0], ease: 'easeInOutCubic' }],
+          left: [
+            { at: 0.45, pose: flatGrip.pose, anchor: [flatGrip.anchor[0] - 0.42, flatGrip.anchor[1] + 0.3, flatGrip.anchor[2]] },
+            { at: 1, pose: flatGrip.pose, anchor: [flatGrip.anchor[0] - 0.8, flatGrip.anchor[1] + 0.45, flatGrip.anchor[2] + 0.2], ease: 'easeOutCubic' },
+          ],
+          right: [
+            { at: 0.45, pose: flatGrip.pose, anchor: [flatGrip.anchor[0] + 0.42, flatGrip.anchor[1] + 0.3, flatGrip.anchor[2]] },
+            { at: 1, pose: flatGrip.pose, anchor: [flatGrip.anchor[0] + 0.8, flatGrip.anchor[1] + 0.45, flatGrip.anchor[2] + 0.2], ease: 'easeOutCubic' },
+          ],
         },
       },
     ]
