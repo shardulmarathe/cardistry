@@ -36,6 +36,12 @@ let nonFinite = 0, belowFelt = 0, worstPen = 0, penWhere = ''
 // unchanged pose. Cards pierced is monotone and unbounded, so it can tell "grazed one
 // card" from "knuckle driven through twenty".
 let worstPierce = 0, pierceWhere = ''
+const stepGaps = new Map()
+const stepIdAt = (ms) => {
+  let id = track.steps[0]?.id ?? '-'
+  for (const st of track.steps) if (ms >= st.tStart) id = st.id
+  return id
+}
 const gaps = []
 
 const N = 160
@@ -92,7 +98,15 @@ for (let i = 0; i <= N; i++) {
         const o = Math.hypot(Math.max(e.x, 0), Math.max(e.u, 0), Math.max(e.n, 0))
         best = Math.min(best, o > 0 ? o : Math.max(e.x, e.u, e.n))
       }
-      gaps.push(best - FINGERS[nm].rad[2] * HAND_SCALE)
+      const gap = best - FINGERS[nm].rad[2] * HAND_SCALE
+      gaps.push(gap)
+      // Per-step too. An aggregate contact percentage hides WHICH beat is detached,
+      // and that is the thing a capture shows you and a single number does not: the
+      // charlier reads 69% overall while its pivot has the packets visibly clear of
+      // the fingers.
+      let bucket = stepGaps.get(stepIdAt(ms))
+      if (!bucket) stepGaps.set(stepIdAt(ms), (bucket = []))
+      bucket.push(gap)
     }
   }
 }
@@ -134,4 +148,12 @@ for (let i = 0; i <= N; i++) {
   perStep.set(step.id, Math.max(perStep.get(step.id) ?? 0, w))
 }
 console.log('  per-step worst: ' + [...perStep].map(([k, v]) => `${k} ${v.toFixed(4)}`).join('  '))
+if (stepGaps.size) {
+  const line = [...stepGaps].map(([k, v]) => {
+    const pct = Math.round((100 * v.filter((g) => Math.abs(g) < 0.025).length) / v.length)
+    const med = [...v].sort((a, b) => a - b)[v.length >> 1]
+    return `${k} ${pct}% (med ${med.toFixed(3)})`
+  })
+  console.log('  per-step contact: ' + line.join('  '))
+}
 console.log(`  gripping fingertips in contact ${(frac * 100).toFixed(0)}% of ${gaps.length}, median gap ${gaps.length ? gaps[gaps.length >> 1].toFixed(3) : '-'}`)
