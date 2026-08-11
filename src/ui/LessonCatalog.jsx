@@ -6,7 +6,6 @@ import { compileLesson } from '../lessons/engine/compileLesson'
 
 const WIDE_QUERY = '(min-width: 900px)'
 const PREVIEW_DELAY = 280 // debounce: never pay for a compile on a stray click
-const LOOP_HOLD = 900 // beat on the finished pose before the preview loops
 
 // Remembered across mounts so coming back from a lesson lands where you were.
 let lastSelectedId = null
@@ -84,57 +83,33 @@ function trackFor(lesson, deck) {
   return track
 }
 
+// A STILL POSTER FRAME, not a running preview. This used to load the technique and
+// loop it forever while the catalog was open, which meant the table was shuffling
+// continuously the whole time you were browsing - and there was no way to stop it
+// short of leaving the tab. Nothing here plays now: opening a technique from the
+// catalog is what starts it, and even then the lesson loads PAUSED behind its own
+// "Play demo" button.
+//
+// The frame is taken from partway through rather than from 0, because every lesson
+// starts on the same squared deck: at frame 0 all four posters are identical. At 45%
+// each one is inside its signature beat - the riffle mid-interlace, the wash mid-
+// spread - so the catalog still tells you what you are choosing between.
+const POSTER_AT = 0.45
+
 function usePreview(lessonId) {
   useEffect(() => {
     const lesson = lessonId ? getLessonById(lessonId) : null
     if (!lesson) return undefined
     const previewId = previewIdOf(lesson.id)
-    let phase = 'pending'
-    let loop = 0
-    let hold = 0
-    let rafA = 0
-    let rafB = 0
-
-    // Reached the end: hold the finished pose for a beat, then loop. The runner
-    // only re-reads globalMs while paused, so rewinding = pause → let a frame
-    // land on ms 0 → play.
-    const tick = () => {
-      const p = usePlayer.getState()
-      if (phase !== 'playing' || p.lessonId !== previewId || !p.track) return
-      if (p.playing && p.globalMs < p.durationMs - 20) return
-      phase = 'looping'
-      hold = window.setTimeout(() => {
-        usePlayer.setState({ playing: false, globalMs: 0, stepIndex: 0 })
-        rafA = requestAnimationFrame(() => {
-          rafB = requestAnimationFrame(() => {
-            if (usePlayer.getState().lessonId !== previewId) return
-            usePlayer.setState({ playing: true, direction: 1 })
-            phase = 'playing'
-          })
-        })
-      }, LOOP_HOLD)
-    }
-
     const start = window.setTimeout(() => {
       const track = trackFor(lesson, useAppStore.getState().deck)
       usePlayer.getState().loadTrack(previewId, track)
-      // `loadTrack` loads PAUSED at frame 0, because opening a technique should
-      // not fling you into the middle of a shuffle. That is a lesson behaviour,
-      // not a global one: this preview is meant to be running. Without an
-      // explicit play it only started via the loop path below, a full LOOP_HOLD
-      // (900ms) later, which read as the table failing to cue.
-      usePlayer.getState().play()
-      phase = 'playing'
-      loop = window.setInterval(tick, 160)
+      // `scrubTo` seeks, sets the step index and leaves the player PAUSED, which is
+      // exactly a poster frame. It also bumps `seekNonce`, which is what makes the
+      // runner re-read the position while paused.
+      usePlayer.getState().scrubTo(track.duration * POSTER_AT)
     }, PREVIEW_DELAY)
-
-    return () => {
-      window.clearTimeout(start)
-      window.clearTimeout(hold)
-      window.clearInterval(loop)
-      cancelAnimationFrame(rafA)
-      cancelAnimationFrame(rafB)
-    }
+    return () => window.clearTimeout(start)
   }, [lessonId])
 }
 
@@ -212,7 +187,7 @@ export default function LessonCatalog() {
           </div>
           {!infoOpen && (
             <p className="catalog-lede">
-              Pick one and it runs on the table beside you — watch it before you commit.
+              Pick one to see it posed on the table, then start the lesson when you’re ready.
             </p>
           )}
         </div>
@@ -297,7 +272,7 @@ export default function LessonCatalog() {
             </button>
             <p className={`preview-status${previewLive ? ' is-live' : ''}`}>
               <span className="preview-dot" aria-hidden="true" />
-              {previewLive ? 'Playing on the table — drag the felt to orbit' : 'Cueing the table…'}
+              {previewLive ? 'Posed on the table — drag the felt to orbit' : 'Setting the table…'}
             </p>
           </div>
         ) : (

@@ -101,17 +101,64 @@ async function main() {
     }
 
     // --- 2. Switching technique mid-shuffle stops the outgoing run -----------
+    // THE CATALOG MUST BE STILL. It used to load the selected technique and loop it
+    // forever as a live preview, so the table shuffled continuously the whole time you
+    // were browsing, with no way to stop it short of leaving the tab. It is a poster
+    // frame now: parked partway in so each technique reads distinctly, and paused.
+    // Checked by sampling twice a second apart: a running preview moves, a poster does
+    // not. The frame count is reported but NOT asserted - r3f renders on demand, so a
+    // genuinely still scene correctly stops drawing, and requiring frames to climb
+    // would fail precisely when the fix is working. `playing` is a direct state read,
+    // so this is not vacuous without it.
+    await page.evaluate(() => {
+      const app = window.__cardistry.stores.app.getState();
+      app.closeLesson();
+      app.setMode("lesson");
+    });
+    await sleep(1400);
+    const c1 = await page.evaluate(() => {
+      const p = window.__cardistry.stores.player.getState();
+      return { playing: p.playing, ms: p.globalMs, frames: window.__cardistry.frameCounter.n };
+    });
+    await sleep(1000);
+    const c2 = await page.evaluate(() => {
+      const p = window.__cardistry.stores.player.getState();
+      return { playing: p.playing, ms: p.globalMs, frames: window.__cardistry.frameCounter.n };
+    });
+    if (c1.playing || c2.playing) note("catalog: preview is playing (should be a still poster)");
+    if (c1.ms !== c2.ms) note(`catalog: preview advanced ${c1.ms} -> ${c2.ms} while idle`);
+    if (!(c1.ms > 0)) note(`catalog: poster frame is at ms ${c1.ms}; every lesson looks identical at 0`);
+    console.log(
+      `  catalog: still poster at ${Math.round(c1.ms)}ms, not playing` +
+        ` (${c2.frames - c1.frames} frames drawn while idle)`,
+    );
+
     for (let r = 0; r < ROUNDS; r++) {
       for (let i = 0; i < lessons.length; i++) {
         const from = lessons[i];
         const to = lessons[(i + 1) % lessons.length];
         await page.evaluate((x) => window.__cardistry.openLesson(x), from);
-        await sleep(700);
-        await page.evaluate(() => window.__cardistry.stores.player.getState().play());
-        await sleep(500);
-        const mid = await page.evaluate(
-          () => window.__cardistry.stores.player.getState().globalMs,
+        // WAIT FOR THE TRACK, do not assume a fixed delay. Compiling a lesson takes
+        // real time (the riffle measures ~230ms) and the runner mounts on a rAF, so a
+        // flat 700ms + 500ms raced the setup and reported "outgoing run never advanced"
+        // intermittently - which read as a product bug and was this test.
+        await page.waitForFunction(
+          (x) => {
+            const p = window.__cardistry.stores.player.getState();
+            return p.lessonId === x && !!p.track && p.durationMs > 0;
+          },
+          { timeout: 8000 },
+          from,
         );
+        await page.evaluate(() => window.__cardistry.stores.player.getState().play());
+        // ...and poll until it has actually advanced, rather than sleeping and hoping.
+        let mid = 0;
+        for (let w = 0; w < 40 && !(mid > 0); w++) {
+          await sleep(50);
+          mid = await page.evaluate(
+            () => window.__cardistry.stores.player.getState().globalMs,
+          );
+        }
         await page.evaluate((x) => window.__cardistry.openLesson(x), to);
         await sleep(1200);
         const s = await page.evaluate(() => {
