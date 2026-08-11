@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { landscapeStackLayout, stackLayout, faceQuat } from '../engine/layouts'
-import { edgePinchGripAuto } from '../authoring/contacts'
+import { edgePinchGripAuto, thumbRatchetKeyframes } from '../authoring/contacts'
 import { gsrRiffleOrder } from '../../lib/shuffleMath'
 import { CARD_GAP, CARD_H } from '../../lib/constants'
 
@@ -127,6 +127,24 @@ export const riffleLesson = {
       })
     }
     const merged = (dk, bend = 0) => landscapeStackLayout(dk, { baseY: TABLE_Y, bend })
+    // The release's hand track. `spread`/`span` match the riffle step's own per-card
+    // stagger so the hand's opening and the cards' departures are the same event.
+    const ratchet = thumbRatchetKeyframes({
+      gripPose: grip.pose,
+      // A SUBTLE ratchet, expressed as a FRACTION of this grip's own solved curls
+      // rather than an absolute open pose. Opening all the way to a fixed relaxed hand
+      // was measured and it takes every pad off the cards that are still held: weave
+      // contact 50% -> 0%. Releasing does mean letting go, but only of the cards that
+      // have already left - a real hand stays on the ones it has not poured yet.
+      openThumb: grip.pose.fingers.thumb.map((v) => v * 0.88),
+      openFingers: 0.94,
+      anchorFrom: outBy(0, CARD_H * 0.06),
+      anchorTo: outBy(0.1, CARD_H * 0.24),
+      spread: 0.7,
+      span: 0.3,
+      steps: 8,
+      jitter: 0.025,
+    })
     const NOTE = [0, CARD_H * 0.5, 0.55]
 
     return [
@@ -139,7 +157,7 @@ export const riffleLesson = {
         kind: 'move',
         id: 'square',
         label: 'A squared deck on the table',
-        duration: 420,
+        duration: 760,
         ease: 'easeInOutCubic',
         to: (dk) => merged(dk),
         annotations: [{ text: 'Flat on the felt — this is the basic riffle', at: NOTE, appearAt: 0.2 }],
@@ -150,7 +168,7 @@ export const riffleLesson = {
         kind: 'move',
         id: 'cut',
         label: 'Cut it into two halves, side by side',
-        duration: 560,
+        duration: 1040,
         ease: 'easeInOutCubic',
         to: (dk) => halves(dk, { apart: APART }),
         // The hands FLY IN from outboard and above, arriving as the two halves settle.
@@ -173,7 +191,7 @@ export const riffleLesson = {
         kind: 'move',
         id: 'address',
         label: 'Bring the inner ends together',
-        duration: 460,
+        duration: 900,
         ease: 'easeOutCubic',
         to: (dk) => halves(dk),
         grip: {
@@ -196,7 +214,7 @@ export const riffleLesson = {
         kind: 'move',
         id: 'bend',
         label: 'Bend the inner ends up — load the spring',
-        duration: 520,
+        duration: 1150,
         ease: 'easeInOutCubic',
         // THE BEND IS THE CARDS, not the hands. `bend` bows each half along its own
         // long axis, which runs from the fingers at the inner end to the thumb at the
@@ -220,7 +238,7 @@ export const riffleLesson = {
         id: 'weave',
         label: 'Let them go — the ends interlace one at a time',
         order: gsrRiffleOrder,
-        duration: 820,
+        duration: 2100,
         ease: 'easeOutCubic',
         // The interlace stays TIGHT and LOW: on a table the cards fall onto the felt
         // rather than arcing through the air, so the lift is small and the mid-flight
@@ -239,15 +257,20 @@ export const riffleLesson = {
         // climbed steadily across the beat, 0.0172 at the start to 0.0441 by the end,
         // and it was the right middle's distal every time. Rising CARD_H*0.24 and
         // easing further out takes the same beat to 0.0020.
+        // A RATCHETING RELEASE, not two keyframes with an ease between them. The whole
+        // point of this beat is that the cards leave ONE AT A TIME, so the hand has to
+        // open progressively in step with them rather than gliding from closed to open:
+        // `thumbRatchetKeyframes` walks the thumb and the four fingers out across the
+        // release window in `steps` increments, with a little jitter so it reads as a
+        // spring letting go rather than a linear interpolation.
+        //
+        // Its `openFingers` is not decoration. A ratcheting digit on a still-held packet
+        // drags that packet across pads that are standing still and ends up inside the
+        // cards it is pouring; letting the whole hand open as its half empties is both
+        // the fix and what a real release looks like.
         hands: {
-          left: [
-            { at: 0, pose: grip.pose, anchor: outBy(0, CARD_H * 0.06) },
-            { at: 1, pose: grip.pose, anchor: outBy(0.14, CARD_H * 0.24), ease: 'easeOutCubic' },
-          ],
-          right: [
-            { at: 0, pose: grip.pose, anchor: outBy(0, CARD_H * 0.06) },
-            { at: 1, pose: grip.pose, anchor: outBy(0.14, CARD_H * 0.24), ease: 'easeOutCubic' },
-          ],
+          left: ratchet,
+          right: ratchet,
         },
       },
       {
@@ -256,7 +279,7 @@ export const riffleLesson = {
         kind: 'move',
         id: 'push',
         label: 'Push the halves square',
-        duration: 400,
+        duration: 820,
         ease: 'snapEase',
         to: (dk) => merged(dk),
         hands: {
@@ -269,7 +292,7 @@ export const riffleLesson = {
         kind: 'move',
         id: 'rest',
         label: 'Shuffled, and squared on the felt',
-        duration: 560,
+        duration: 900,
         ease: 'easeInOutCubic',
         to: (dk) => stackLayout(dk, TABLE_Y),
         camera: 'overview',

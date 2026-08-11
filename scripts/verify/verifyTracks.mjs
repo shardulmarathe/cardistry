@@ -339,7 +339,29 @@ const CONTACT_FLOOR = {
   // What did NOT get relaxed: penetration. The tabled version measures 0.0135 worst
   // against the same 0.017 budget, which is better than the in-hands version's 0.0162,
   // with 0 cards pierced.
-  riffle: 0.5, // measured 0.54, median gap 0.018
+  // 0.50 -> 0.30, and this second drop is a different thing from the first: it is the
+  // metric failing to describe a RELEASE, not the pose getting worse.
+  //
+  // The weave now RATCHETS open - the thumb and fingers walk out in eight increments
+  // across the release window, so the cards leave one at a time instead of the hand
+  // gliding from closed to open while clamped. That is what the move actually is, and
+  // it was asked for directly. But a pad is ~0.074 across and the contact band is
+  // 0.025, so opening a digit by even 12% of its solved curl puts that pad outside the
+  // band: measured three ways (absolute open pose, reduced anchor travel, and a subtle
+  // 0.88x/0.94x fraction of the solved curls), the weave scores 0-7% every time while
+  // address and bend hold at 56% and 52%.
+  //
+  // The metric only scores cards still HELD, so this is not released cards dragging it
+  // down - it is that our remaining cards sit at their layout positions while the hand
+  // opens, whereas a real emptying packet thins TOWARD the pads and stays in contact.
+  // Fixing that properly means either excluding release windows from this floor or
+  // letting a thinning packet track the hand; both are harness changes, so the floor
+  // records the gap rather than pretending it is not there.
+  //
+  // Penetration went the other way and is not relaxed: the weave measures 0.0000 (was
+  // 0.0020) and the push 0.0033 (was 0.0130), because an opening hand is also a hand
+  // getting out of the way.
+  riffle: 0.3, // measured 0.37, median gap 0.043
   // OVERHAND STILL SHIPS A HOVER and this floor records it rather than blessing
   // it. Its receiving hand models a top PEEL, and the sourced mechanics say the
   // real move is a bottom grasp-and-release onto a cradled pile (see

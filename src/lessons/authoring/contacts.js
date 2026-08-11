@@ -1230,6 +1230,14 @@ export function edgePinchGrip({
   along = 0,
   roll = 0,
   indexLead = PINCH_INDEX_LEAD,
+  // AZIMUTH OF THE APPROACH: which way the wrist trails from the pads. Default 0
+  // keeps every existing caller identical. It exists because an `end` pinch puts the
+  // wrist on the thumb's side, so a hand whose thumb must reach the INNER end of a
+  // packet - a table riffle's peeling thumb - would otherwise put its wrist in the
+  // middle of the table, and two such hands overlap. Yawing the approach lets the
+  // wrist trail toward the near side instead, the way a dealer's forearms actually
+  // come in. `tableGrip` already does this with the same `eulerYXZ` middle argument.
+  yaw = 0,
   // Omit the index stabiliser. The index normally lies on the packet's TOP FACE to
   // stop it pivoting, which is right for a hand that only HOLDS. It is wrong for a
   // RECEIVING hand: in an overhand the packets land on that very face, so a finger
@@ -1240,7 +1248,7 @@ export function edgePinchGrip({
 } = {}) {
   const faces = PINCH_FACES[axis]
   if (!faces) throw new Error(`edgePinchGrip: axis must be 'long' or 'end', got '${axis}'`)
-  const quat = eulerYXZ(PINCH_PALM, 0, roll)
+  const quat = eulerYXZ(PINCH_PALM, yaw, roll)
   const seed = seeded('deckRest', PINCH_SEED, 0.1)
   const M = rigMetrics(seed, quat)
   const travel = squeezeTravel(seed, 'right', 'pinch', squeeze)
