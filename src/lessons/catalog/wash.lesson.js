@@ -306,14 +306,19 @@ export const washLesson = {
       if (bySide[-1][i]) spread1.push(bySide[-1][i])
     }
 
+    // THREE PASSES WITH THE HANDS LIFTING BETWEEN THEM, which is what the footage
+    // shows and what casinos actually do - a wash is not one continuous swirl, it is
+    // repeated bouts with the hands coming off the felt in between. Directions
+    // alternate so no clump survives a single rotational direction.
     const spread2 = smooshPass(spread1, rng, 1)
     const spread3 = smooshPass(spread2, rng, -1)
+    const spread4 = smooshPass(spread3, rng, 1)
 
     // Gather: right palm plows its half in first (bottom of the new stack),
     // then the left palm pushes the rest on top. Plow order: the card nearest
     // the incoming palm moves first.
-    const rightHalf = spread3.filter((p) => p.pos.x >= 0)
-    const leftHalf = spread3.filter((p) => p.pos.x < 0)
+    const rightHalf = spread4.filter((p) => p.pos.x >= 0)
+    const leftHalf = spread4.filter((p) => p.pos.x < 0)
     const byId = new Map(deck.map((c) => [c.id, c]))
     const finalOrder = [
       ...shuffleArray(rightHalf.map((p) => byId.get(p.id)), rng),
@@ -390,6 +395,18 @@ export const washLesson = {
           { fingers: ['thumb'], type: 'curlRipple', amp: RAKE_AMP * 0.6, cycles: 4, phase: 0.4 },
         ],
       },
+    ]
+
+    // THE LIFT BETWEEN PASSES, and it also carries the DESCENT for the pass that
+    // follows. That is not a stylistic choice: `motion.orbit` is a wrist overlay that
+    // is only zero at both ends across an integer number of cycles, so it has to own a
+    // whole keyframe segment. If a smoosh beat had to descend first it would need two
+    // segments and the orbit would no longer close. Ending this beat exactly on
+    // SM_ANCHOR keeps every smoosh a single clean segment.
+    const LIFT_H = CARD_H * 0.42
+    const liftHands = (spread) => [
+      { at: 0.5, pose: rakePose(RAKE_BASE, spread), anchor: pressAt(CX + AMP, SPREAD_TOP, CZ, LIFT_H), ease: 'easeOutCubic' },
+      { at: 1, pose: rakePose(RAKE_BASE, spread), anchor: SM_ANCHOR, ease: 'easeInOutCubic' },
     ]
 
     const squareHands = [
@@ -474,7 +491,7 @@ export const washLesson = {
         kind: 'move',
         id: 'smoosh-1',
         label: 'Each palm swirls its half in circles',
-        duration: 4500,
+        duration: 3000,
         ease: 'linear',
         to: () => spread2,
         stagger: { by: 'card', spread: 0.7, span: 0.3 },
@@ -488,9 +505,18 @@ export const washLesson = {
       },
       {
         kind: 'move',
+        id: 'lift-1',
+        label: 'Hands come off the felt',
+        duration: 520,
+        ease: 'easeInOutCubic',
+        to: () => spread2,
+        hands: { left: liftHands(0.5), right: liftHands(0.5) },
+      },
+      {
+        kind: 'move',
         id: 'smoosh-2',
         label: 'Reverse direction — break up every clump',
-        duration: 4500,
+        duration: 3000,
         ease: 'linear',
         to: () => spread3,
         stagger: { by: 'card', spread: 0.7, span: 0.3 },
@@ -500,6 +526,31 @@ export const washLesson = {
         },
         annotations: [
           { text: 'Casinos wash for a full minute — change direction often', appearAt: 0.2 },
+        ],
+      },
+      {
+        kind: 'move',
+        id: 'lift-2',
+        label: 'And again',
+        duration: 520,
+        ease: 'easeInOutCubic',
+        to: () => spread3,
+        hands: { left: liftHands(0.56), right: liftHands(0.56) },
+      },
+      {
+        kind: 'move',
+        id: 'smoosh-3',
+        label: 'A third pass, direction reversed again',
+        duration: 3000,
+        ease: 'linear',
+        to: () => spread4,
+        stagger: { by: 'card', spread: 0.7, span: 0.3 },
+        hands: {
+          left: smooshHands(1, 0.7),
+          right: smooshHands(1, 0.7),
+        },
+        annotations: [
+          { text: 'Lift, reset, repeat — the hands do not stay down for one long swirl', appearAt: 0.2 },
         ],
       },
       {
