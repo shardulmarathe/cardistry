@@ -103,15 +103,29 @@ import { CARD_GAP } from '../../lib/constants'
 //     the left hand goes from gripping 52 cards to gripping 15, and halfway is neither.
 //     A waypoint solved for the intermediate size keeps the path near solved poses.
 //
-// WHAT REMAINS IS ONE CARD, pierced by the left index's TIP at 814ms, mid-lift. Ruled
-// out by measurement, not by argument:
-//   - squeeze: swept 0.3 / 0.2 / 0.12, pierce stays 1 and contact stays 81%. Not the
-//     pressure model pressing pads into cards.
-//   - `stabilise: false` on the pile hand: pierce stays 2, contact drops 81% -> 74%.
-//     This also retires the earlier rejection for a better reason - it does not help.
-// It is a tip crossing a plane by a hair during a pose transition, which is the same
-// order as the 0.016 tip-grazes the three shipping lessons carry; they simply stay on
-// the near side of the surface.
+// WHAT REMAINS IS ONE CARD, and the cause is the STAGING rather than any grip or solve.
+// In a `long` pinch the index lies on the gripped packet's TOP FACE as a stabiliser.
+// This is the receiving hand, so that face is the pile's top - and the LIFT takes the
+// bulk up off exactly that face, so the departing bulk rises through the index.
+//
+// The evidence for that, all measured:
+//   - the pierce lives only in `lift` and the early drops, never in `square` (0.0000);
+//   - it survives every change to the grip and the solve and merely MOVES between the
+//     index's capsules (tip -> middle -> proximal) as those change;
+//   - four waypoints tracking the column as it thins changed nothing at all;
+//   - squeeze swept 0.3 / 0.2 / 0.12: pierce stays 1, contact stays 81%, so it is not
+//     the pressure model pressing pads into cards;
+//   - `stabilise: false` on the pile hand: pierce stays 2 and contact drops 81% -> 74%.
+//     A finger with no target keeps its seeded curl and lies in the same place.
+//
+// So what would fix it is THE BULK DEPARTING SIDEWAYS BEFORE IT RISES, clearing the
+// receiving hand before it climbs, which is what a real shuffler does. That is a
+// re-staging of the lift, not a parameter.
+//
+// Worth weighing before spending more on it: one phalange grazing one card during one
+// 620ms beat at 81% contact, against a shipping version whose hands sit a full
+// card-length off the deck and whose peeled cards visibly float in mid-air with the
+// drawing hand cropped out of frame.
 //
 // NOTE FOR WHOEVER WIRES THIS IN. `PENETRATION_BUDGET` cannot be the gate, because it
 // saturates: it would have to be relaxed 0.0079 -> 0.1006 to admit a lesson whose
@@ -305,6 +319,10 @@ export const overhandNewLesson = {
         // last pierce lived (left index middle phalange, 1 card, 814ms). The waypoint
         // at 0.5 is solved for the intermediate size, so the whole path stays near
         // poses that were actually solved rather than cutting the corner between them.
+        // Two waypoints, not four. Tracking the column's thinning with waypoints at
+        // 0.25/0.5/0.75/1 was tried and measured identical - pierce still 1, contact
+        // still 81% - the offending capsule merely moved from the index's tip to its
+        // proximal. That is what identified the real mechanism (see the header).
         left: [
           key(0.5, pileAt(Math.round((N + inPile.length) / 2))),
           key(1, pileAt(inPile.length)),
