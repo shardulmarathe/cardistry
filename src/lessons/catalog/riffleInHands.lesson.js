@@ -47,30 +47,47 @@ import { CARD_GAP, CARD_H } from '../../lib/constants'
 // with the layout, because a roll and a yaw do not commute and two independent
 // derivations will disagree.
 // STATUS: WORK IN PROGRESS, deliberately NOT wired into `catalog/index.js`. It
-// compiles and is measured (scripts/inspect/tryLesson.mjs), and against the tabled
-// riffle it currently replaces it is far better on the numbers that describe
-// whether hands are really holding cards, and worse on one:
+// compiles and is measured (`scripts/inspect/tryLesson.mjs`). Against the tabled
+// riffle it replaces:
 //
 //                       contact   median gap   worst penetration
 //   tabled (shipping)     31%        0.088          0.0205
-//   in-hands (this)       84%        0.011          0.0735
+//   in-hands (this)       92%        0.010          0.0736
 //
-// The open problem is penetration in two beats, per-step: square 0.0000, cut 0.0136,
-// address 0.0165, BEND 0.0523, WEAVE 0.0735, telescope 0.0128, rest 0.0187.
+// 92% at a median gap of 0.010 is by a wide margin the best contact in this
+// catalog, and it came from one structural rule worth carrying everywhere: A
+// GRIPPED PACKET GOES WHERE THE HAND GOES. The first version authored the halves
+// closing as CARD positions while declaring the hands to be holding them, so the
+// grip captured its offsets against a squared deck and a whole-deck hand pose and
+// carried the halves by that stale relationship: 0% contact, pads 0.823 off.
 //
-// Three hypotheses have been tested and REJECTED by measurement, which is worth
-// recording so they are not tried again:
-//   * "the two grips have different curls, so interpolating between them is a
-//     re-solve" - fixed by solving once and rotating twice; bend stayed 0.0523.
-//   * "the thumbs converge at the junction and each reaches into the OTHER half" -
-//     tested by separating the bent stations; bend stayed 0.0523.
-//   * "the rest beat sweeps the hands through the landing deck" - that one was REAL
-//     and is fixed (0.0637 -> 0.0187), but it was never the bend.
+// PER-STEP PENETRATION: square 0.0000, cut 0.0136, address 0.0165, bend 0.0229,
+// weave 0.0736, telescope 0.0128, rest 0.0187.
 //
-// So the bend's 0.0523 is intrinsic to the bent pose against its OWN packet, and the
-// next step is a diagnostic that prints every finger's gap and the owning half at
-// the worst frame, rather than another hypothesis. Do not wire this in until the
-// bend and weave are under about 0.02.
+// The bend is SOLVED: it scaled with the tilt (0.0184 / 0.0205 / 0.0230 / 0.0523 at
+// tilts 0.06 / 0.16 / 0.24 / 0.34 - note the jump), so TILT_BEND is 0.24 and it
+// measures 0.0229.
+//
+// THE WEAVE'S 0.0736 IS THE ONE OPEN PROBLEM, and five hypotheses have been tested
+// and REJECTED by measurement. Recorded so they are not retried:
+//   * differing curls between the two grips - solved once and rotated twice: no change
+//   * the two thumbs converging into each other's half - separated the stations: no change
+//   * the bend tilt - swept 0.06..0.34: weave held 0.0748..0.0752, flat
+//   * the mid-flight bow - swept midBend 0..0.35: held 0.0755..0.0749, flat
+//   * the release trajectory - swept arcLift 0.02..0.2: held 0.0751..0.0757, flat
+// It is also invariant to the hands rising and separating as the deck accumulates.
+//
+// That invariance across every authored parameter IS the finding, and the number
+// says the rest: 0.0754 is almost exactly the thumb's distal pad radius (0.074).
+// A depth equal to the whole radius is the signature of the metric charging a FULL
+// CAPSULE RADIUS the moment a pad centre crosses a card's 0.3mm slab - the
+// documented over-charge in ARCHITECTURE.md's "Open work" - rather than a pad
+// buried in the cards. A thumb releasing a card it is springing off IS touching it.
+//
+// So the next move is not another authored parameter. It is either the deck-envelope
+// metric (measure against the union of the cards a hand is touching, not each card
+// individually) or a re-authored release path that carries the card away along the
+// pad's own normal. Do not wire this in until that is settled.
 export const riffleInHandsLesson = {
   id: 'riffle',
   title: 'Riffle Shuffle',
@@ -94,7 +111,7 @@ export const riffleInHandsLesson = {
     const YAW = 0.22
     // The thumbs' work: a nearly flat address, then the bend that loads the spring.
     const TILT_FLAT = 0.06
-    const TILT_BEND = 0.34
+    const TILT_BEND = 0.24
     const SQUEEZE = 0.3
     // How far each half slides inward on the finishing push. About a tenth of a
     // card, which is what "telescope them until nearly flush" comes to.
@@ -108,6 +125,15 @@ export const riffleInHandsLesson = {
     // through the weave, always one hand's thumb into the opposite half. A hair of
     // separation at the bent stations buys it back without opening a visible gap.
     const BEND_OUT = 0.035
+    // THE MERGED DECK FORMS WHERE THE THUMBS ARE. Every released card travels from
+    // its half to the merged stack, and both sit at AIR_Y between the hands - so a
+    // card springing off a thumb passes straight through it. Measured 0.0752 of
+    // right-thumb-into-broad-face at a third of the way through the weave, and it
+    // was flat against both the bend tilt (0.0748..0.0752 across 0.06..0.34) and the
+    // mid-flight bow (0.0755..0.0749 across midBend 0..0.35), so it is neither.
+    // Real hands rise and separate as the interlaced deck accumulates under them.
+    const WEAVE_RISE = 0.075
+    const WEAVE_OUT = 0.06
 
     // --- Grips ---------------------------------------------------------------
     // One flat solve per station height, rotated into place. `centre` depends on
@@ -259,8 +285,8 @@ export const riffleInHandsLesson = {
         ease: 'easeOutCubic',
         // The interlace stays TIGHT: the footage shows cards within ~15 degrees of
         // parallel offset by about a card thickness, not fanned into an arc.
-        midBend: 0.35,
-        arcLift: 0.02,
+        midBend: 0.15,
+        arcLift: 0.06,
         toLayout: (order) => landscapeStackLayout(order, { baseY: AIR_Y }),
         grip: {
           left: { cards: 'firstHalf', frame: 'pinch', release: 'stagger', pressure: [{ at: 0, v: SQUEEZE }, { at: 1, v: 0.1 }] },
@@ -269,11 +295,21 @@ export const riffleInHandsLesson = {
         hands: {
           left: [
             { at: 0, pose: bentGrip.pose, anchor: outBy(bentGrip, BEND_OUT) },
-            { at: 1, pose: flatGrip.pose, anchor: outBy(flatGrip, BEND_OUT), ease: 'easeOutCubic' },
+            {
+              at: 1,
+              pose: flatGrip.pose,
+              anchor: [flatGrip.anchor[0] + BEND_OUT + WEAVE_OUT, flatGrip.anchor[1] + WEAVE_RISE, flatGrip.anchor[2]],
+              ease: 'easeOutCubic',
+            },
           ],
           right: [
             { at: 0, pose: bentGrip.pose, anchor: outBy(bentGrip, BEND_OUT) },
-            { at: 1, pose: flatGrip.pose, anchor: outBy(flatGrip, BEND_OUT), ease: 'easeOutCubic' },
+            {
+              at: 1,
+              pose: flatGrip.pose,
+              anchor: [flatGrip.anchor[0] + BEND_OUT + WEAVE_OUT, flatGrip.anchor[1] + WEAVE_RISE, flatGrip.anchor[2]],
+              ease: 'easeOutCubic',
+            },
           ],
         },
       },
