@@ -129,9 +129,20 @@ export const THENAR_MM = { size: [36, 50, 26], pos: [-34, -22, 8], rotZ: -0.3 }
 // round, so take the smaller figure -- a 66mm-diameter tube (what this was)
 // reads as a forearm starting at the palm.
 export const WRIST_MM = { dia: 50, len: 30, pos: [0, -72, 2] }
-// Forearm stub. Diameter was already right; only its position moves, to sit
-// under the corrected wrist.
-export const FOREARM_MM = { dia: 72, len: 177, pos: [0, -175, 4] }
+// Forearm STUB, and the emphasis matters. Its only job is so the hand does not
+// read as a severed palm; nothing in the rig, the FK or any lesson depends on its
+// length. At 177mm it was most of a real forearm (~260mm), which at rig scale is
+// 1.76 long by 0.71 across -- WIDER THAN A CARD (0.63) and nearly three card
+// widths long. `fadeAlongViewAxis` already drops it to its floor opacity of 0.14
+// at almost every camera in the catalog (measured: wash, overhand and charlier all
+// pin at 0.14), so this was never an opacity problem: a pale band that big sweeps
+// across the frame whatever its alpha, and it was the most intrusive thing left in
+// shot after the hands themselves.
+//
+// 95mm still reads as an arm entering frame and still hides the wrist joint, at
+// roughly half the screen area. Diameter is left at the anatomical 72mm: the stub
+// is short, not thin, so it still connects to a hand of the right size.
+export const FOREARM_MM = { dia: 72, len: 95, pos: [0, -134, 4] }
 
 // Opposable thumb: swing the metacarpal across + forward so its curl presses
 // toward the fingers, a real pinch/grip rather than a spike. The rig applies

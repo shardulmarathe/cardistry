@@ -27,7 +27,7 @@ export const riffleLesson = {
   technique: 'riffle',
   randomizes: 'Excellent',
   seed: 7,
-  cameraPreset: 'dealerPOV',
+  cameraPreset: 'weave',
   summary:
     'The gold-standard shuffle, done flat on the table: cut, thumbs bend the corners up, and the cards interlace low as the thumbs release — then bridge and cascade square.',
   facts: [

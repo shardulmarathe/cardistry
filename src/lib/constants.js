@@ -61,6 +61,20 @@ export const CAMERA_PRESETS = {
   // Stays ABOVE the cut - dropping under it frames the deck's unlit underside,
   // which renders near-black beneath the overhead key.
   handCut: { position: [-1.35, 3.15, 4.5], target: [0.02, 0.86, 0.1], fov: 34 },
+  // A TABLED RIFFLE HAS ITS CARDS LOW AND ITS HANDS HIGH, and a camera aimed at
+  // either one alone crops the other. Measured (scripts/inspect/framing.mjs):
+  // cards y 0.02..0.41, but WRISTS y 0.76..1.28 - so `dealerPOV`'s 0.35 framed the
+  // cards perfectly and sent both hands off the top edge. Aimed at 0.62, roughly
+  // the middle of the combined subject, and pulled back to hold cards, hands and
+  // the width of two spread halves (x +/-0.9) at once.
+  weave: { position: [0, 2.4, 4.8], target: [0, 0.62, 0], fov: 34 },
+  // The overhand DRAW: a deck held in the air on one side and a pile growing on
+  // the felt beside it, so the subject is both tall and OFF CENTRE. Measured: cards
+  // y 0.02..0.93 with x 0.00..0.81 (entirely one side of the table), wrist median
+  // 0.88, wanted aim ~0.49 - against `topDown`'s 0 and `overview`'s 0.15. Aimed at
+  // the middle of the two and offset in x so the pile is not stranded at the frame
+  // edge with empty felt opposite it.
+  overhandDraw: { position: [0.42, 2.7, 4.9], target: [0.42, 0.5, 0], fov: 34 },
 }
 
 // OrbitControls constraints so users never go under the table or behind the cards.

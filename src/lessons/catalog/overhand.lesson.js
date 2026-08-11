@@ -190,7 +190,7 @@ export const overhandLesson = {
   // is the one angle that holds the deck, both hands and the growing pile at
   // once, and it is also the angle that shows what this shuffle IS: packets
   // walking sideways off a deck one at a time.
-  cameraPreset: 'topDown',
+  cameraPreset: 'overhandDraw',
   summary:
     'The everyday shuffle: hold the deck in one hand and let the other thumb peel packets off the top into your palm, one after another. Easy — but it only moves blocks, so it barely randomizes.',
   facts: [
@@ -592,7 +592,7 @@ export const overhandLesson = {
       label: 'Lift it to working height',
       duration: 1200,
       ease: 'easeInOutCubic',
-      camera: 'topDown',
+      camera: 'overhandDraw',
       // Hand and deck travel between two stations exactly one deck-travel apart,
       // welded to a fingertip frame, so the offset is constant for the flight.
       grip: { left: { cards: 'all', frame: 'packet', pressure: [{ at: 0, v: 0.2 }, { at: 1, v: 0.2 }] } },

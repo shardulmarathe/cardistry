@@ -30,6 +30,7 @@ for (const l of LESSONS) {
   // Weight by how much card mass sits at each height: the "busiest" band is what
   // the camera should actually aim at, not the midpoint of the extremes.
   const bins = new Map()
+  const wsamp = []
   for (let i = 0; i <= N; i++) {
     const scene = sampleTrack(track, (track.duration * i) / N)
     for (const [, c] of scene.cards) {
@@ -40,7 +41,10 @@ for (const l of LESSONS) {
     }
     for (const side of ['left', 'right']) {
       const h = scene.hands[side]
-      if (h) wy = [Math.min(wy[0], h.wrist.pos.y), Math.max(wy[1], h.wrist.pos.y)]
+      if (h) {
+        wy = [Math.min(wy[0], h.wrist.pos.y), Math.max(wy[1], h.wrist.pos.y)]
+        wsamp.push(h.wrist.pos.y)
+      }
     }
   }
   const busiest = [...bins.entries()].sort((a, b) => b[1] - a[1])[0][0]
@@ -49,6 +53,22 @@ for (const l of LESSONS) {
     .filter(Boolean)
     .map((p) => `${p}(y${CAMERA_PRESETS[p] ? CAMERA_PRESETS[p].target[1] : '?'})`)
     .join(' ')
+  // KNOWN FALSE POSITIVE: the verdict takes the WORST aim across every preset a
+  // lesson uses, so a lesson that legitimately changes shot gets flagged. Charlier
+  // reports "off by 0.72" because it ends on `overview` (y 0.15) as the deck is set
+  // down on the table, which is the correct shot for that beat. Judging per-preset
+  // against only the steps that use it would fix this; until then, read the flag as
+  // "look at this lesson", not "this lesson is wrong".
+  //
+  // Judge on ROBUST CENTRES, not extremes. A whole-track min/max sweeps in every
+  // transient - a hand lifting away at the end of the overhand touches y 1.90 - so
+  // an extremes-based verdict flags every lesson and means nothing. The busiest
+  // card band and the MEDIAN wrist height are what the shot has to hold.
+  wsamp.sort((a, b) => a - b)
+  const wMed = wsamp.length ? wsamp[wsamp.length >> 1] : null
+  const centre = wMed === null ? busiest : (busiest + wMed) / 2
+  const aims = [...presets].filter(Boolean).map((p) => CAMERA_PRESETS[p]?.target[1]).filter((v) => v !== undefined)
+  const worstAim = aims.length ? Math.max(...aims.map((a) => Math.abs(centre - a))) : 0
   console.log(
     pad(l.id, 10),
     pad(`${cy[0].toFixed(2)} .. ${cy[1].toFixed(2)}`, 16),
@@ -56,5 +76,7 @@ for (const l of LESSONS) {
     pad(wy[0] === Infinity ? 'none' : `${wy[0].toFixed(2)} .. ${wy[1].toFixed(2)}`, 16),
     pad(busiest.toFixed(1), 10),
     shown,
+    `| wrist median ${wMed === null ? '  -  ' : wMed.toFixed(2)} want ~${centre.toFixed(2)}` +
+      (worstAim > 0.35 ? `  <-- AIM OFF BY ${worstAim.toFixed(2)}` : '  ok'),
   )
 }
