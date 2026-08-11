@@ -452,12 +452,28 @@ export const charlierLesson = {
     // file:
     //   * contact should measure the nearest point on the whole finger, not the tip,
     //     for frames whose cards ride a curled phalange.
-    //   * `indexPivot` declares `pressure: { index: 1, middle: 0.4 }`, and the middle
+    //   * `indexPivot` declared `pressure: { index: 1, middle: 0.4 }`, and the middle
     //     fingertip measures 0.88-0.94 from the packet throughout the pivot - it sits at
-    //     x 0.75 while the cards are at x -0.15, supporting the OTHER half. Scoring it
-    //     as a holder is what pins this beat's median gap at ~0.5 and holds the beat at
-    //     0% even once the index is seated. In a real charlier the middle does not touch
-    //     the pivoting packet.
+    //     x 0.75 while the cards are at x -0.15, supporting the OTHER half. Scoring a
+    //     finger a world unit away as a holder pinned this beat's median gap near 0.5.
+    //     Fixed in `handKinematics`: median 0.518 -> 0.142, lesson contact 69% -> 74%.
+    //
+    // AND THE BEAT STILL READS 0%, WHICH IS THE METRIC BEING INAPPLICABLE RATHER THAN
+    // THE POSE BEING WRONG. Measured against every phalange capsule and not just the
+    // tip, the pivot is still 0% at the same 0.142 - the packet floats clear of the
+    // WHOLE finger. That is deliberate and documented a hundred lines above: SEAT is
+    // taken at the DEEPEST curl the cut uses, because the packet is welded at one height
+    // for the whole ride, so it has to fit the worst curl or the finger grows into it
+    // mid-sweep. The clearance is what stops the sweeping pad touching the half it is
+    // cutting away from.
+    //
+    // So a welded-packet-on-a-moving-finger grip cannot score contact: it rides at a
+    // clearance sized for a curl it is not currently at. The honest fix is not a
+    // tolerance, it is for `indexPivot` to ride the finger's CREST rather than its TIP,
+    // which would let the packet stay in contact through the whole sweep and need no
+    // clearance at all. That is a grip-frame redesign, not a lesson edit, and it is also
+    // the thing that would make the packet stop looking detached on screen - 0.142 is
+    // 14mm of visible air.
     const _pad = new THREE.Vector3()
     const indexPadOf = (pose) => {
       const solved = poseWithContacts(cloneHandPose(pose), 'right', { anchor: W, quat: CRADLE_QUAT }, {})

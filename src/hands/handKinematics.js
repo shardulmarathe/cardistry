@@ -196,7 +196,20 @@ export const GRIP_FRAME_TYPES = {
     // compound with the fingertip's own arc, not cancel it, sign chosen
     // empirically against the charlier up-and-over trajectory check.
     pitchGain: -2.2,
-    pressure: { index: 1, middle: 0.4 },
+    // THE MIDDLE FINGER DOES NOT HOLD THE PIVOTING PACKET. It used to be listed here
+    // at 0.4, and measured through the charlier's pivot its fingertip sits 0.88-0.94
+    // from the packet the whole way - at x 0.75 while those cards are at x -0.15,
+    // because it is cradling the OTHER half. In a real charlier the index carries the
+    // bottom packet up and over on its own while the middle, ring and pinky support the
+    // half left in the palm.
+    //
+    // Listing it cost more than tidiness. `pressure` is the honest set of holders for
+    // BOTH the contact metric here and `verifyTracks`, so a finger a world unit away was
+    // being scored as a gripper on every frame of the beat - which is what pinned the
+    // pivot's median gap near 0.5 and held it at 0% contact even with the index
+    // correctly seated. The pivot declares no pressure keyframes, so `applyGripPressure`
+    // was a no-op for it either way and no pose changes here.
+    pressure: { index: 1 },
   },
 }
 

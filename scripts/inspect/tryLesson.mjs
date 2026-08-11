@@ -37,6 +37,8 @@ let nonFinite = 0, belowFelt = 0, worstPen = 0, penWhere = ''
 // card" from "knuckle driven through twenty".
 let worstPierce = 0, pierceWhere = ''
 const stepGaps = new Map()
+const stepWhole = new Map()
+const wholeGaps = []
 const stepIdAt = (ms) => {
   let id = track.steps[0]?.id ?? '-'
   for (const st of track.steps) if (ms >= st.tStart) id = st.id
@@ -91,14 +93,39 @@ for (let i = 0; i <= N; i++) {
     if (!held.length) continue
     for (const nm of Object.keys(grippers)) {
       fingertipWorld(pose, h.side, nm, _t)
-      let best = Infinity
-      for (const c of held) {
-        const lp = _t.clone().sub(c.pos).applyQuaternion(_q.set(-c.quat.x, -c.quat.y, -c.quat.z, c.quat.w))
-        const e = cardSurfaceExtents(lp, c.bend ?? 0)
-        const o = Math.hypot(Math.max(e.x, 0), Math.max(e.u, 0), Math.max(e.n, 0))
-        best = Math.min(best, o > 0 ? o : Math.max(e.x, e.u, e.n))
+      const surfaceGap = (pt, r) => {
+        let b = Infinity
+        for (const c of held) {
+          const lp = pt.clone().sub(c.pos).applyQuaternion(_q.set(-c.quat.x, -c.quat.y, -c.quat.z, c.quat.w))
+          const e = cardSurfaceExtents(lp, c.bend ?? 0)
+          const o = Math.hypot(Math.max(e.x, 0), Math.max(e.u, 0), Math.max(e.n, 0))
+          b = Math.min(b, (o > 0 ? o : Math.max(e.x, e.u, e.n)) - r)
+        }
+        return b
       }
+      const best = surfaceGap(_t, 0) 
       const gap = best - FINGERS[nm].rad[2] * HAND_SCALE
+      // WHOLE-FINGER contact, alongside the fingertip number rather than replacing it.
+      // Some frames seat a card on a curled finger's CREST, not its pad - the charlier's
+      // `indexPivot` is one, where a correctly seated packet is necessarily a crest-
+      // height from the tip, so a tip-only metric scores that beat 0% however right the
+      // pose is. Measured against every phalange capsule, the same beat is scored on the
+      // part of the finger actually carrying the card. Reported separately because
+      // `verifyTracks`' CONTACT_FLOOR ratchets are calibrated on the tip definition and
+      // silently changing what they mean would let a real regression through.
+      fingerJointsWorld(pose, h.side, nm, _j)
+      let whole = Infinity
+      for (let sg = 0; sg < 3; sg++) {
+        const r = FINGERS[nm].rad[sg] * HAND_SCALE
+        for (let k = 0; k <= 4; k++) {
+          _p.copy(_j[sg]).lerp(_j[sg + 1], k / 4)
+          whole = Math.min(whole, surfaceGap(_p, r))
+        }
+      }
+      wholeGaps.push(whole)
+      let wb = stepWhole.get(stepIdAt(ms))
+      if (!wb) stepWhole.set(stepIdAt(ms), (wb = []))
+      wb.push(whole)
       gaps.push(gap)
       // Per-step too. An aggregate contact percentage hides WHICH beat is detached,
       // and that is the thing a capture shows you and a single number does not: the
@@ -155,5 +182,13 @@ if (stepGaps.size) {
     return `${k} ${pct}% (med ${med.toFixed(3)})`
   })
   console.log('  per-step contact: ' + line.join('  '))
+  const wline = [...stepWhole].map(([k, v]) => {
+    const pct = Math.round((100 * v.filter((g) => Math.abs(g) < 0.025).length) / v.length)
+    const med = [...v].sort((a, b) => a - b)[v.length >> 1]
+    return `${k} ${pct}% (med ${med.toFixed(3)})`
+  })
+  const wf = wholeGaps.filter((g) => Math.abs(g) < 0.025).length / (wholeGaps.length || 1)
+  console.log('  per-step contact (whole finger): ' + wline.join('  '))
+  console.log(`  whole-finger contact ${Math.round(wf * 100)}% of ${wholeGaps.length}`)
 }
 console.log(`  gripping fingertips in contact ${(frac * 100).toFixed(0)}% of ${gaps.length}, median gap ${gaps.length ? gaps[gaps.length >> 1].toFixed(3) : '-'}`)
