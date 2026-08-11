@@ -118,9 +118,36 @@ import { CARD_GAP } from '../../lib/constants'
 //   - `stabilise: false` on the pile hand: pierce stays 2 and contact drops 81% -> 74%.
 //     A finger with no target keeps its seeded curl and lies in the same place.
 //
-// So what would fix it is THE BULK DEPARTING SIDEWAYS BEFORE IT RISES, clearing the
-// receiving hand before it climbs, which is what a real shuffler does. That is a
-// re-staging of the lift, not a parameter.
+// THE CONCLUSION AFTER EIGHT MEASURED ATTEMPTS: this staging cannot be made
+// pierce-free with a `long` edge pinch on the receiving hand, and the reason is
+// geometric rather than a tuning miss. That hand's fingers WRAP the pile, so they
+// occupy the very space a packet has to pass through to reach it. Every escape route
+// was tried and each is recorded because each one sounds plausible:
+//
+//   1. re-solve per beat at the true packet size ................ kept (median 0.019 -> 0.008)
+//   2. grip the pile LOW, leaving its top face open ............. pierce same, contact 81 -> 74%
+//   3. squeeze swept 0.3 / 0.2 / 0.12 .......................... identical throughout
+//   4. `stabilise: false` on the receiving hand ................. pierce 2, contact 74%
+//   5. four waypoints tracking the column as it thins ........... identical, capsule moved
+//   6. drop the hand to its final grip early (t=0.3) ............ identical
+//   7. OPEN the hand mid-lift, curls scaled to 0.45 then 0.0 .... identical even fully straight,
+//      which is what proved it is the WRIST's placement and not the curl
+//   8. separate the packets in x instead of y ................... pierce 2 - the falling
+//      packets then cross the receiving hand diagonally instead
+//   9. no stabiliser AND the index actively tucked 1.6x ......... pierce 2, contact 74%
+//
+// `deepFrame` at 795ms names the mechanism exactly: the pierced card is K-spades and it
+// is in the SECOND HALF - the bulk. At `square` this hand grips all 52, so its index and
+// thumb are wrapped around the top of the column, which IS the bulk; and the left wrist
+// sits at y 1.09 holding a pile at y 0.50, so the hand spans y 0.50..1.09 while BULK is
+// authored at y 0.92 - the bulk's destination is INSIDE the receiving hand.
+//
+// So the fix is not the lift's timing or path but THE RECEIVING GRIP ITSELF: it should
+// be an open palm-up cradle, with the pile resting in a cupped hand and nothing wrapped
+// over it, which is also what a real overhand's receiving hand does - it does not pinch
+// the pile by its edges. That is a new grip in the `contacts.js` vocabulary, not an edit
+// to this file, and it is the one change with evidence behind it rather than another
+// guess.
 //
 // Worth weighing before spending more on it: one phalange grazing one card during one
 // 620ms beat at 81% contact, against a shipping version whose hands sit a full
