@@ -171,7 +171,15 @@ export function updateDeckFocus(camera, frameId) {
 // This is purely a RENDER concern, it runs off the camera in onBeforeRender and
 // never touches pose data or FK positions.
 const FOREARM_OPACITY_SOLID = 0.55 // identical to the shared hand material
-const FOREARM_OPACITY_EDGEON = 0.14 // fully broadside, faint, but still attached
+// 0.07, halved from 0.14. Measured across every lesson and camera, the fade is
+// already pinned at this floor almost everywhere (wash, overhand and charlier all
+// sit on it), so the floor IS the value that matters, and at 0.14 two forearms
+// lying broadside still read as solid bars across a top-down shot - the wash's
+// worst remaining intrusion after the stub was halved. Halving the stub again
+// would start to read as severed hands; halving the floor does not, because the
+// gold fresnel rim in the shared shader keeps the silhouette legible even at very
+// low alpha.
+const FOREARM_OPACITY_EDGEON = 0.07
 // The signal is sin(angle between the arm axis and the view ray), i.e. the
 // FRACTION OF ITS LENGTH the arm sweeps across the frame. Not the raw dot
 // product: at the faro interlace the arms sit 42° off the view ray, which sounds

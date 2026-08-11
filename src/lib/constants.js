@@ -43,7 +43,13 @@ export const CAMERA_PRESETS = {
   overview: { position: [0, 4.3, 4.9], target: [0, 0.15, 0], fov: 35 },
   dealerPOV: { position: [0, 3.4, 5.4], target: [0, 0.35, -0.2], fov: 38 },
   closeUp: { position: [0, 2.5, 3.6], target: [0, 0.3, 0], fov: 34 },
-  topDown: { position: [0, 6.2, 0.4], target: [0, 0, 0], fov: 40 },
+  // Straight down on the felt, and now used ONLY by the wash - the one technique
+  // whose subject is a wide 2D spread rather than a deck. Pulled back from 6.2 to
+  // 8.2: at 6.2 the spread (x -1.13..0.97, z -0.59..0.66, so 1.57 x 1.10 of
+  // half-extent once a card's own size is counted) overflowed the frame on three
+  // sides once the transport panel had taken the bottom of it. Geometry alone said
+  // it fitted, which is why this was found by looking rather than by arithmetic.
+  topDown: { position: [0, 8.2, 0.4], target: [0, 0, 0], fov: 40 },
   // IN-HANDS work, which is a different shot from anything on the felt. Measured
   // on the in-hands riffle (scripts/inspect/framing.mjs): its cards span y
   // 0.02..1.21 with the busiest band at 1.0, and its WRISTS sit at a median of 1.62
