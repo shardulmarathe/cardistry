@@ -1,24 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import {
-  getLessonsByDifficulty,
-  getLessonById,
-  DIFFICULTY_LABEL,
-  RANDOMNESS_GUIDE,
-  GRIP_GLOSSARY,
-} from '../lessons/catalog'
+import { useEffect, useRef, useState } from 'react'
+import { LESSONS, getLessonById, RANDOMNESS_GUIDE, GRIP_GLOSSARY } from '../lessons/catalog'
 import { useAppStore } from '../state/useAppStore'
 import { usePlayer } from '../lessons/engine/player'
 import { compileLesson } from '../lessons/engine/compileLesson'
 
-const SUIT_FOR_DIFF = {
-  beginner: '♦',
-  intermediate: '♣',
-  advanced: '♠',
-}
-
 const WIDE_QUERY = '(min-width: 900px)'
 const PREVIEW_DELAY = 280 // debounce: never pay for a compile on a stray click
-const LOOP_HOLD = 900 // beat on the finished pose before the preview loops
 
 // Remembered across mounts so coming back from a lesson lands where you were.
 let lastSelectedId = null
@@ -96,63 +83,44 @@ function trackFor(lesson, deck) {
   return track
 }
 
+// A STILL POSTER FRAME, not a running preview. This used to load the technique and
+// loop it forever while the catalog was open, which meant the table was shuffling
+// continuously the whole time you were browsing - and there was no way to stop it
+// short of leaving the tab. Nothing here plays now: opening a technique from the
+// catalog is what starts it, and even then the lesson loads PAUSED behind its own
+// "Play demo" button.
+//
+// The frame is taken from partway through rather than from 0, because every lesson
+// starts on the same squared deck: at frame 0 all four posters are identical. At 45%
+// each one is inside its signature beat - the riffle mid-interlace, the wash mid-
+// spread - so the catalog still tells you what you are choosing between.
+const POSTER_AT = 0.45
+
 function usePreview(lessonId) {
   useEffect(() => {
     const lesson = lessonId ? getLessonById(lessonId) : null
     if (!lesson) return undefined
     const previewId = previewIdOf(lesson.id)
-    let phase = 'pending'
-    let loop = 0
-    let hold = 0
-    let rafA = 0
-    let rafB = 0
-
-    // Reached the end: hold the finished pose for a beat, then loop. The runner
-    // only re-reads globalMs while paused, so rewinding = pause → let a frame
-    // land on ms 0 → play.
-    const tick = () => {
-      const p = usePlayer.getState()
-      if (phase !== 'playing' || p.lessonId !== previewId || !p.track) return
-      if (p.playing && p.globalMs < p.durationMs - 20) return
-      phase = 'looping'
-      hold = window.setTimeout(() => {
-        usePlayer.setState({ playing: false, globalMs: 0, stepIndex: 0 })
-        rafA = requestAnimationFrame(() => {
-          rafB = requestAnimationFrame(() => {
-            if (usePlayer.getState().lessonId !== previewId) return
-            usePlayer.setState({ playing: true, direction: 1 })
-            phase = 'playing'
-          })
-        })
-      }, LOOP_HOLD)
-    }
-
     const start = window.setTimeout(() => {
       const track = trackFor(lesson, useAppStore.getState().deck)
       usePlayer.getState().loadTrack(previewId, track)
-      phase = 'playing'
-      loop = window.setInterval(tick, 160)
+      // `scrubTo` seeks, sets the step index and leaves the player PAUSED, which is
+      // exactly a poster frame. It also bumps `seekNonce`, which is what makes the
+      // runner re-read the position while paused.
+      usePlayer.getState().scrubTo(track.duration * POSTER_AT)
     }, PREVIEW_DELAY)
-
-    return () => {
-      window.clearTimeout(start)
-      window.clearTimeout(hold)
-      window.clearInterval(loop)
-      cancelAnimationFrame(rafA)
-      cancelAnimationFrame(rafB)
-    }
+    return () => window.clearTimeout(start)
   }, [lessonId])
 }
 
 export default function LessonCatalog() {
   const openLesson = useAppStore((s) => s.openLesson)
-  const groups = useMemo(() => getLessonsByDifficulty(), [])
 
   const [infoOpen, setInfoOpen] = useState(false)
   // Wide screens have a detail column to fill, so pick the first technique for
   // the user; narrow screens drill down from the list, so they start on it.
   const [selectedId, setSelectedId] = useState(
-    () => lastSelectedId ?? (window.matchMedia(WIDE_QUERY).matches ? (groups[0]?.lessons[0]?.id ?? null) : null),
+    () => lastSelectedId ?? (window.matchMedia(WIDE_QUERY).matches ? (LESSONS[0]?.id ?? null) : null),
   )
   const lesson = selectedId ? getLessonById(selectedId) : null
   const playerLessonId = usePlayer((s) => s.lessonId)
@@ -219,7 +187,7 @@ export default function LessonCatalog() {
           </div>
           {!infoOpen && (
             <p className="catalog-lede">
-              Pick one and it runs on the table beside you — watch it before you commit.
+              Pick one to see it posed on the table, then start the lesson when you’re ready.
             </p>
           )}
         </div>
@@ -241,34 +209,27 @@ export default function LessonCatalog() {
           </div>
         ) : (
           <div className="catalog-scroll">
-            {groups.map((group) => (
-              <div key={group.difficulty} className="catalog-tier">
-                <div className="tier-head">
-                  <span className={`tier-suit diff-${group.difficulty}`}>
-                    {SUIT_FOR_DIFF[group.difficulty]}
-                  </span>
-                  <span className="tier-label">{DIFFICULTY_LABEL[group.difficulty]}</span>
-                  <span className="tier-rule" />
-                </div>
-                <div className="catalog-grid">
-                  {group.lessons.map((l) => {
-                    const isSel = l.id === selectedId
-                    return (
-                      <button
-                        key={l.id}
-                        type="button"
-                        className={`lesson-card${isSel ? ' is-selected' : ''}`}
-                        aria-pressed={isSel}
-                        onClick={() => (isSel ? open(l.id) : select(l.id))}
-                      >
-                        <span className="lesson-name">{l.title}</span>
-                        <MixMeter strength={l.randomizes} />
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            ))}
+            {/* Four techniques, one flat grid. The difficulty tiers this used to
+                group by are gone: with four deliberately dissimilar moves the
+                grouping was chrome rather than signal, and it invited the
+                "beginner" ones to be treated as throwaways. */}
+            <div className="catalog-grid">
+              {LESSONS.map((l) => {
+                const isSel = l.id === selectedId
+                return (
+                  <button
+                    key={l.id}
+                    type="button"
+                    className={`lesson-card${isSel ? ' is-selected' : ''}`}
+                    aria-pressed={isSel}
+                    onClick={() => (isSel ? open(l.id) : select(l.id))}
+                  >
+                    <span className="lesson-name">{l.title}</span>
+                    <MixMeter strength={l.randomizes} />
+                  </button>
+                )
+              })}
+            </div>
           </div>
         )}
       </div>
@@ -293,12 +254,6 @@ export default function LessonCatalog() {
             <button type="button" className="detail-back" onClick={() => setSelectedId(null)}>
               ← All techniques
             </button>
-            <p className="detail-kicker">
-              <span className={`tier-suit diff-${lesson.difficulty}`}>
-                {SUIT_FOR_DIFF[lesson.difficulty]}
-              </span>
-              {DIFFICULTY_LABEL[lesson.difficulty]}
-            </p>
             <h3 className="detail-title">{lesson.title}</h3>
             <div className="detail-mix">
               <span className="detail-mix-label">Mixing strength</span>
@@ -317,7 +272,7 @@ export default function LessonCatalog() {
             </button>
             <p className={`preview-status${previewLive ? ' is-live' : ''}`}>
               <span className="preview-dot" aria-hidden="true" />
-              {previewLive ? 'Playing on the table — drag the felt to orbit' : 'Cueing the table…'}
+              {previewLive ? 'Posed on the table — drag the felt to orbit' : 'Setting the table…'}
             </p>
           </div>
         ) : (

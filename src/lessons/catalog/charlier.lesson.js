@@ -63,15 +63,14 @@ export const charlierLesson = {
   id: 'charlier',
   title: 'Charlier Cut',
   technique: 'charlier',
-  difficulty: 'beginner',
-  randomizes: 'None — a cut',
+  randomizes: 'None',
   seed: 14,
   // NOT `handCut`: that preset sits 3.7 from its target with a 32° fov, i.e. a
   // half-height of 1.05, it was framed for a hand a third of this size, and at
   // HAND_SCALE 13 the palm alone overflows it and the cut runs off the top of
   // the frame. `dealerPOV` is 6.4 out with a half-height of 2.2, which holds the
   // whole hand AND the table deck it starts from.
-  cameraPreset: 'dealerPOV',
+  cameraPreset: 'handCut',
   summary:
     'A one-handed cut, not a shuffle: the thumb drops the bottom half into the palm, the index finger pivots it up and over the top. Deterministic — it only cuts.',
   facts: [
@@ -424,10 +423,72 @@ export const charlierLesson = {
     // Bottom half only: it lands exactly on the pad's new position, so the grip
     // that picks it up next captures a SEATED offset, the packet rides the
     // finger instead of floating beside it.
+    // WHERE THE BOTTOM HALF LANDS IS MEASURED OFF THE INDEX PAD, not authored.
+    // `PALM` is derived from the wrist anchor plus a fixed PAD_DROP, and the comment
+    // on the `release` beat claimed the half therefore "lands exactly on the pad's new
+    // position, which is what makes the next step's capture a seated one". Measured,
+    // that was false by 0.285 - the half landed 0.22 above the pad and 0.19 toward +z
+    // of it. Since `indexPivot` rides the index tip and the hold captures whatever
+    // offset exists at its first frame, the packet then tracked the finger rigidly at
+    // that distance for the entire pivot. It is why the pivot measured 0% contact with
+    // a median gap of 0.517 while the beats either side of it sat at 80% and 0.012.
+    //
+    // Taking the pad position from the pose actually on screen at that instant -
+    // `openPose` at anchor W - fixes the z error: the half now lands at the pad's z
+    // instead of 0.19 in front of it, and the index's distance to it falls 0.285 ->
+    // 0.218.
+    //
+    // THE REMAINING 0.218 IS CORRECT AND MUST NOT BE "FIXED". It is SEAT, the existing
+    // correction for the index's crest, and it is 0.22 because a curled finger's middle
+    // phalange rises that far above its own pad - a card resting at bare pad height is
+    // impaled on it. Seating on tip tangency instead was measured: pivot contact does
+    // rise 0% -> 50%, and the card is driven 0.0907 into the index's middle phalange
+    // with the lesson's first ever pierced card. So the packet genuinely rests on the
+    // FINGER, not on the fingertip.
+    //
+    // Which means most of the pivot's 0% was never a lesson defect at all: the contact
+    // metric measures FINGERTIPS, and a correctly seated card here is a crest-height
+    // away from the tip by necessity. Two things follow, neither of them fixable in this
+    // file:
+    //   * contact should measure the nearest point on the whole finger, not the tip,
+    //     for frames whose cards ride a curled phalange.
+    //   * `indexPivot` declared `pressure: { index: 1, middle: 0.4 }`, and the middle
+    //     fingertip measures 0.88-0.94 from the packet throughout the pivot - it sits at
+    //     x 0.75 while the cards are at x -0.15, supporting the OTHER half. Scoring a
+    //     finger a world unit away as a holder pinned this beat's median gap near 0.5.
+    //     Fixed in `handKinematics`: median 0.518 -> 0.142, lesson contact 69% -> 74%.
+    //
+    // AND THE BEAT STILL READS 0%, WHICH IS THE METRIC BEING INAPPLICABLE RATHER THAN
+    // THE POSE BEING WRONG. Measured against every phalange capsule and not just the
+    // tip, the pivot is still 0% at the same 0.142 - the packet floats clear of the
+    // WHOLE finger. That is deliberate and documented a hundred lines above: SEAT is
+    // taken at the DEEPEST curl the cut uses, because the packet is welded at one height
+    // for the whole ride, so it has to fit the worst curl or the finger grows into it
+    // mid-sweep. The clearance is what stops the sweeping pad touching the half it is
+    // cutting away from.
+    //
+    // So a welded-packet-on-a-moving-finger grip cannot score contact: it rides at a
+    // clearance sized for a curl it is not currently at. The honest fix is not a
+    // tolerance, it is for `indexPivot` to ride the finger's CREST rather than its TIP,
+    // which would let the packet stay in contact through the whole sweep and need no
+    // clearance at all. That is a grip-frame redesign, not a lesson edit, and it is also
+    // the thing that would make the packet stop looking detached on screen - 0.142 is
+    // 14mm of visible air.
+    const _pad = new THREE.Vector3()
+    const indexPadOf = (pose) => {
+      const solved = poseWithContacts(cloneHandPose(pose), 'right', { anchor: W, quat: CRADLE_QUAT }, {})
+      fingertipWorld(solved, 'right', 'index', _pad)
+      return _pad.clone()
+    }
+    const DROP_PAD = indexPadOf(openPose)
     const dropBottom = (dk) =>
       dk.slice(0, mid).map((c, i) => ({
         id: c.id,
-        pos: new THREE.Vector3(PALM.x, PALM.y + i * CARD_GAP, PALM.z),
+        pos: new THREE.Vector3(
+          DROP_PAD.x,
+          DROP_PAD.y + SEAT + CARD_T / 2 + i * CARD_GAP,
+          DROP_PAD.z,
+        ),
         quat: faceQuat(c.isFaceUp),
         bend: 0,
       }))
@@ -595,7 +656,7 @@ export const charlierLesson = {
         id: 'turn',
         label: 'Turn the hand palm-up under the deck',
         duration: 1100,
-        camera: 'dealerPOV',
+        camera: 'handCut',
         hands: {
           right: [
             // 1) out of the deck's column, still palm-down and still in the

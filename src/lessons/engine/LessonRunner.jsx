@@ -28,6 +28,11 @@ export default function LessonRunner() {
     if (!activeLessonId) return
     const lesson = getLessonById(activeLessonId)
     if (!lesson) return
+    // STOP THE OUTGOING RUN FIRST. Compiling a lesson takes real time (the whole
+    // track is solved up front), and until loadTrack lands the runner keeps
+    // sampling the PREVIOUS track and integrating time into it, so switching
+    // technique mid-shuffle briefly kept playing the old one.
+    usePlayer.getState().pause()
     // Compiles against the CURRENT deck, so a repeat starts from whatever the
     // previous run left behind and the shuffles compound.
     const track = compileLesson(lesson, useAppStore.getState().deck, { run: lessonRun })
@@ -36,6 +41,9 @@ export default function LessonRunner() {
     finalizedRef.current = false
     lastCameraRef.current = null
     if (lesson.cameraPreset) setCameraPreset(lesson.cameraPreset)
+    // Leaving the lesson (or swapping to another) must not leave a playing
+    // player behind for the next mount to inherit.
+    return () => usePlayer.getState().pause()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeLessonId, lessonRun])
 

@@ -3,7 +3,7 @@ import { getEase, clamp01 } from '../../lib/ease'
 import { CARD_W, CARD_H } from '../../lib/constants'
 import { lerpHandPose, cloneHandPose } from '../../hands/handPoses'
 import { applyIdle, applyFingerMotion } from '../../hands/handMotion'
-import { applyGripPressure } from '../../hands/handKinematics'
+import { applyGripPressure, reseatGrippingTips, grippingFingers } from '../../hands/handKinematics'
 import { frameOf, applyGripFrame, pressureAt } from './grips'
 
 function poseFromSegments(segs, ms, out) {
@@ -79,7 +79,13 @@ function motionOffset(m, t, out) {
 // Those branches must clone: segment poses are shared track data and the idle
 // mutates. Grip capture goes through this same function (sampleHandSegments),
 // so offsets are always captured against the exact pose the viewer sees.
-function handFromSegments(segs, ms, side) {
+// `gripFrameType`, when supplied, switches the gripping fingers from joint-angle
+// interpolation to TASK-SPACE interpolation of their fingertips (see
+// reseatGrippingTips). Only the branch that actually blends two rungs is
+// affected; every clamped branch returns a rung pose, where the two agree by
+// construction. The compiler's grip capture passes the same argument through
+// sampleHandSegments, so capture, release baking and rendering cannot disagree.
+function handFromSegments(segs, ms, side, gripFrameType = null) {
   if (segs.length === 0) return null
   if (ms <= segs[0].tStart) {
     return applyIdle(cloneHandPose(segs[0].from), ms, side, segs[0].idleScale ?? 1)
@@ -96,14 +102,18 @@ function handFromSegments(segs, ms, side) {
   const localT = clamp01((ms - seg.tStart) / span)
   const e = getEase(seg.ease)(localT)
   const out = lerpHandPose(seg.from, seg.to, e)
+  if (gripFrameType) {
+    const names = grippingFingers(gripFrameType)
+    if (names) reseatGrippingTips(out, seg.from, seg.to, side, e, names)
+  }
   if (seg.motion) out.wrist.pos.add(motionOffset(seg.motion, localT, _motionV))
   if (seg.fingerMotion) applyFingerMotion(out, seg.fingerMotion, localT)
   return applyIdle(out, ms, side, seg.idleScale ?? 1)
 }
 
 // Pure samplers the compiler needs to capture grip offsets at compile time.
-export function sampleHandSegments(segs, ms, side = 'right') {
-  return handFromSegments(segs, ms, side)
+export function sampleHandSegments(segs, ms, side = 'right', gripFrameType = null) {
+  return handFromSegments(segs, ms, side, gripFrameType)
 }
 export function sampleCardSegments(segs, ms) {
   const out = { pos: new THREE.Vector3(), quat: new THREE.Quaternion(), bend: 0 }
@@ -153,12 +163,11 @@ function clampAboveFelt(out) {
 const outputCache = new Map()
 
 export function sampleTrack(track, ms) {
-  // Hands are sampled FIRST: held cards read the live grip frame from them.
-  const hands = {
-    left: handFromSegments(track.hands?.left ?? [], ms, 'left'),
-    right: handFromSegments(track.hands?.right ?? [], ms, 'right'),
-  }
-
+  // The hold scan runs FIRST. It needs no hands (holds carry their own times,
+  // side, frame and offsets), and the hand sampler needs its result: a hand
+  // that is gripping interpolates its gripping fingers through their fingertips
+  // rather than through joint angles.
+  //
   // Which cards are attached to a hand right now (id -> {hold, offset}), plus
   // grip pressure per side. Pressure visibly tightens the rendered hand's
   // gripping fingers BEFORE contact frames are computed, the same order the
@@ -177,17 +186,30 @@ export function sampleTrack(track, ms) {
       }
     }
   }
-  for (const side of ['left', 'right']) {
-    if (hands[side] && sidePressure[side]) {
-      // find the pressured frame type of this side's most-pressured hold
-      let type = null
+  // The frame type of each side's most-pressured live hold. One per side: it
+  // selects both the pressure curl (as before) and the task-space reseat, and
+  // the two must agree or the weld and the render would use different poses.
+  const sideFrame = { left: null, right: null }
+  if (track.holds) {
+    for (const side of ['left', 'right']) {
+      if (!sidePressure[side]) continue
       for (const h of track.holds) {
         if (ms >= h.tStart && ms <= h.tEnd && h.side === side && pressureAt(h, ms) === sidePressure[side]) {
-          type = h.frame
+          sideFrame[side] = h.frame
           break
         }
       }
-      if (type) applyGripPressure(hands[side], type, sidePressure[side])
+    }
+  }
+
+  const hands = {
+    left: handFromSegments(track.hands?.left ?? [], ms, 'left', sideFrame.left),
+    right: handFromSegments(track.hands?.right ?? [], ms, 'right', sideFrame.right),
+  }
+
+  for (const side of ['left', 'right']) {
+    if (hands[side] && sidePressure[side] && sideFrame[side]) {
+      applyGripPressure(hands[side], sideFrame[side], sidePressure[side])
     }
   }
 

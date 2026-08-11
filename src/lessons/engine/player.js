@@ -12,6 +12,14 @@ export const usePlayer = create((set, get) => ({
   playing: false,
   speed: 1,
   direction: 1,
+  // Has the viewer started this run yet? A lesson used to autoplay the moment
+  // it compiled, which meant opening a technique threw you into the middle of a
+  // 20-second shuffle with no way to watch it from the top. Now a freshly loaded
+  // track sits parked at 0 and the panel offers one primary action; `started`
+  // flips on the first play and stays true for the rest of the run, so the
+  // transport reverts to its normal controls instead of re-arming at every
+  // pause.
+  started: false,
   // Bumped by every SEEK. LessonRunner integrates time in its own ref while
   // playing and only reads globalMs when paused, so a seek that also leaves the
   // player playing (restart) was silently ignored, the ▶ button at the end of
@@ -19,25 +27,45 @@ export const usePlayer = create((set, get) => ({
   // counter and adopts globalMs whenever it changes, in either play state.
   seekNonce: 0,
 
+  // Loads PAUSED at frame 0, on purpose. `seekNonce` is bumped so the runner
+  // adopts ms 0 immediately: switching technique mid-shuffle must stop the old
+  // one and present the new one from the top, not inherit its cursor.
   loadTrack: (lessonId, track) =>
-    set({
+    set((s) => ({
       lessonId,
       track,
       durationMs: track.duration,
       globalMs: 0,
       stepIndex: 0,
-      playing: true,
+      playing: false,
+      started: false,
       direction: 1,
       speed: 1,
-    }),
+      seekNonce: s.seekNonce + 1,
+    })),
 
-  clear: () => set({ lessonId: null, track: null, playing: false, globalMs: 0 }),
+  clear: () =>
+    set((s) => ({
+      lessonId: null,
+      track: null,
+      playing: false,
+      started: false,
+      globalMs: 0,
+      stepIndex: 0,
+      seekNonce: s.seekNonce + 1,
+    })),
 
-  play: () => set({ playing: true, direction: 1 }),
+  play: () => set({ playing: true, started: true, direction: 1 }),
   pause: () => set({ playing: false }),
-  toggle: () => set((s) => ({ playing: !s.playing })),
+  toggle: () => set((s) => ({ playing: !s.playing, started: true })),
   restart: () =>
-    set((s) => ({ globalMs: 0, playing: true, direction: 1, seekNonce: s.seekNonce + 1 })),
+    set((s) => ({
+      globalMs: 0,
+      playing: true,
+      started: true,
+      direction: 1,
+      seekNonce: s.seekNonce + 1,
+    })),
   setSpeed: (speed) => set({ speed }),
 
   // Called by the transport slider, pauses and snaps to an absolute time.

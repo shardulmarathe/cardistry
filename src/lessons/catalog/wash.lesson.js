@@ -25,7 +25,7 @@ import { fingerJointsWorld, fingertipWorld } from '../../hands/handKinematics'
 // −z. Authored ONCE, for the right hand: the engine's x-mirror gives the left
 // hand the correct opposite yaw (never mirror a quaternion by hand).
 const PALM_DOWN = Math.PI / 2
-const REACH_IN = -Math.PI / 2
+const REACH_IN = Math.PI
 const PRESS_QUAT = new THREE.Quaternion().setFromEuler(
   new THREE.Euler(PALM_DOWN + 0.06, REACH_IN, 0, 'YXZ'),
 )
@@ -130,7 +130,7 @@ const restAt = (x, y, z) => padAt('deckRest', null, DECK_REST_DROP, x, y, z)
 // half off the table. The right hand's pads orbit C=(CX,CZ); the left hand is
 // the engine's x-mirror, so its centre is −CX and its visual direction is
 // reversed. `cyc` (+1/−1) is the authored orbit sign.
-const AMP = 0.28
+const AMP = 0.45
 // Both palms reach their inner point at the SAME instant, so the only thing
 // keeping them from merging into one translucent mass is how close the
 // inboard-most part of one hand gets to the centre line. Under the inward yaw
@@ -172,7 +172,14 @@ const PAD_LEAD = Math.max(
   inboardOf(rakePose(RAKE_BASE + RAKE_AMP, 0.62)),
 )
 const CX = AMP + PAD_LEAD + PALM_GAP / 2 // pad-orbit centre
-const CZ = 0.25
+// The pad-orbit centre in z. 0.25 was tuned for hands reaching in from the SIDES,
+// where z only had to clear the spread. Reaching in from the NEAR side the wrist
+// trails almost a hand-length toward the camera behind its pads, so at 0.25 both
+// palms sat off the bottom of frame with only fingertips showing among the cards.
+// Set BEHIND the spread's centre so the trailing wrists land inside the frame:
+// centring the orbit on the spread was still not enough, because the transport panel
+// takes the bottom 40% and that is exactly where a near-side wrist sits.
+const CZ = -0.15
 // The spread's cards scatter to y = 0.02..0.034 (card centres); the palms have
 // to clear the highest of them for the whole sweep.
 const SPREAD_TOP = 0.034
@@ -201,17 +208,28 @@ function passTime(orbit, a) {
   return mod(orbit.dir * (a - orbit.v0), TAU) / TAU
 }
 
-// Scatter every card across the felt, face-down, at random spots + angles.
+// TWO ROWS ACROSS A WIDE FIELD, not a round heap. A uniform disc of radius 1.0 read as
+// one clumped pile in the middle of the table, which is not what a wash looks like: the
+// cards go out over as much felt as the arms can cover, and a dealer's spread ends up
+// wide and shallow rather than circular. Splitting the deck between two z bands and
+// spreading it to +-1.34 in x gives that, and it fits the frame - `washTable` allows
+// 3.31 of half-width against the 2.14 this reaches once the smoosh moves cards around.
+//
+// The direction of the widening is set by what the CAMERA can see: after the near-side
+// rework the wash had 1.42 of usable depth and was already using 1.27 of it, while
+// leaving most of its width unused. So this spends width, which was free, and leaves z
+// close to where it was.
+const SPREAD_X = 1.34
+const ROW_Z = [-0.3, 0.2]
+const ROW_HALF = 0.2
 function scatterLayout(deck, rng, spread = 1.0) {
-  return deck.map((card) => {
-    const r = spread * Math.sqrt(rng())
-    const a = rng() * Math.PI * 2
+  return deck.map((card, i) => {
     return {
       id: card.id,
       pos: new THREE.Vector3(
-        Math.cos(a) * r,
+        (rng() * 2 - 1) * SPREAD_X * spread,
         0.02 + rng() * 0.014,
-        Math.sin(a) * r * 0.7,
+        ROW_Z[i % 2] + (rng() - 0.5) * 2 * ROW_HALF,
       ),
       quat: faceQuat(false, (rng() - 0.5) * Math.PI),
       bend: (rng() - 0.5) * 0.7,
@@ -258,7 +276,6 @@ export const washLesson = {
   id: 'wash',
   title: 'Card Wash',
   technique: 'wash',
-  difficulty: 'beginner',
   randomizes: 'Very good',
   seed: 42,
   cameraPreset: 'topDown',
@@ -289,14 +306,19 @@ export const washLesson = {
       if (bySide[-1][i]) spread1.push(bySide[-1][i])
     }
 
+    // THREE PASSES WITH THE HANDS LIFTING BETWEEN THEM, which is what the footage
+    // shows and what casinos actually do - a wash is not one continuous swirl, it is
+    // repeated bouts with the hands coming off the felt in between. Directions
+    // alternate so no clump survives a single rotational direction.
     const spread2 = smooshPass(spread1, rng, 1)
     const spread3 = smooshPass(spread2, rng, -1)
+    const spread4 = smooshPass(spread3, rng, 1)
 
     // Gather: right palm plows its half in first (bottom of the new stack),
     // then the left palm pushes the rest on top. Plow order: the card nearest
     // the incoming palm moves first.
-    const rightHalf = spread3.filter((p) => p.pos.x >= 0)
-    const leftHalf = spread3.filter((p) => p.pos.x < 0)
+    const rightHalf = spread4.filter((p) => p.pos.x >= 0)
+    const leftHalf = spread4.filter((p) => p.pos.x < 0)
     const byId = new Map(deck.map((c) => [c.id, c]))
     const finalOrder = [
       ...shuffleArray(rightHalf.map((p) => byId.get(p.id)), rng),
@@ -348,7 +370,7 @@ export const washLesson = {
     // read as a palm on the felt. Its pads start OUTSIDE the spread and finish
     // on the heap they just built, both card-sized distances, so they say what
     // they mean at any hand scale.
-    const PLOW_FROM = 1.0 + CARD_W / 2 // just past the spread's outer edge
+    const PLOW_FROM = SPREAD_X + CARD_W / 2 // just past the spread's outer edge
     const PLOW_TO = CARD_W * 0.3 // on top of the heap
     const WALL_X = 0.075 + CARD_W // the far side of the heap, where cards stop
     const plowAt = (padX, padZ) => openAt(padX, HEAP_TOP, padZ, PLOW_LIFT)
@@ -373,6 +395,18 @@ export const washLesson = {
           { fingers: ['thumb'], type: 'curlRipple', amp: RAKE_AMP * 0.6, cycles: 4, phase: 0.4 },
         ],
       },
+    ]
+
+    // THE LIFT BETWEEN PASSES, and it also carries the DESCENT for the pass that
+    // follows. That is not a stylistic choice: `motion.orbit` is a wrist overlay that
+    // is only zero at both ends across an integer number of cycles, so it has to own a
+    // whole keyframe segment. If a smoosh beat had to descend first it would need two
+    // segments and the orbit would no longer close. Ending this beat exactly on
+    // SM_ANCHOR keeps every smoosh a single clean segment.
+    const LIFT_H = CARD_H * 0.42
+    const liftHands = (spread) => [
+      { at: 0.5, pose: rakePose(RAKE_BASE, spread), anchor: pressAt(CX + AMP, SPREAD_TOP, CZ, LIFT_H), ease: 'easeOutCubic' },
+      { at: 1, pose: rakePose(RAKE_BASE, spread), anchor: SM_ANCHOR, ease: 'easeInOutCubic' },
     ]
 
     const squareHands = [
@@ -457,7 +491,7 @@ export const washLesson = {
         kind: 'move',
         id: 'smoosh-1',
         label: 'Each palm swirls its half in circles',
-        duration: 4500,
+        duration: 3000,
         ease: 'linear',
         to: () => spread2,
         stagger: { by: 'card', spread: 0.7, span: 0.3 },
@@ -471,9 +505,18 @@ export const washLesson = {
       },
       {
         kind: 'move',
+        id: 'lift-1',
+        label: 'Hands come off the felt',
+        duration: 520,
+        ease: 'easeInOutCubic',
+        to: () => spread2,
+        hands: { left: liftHands(0.5), right: liftHands(0.5) },
+      },
+      {
+        kind: 'move',
         id: 'smoosh-2',
         label: 'Reverse direction — break up every clump',
-        duration: 4500,
+        duration: 3000,
         ease: 'linear',
         to: () => spread3,
         stagger: { by: 'card', spread: 0.7, span: 0.3 },
@@ -487,6 +530,31 @@ export const washLesson = {
       },
       {
         kind: 'move',
+        id: 'lift-2',
+        label: 'And again',
+        duration: 520,
+        ease: 'easeInOutCubic',
+        to: () => spread3,
+        hands: { left: liftHands(0.56), right: liftHands(0.56) },
+      },
+      {
+        kind: 'move',
+        id: 'smoosh-3',
+        label: 'A third pass, direction reversed again',
+        duration: 3000,
+        ease: 'linear',
+        to: () => spread4,
+        stagger: { by: 'card', spread: 0.7, span: 0.3 },
+        hands: {
+          left: smooshHands(1, 0.7),
+          right: smooshHands(1, 0.7),
+        },
+        annotations: [
+          { text: 'Lift, reset, repeat — the hands do not stay down for one long swirl', appearAt: 0.2 },
+        ],
+      },
+      {
+        kind: 'move',
         id: 'gather-right',
         label: 'Plow the right half into the middle',
         duration: 2700,
@@ -494,7 +562,7 @@ export const washLesson = {
         reorder: () => finalOrder,
         to: () => gatherRight,
         stagger: { by: 'card', spread: 0.55, span: 0.45 },
-        camera: 'overview',
+        camera: 'washTable',
         hands: {
           right: [
             { at: 0.15, pose: 'deckApproach', anchor: plowAt(PLOW_FROM, 0.2) },

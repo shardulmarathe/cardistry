@@ -81,6 +81,29 @@ import { FINGERS, FINGER_NAMES, HAND_SCALE } from '../../hands/handRigSpec'
 // deepest half way through), and the rungs are also most of why the hands in this
 // lesson articulate 12x more than they used to.
 //
+// MEASURED STATE, on the corrected rig and card (scripts/inspect/deepFrame.mjs at
+// the peel-0 beat), because the diagnosis above is right but its numbers were from
+// an older geometry:
+//
+//   left cradle   every finger CLEAR, but the PADS sit 0.060..0.116 off the cards
+//   right drawer  wrist at y 1.90, nearest finger 0.128, thumb 0.62..0.80 away
+//
+// So both hands hover and the drawing hand is not near the deck at all - it sits
+// about a full card length above where its pads belong, which is exactly the
+// `recvWristFor` runaway described above, still live.
+//
+// THE FIX IS PROBABLY THE ONE THE RIFFLE FOUND, and it is worth trying before any
+// more stroke tuning. This hand holds the drawn packet with pads on its TOP FACE
+// (`fingerDraw`), and the packet is then pulled out from UNDER those pads - the
+// pads are in the release path. The in-hands riffle had the identical problem: held
+// by the faces its release measured 0.074 with the cards passing through the pads,
+// and holding the packet by its LONG EDGES instead (an `edgePinchGrip` with
+// axis:'long') dropped that to 0.015 at 90% contact, because a hand gripping the
+// edges sits BESIDE the packet rather than above it - which is also the direct
+// answer to a wrist that ends up a card length too high.
+//
+// That is a re-model of the stroke, not a tune, so it is not attempted piecemeal.
+//
 // WHAT IS NOT A REAL OVERHAND HERE: the drawn packets fall onto a pile on the
 // felt rather than into the other hand. The receiving hand cannot be the holding
 // hand (its own fingers are on the deck), and a third hand is not available.
@@ -179,7 +202,6 @@ export const overhandLesson = {
   id: 'overhand',
   title: 'Overhand Shuffle',
   technique: 'overhand',
-  difficulty: 'beginner',
   randomizes: 'Weak',
   seed: 21,
   // The deck is held in the air for the whole shuffle, so the action lives near
@@ -191,7 +213,7 @@ export const overhandLesson = {
   // is the one angle that holds the deck, both hands and the growing pile at
   // once, and it is also the angle that shows what this shuffle IS: packets
   // walking sideways off a deck one at a time.
-  cameraPreset: 'topDown',
+  cameraPreset: 'overhandDraw',
   summary:
     'The everyday shuffle: hold the deck in one hand and let the other thumb peel packets off the top into your palm, one after another. Easy — but it only moves blocks, so it barely randomizes.',
   facts: [
@@ -593,7 +615,7 @@ export const overhandLesson = {
       label: 'Lift it to working height',
       duration: 1200,
       ease: 'easeInOutCubic',
-      camera: 'topDown',
+      camera: 'overhandDraw',
       // Hand and deck travel between two stations exactly one deck-travel apart,
       // welded to a fingertip frame, so the offset is constant for the flight.
       grip: { left: { cards: 'all', frame: 'packet', pressure: [{ at: 0, v: 0.2 }, { at: 1, v: 0.2 }] } },
@@ -781,7 +803,15 @@ export const overhandLesson = {
               pose: holdPose,
               anchor: HOLD_WRIST,
               ease: 'snapEase',
-              fingerMotion: [{ fingers: ['thumb'], type: 'tighten', amp: 0.05 }],
+              // 0.012, not 0.05. This thumb is braced on the deck's near end
+              // face and `resolvePenetration` seats it TANGENT, so every radian
+              // of squeeze on top of that is penetration by construction. At
+              // 0.05 the peak of this envelope (t=0.5, where sin²(πt)=1) drove
+              // the thumb's MIDDLE phalange 0.028 into the bottom card, on
+              // every drop beat. It only passed before because the old thumb was
+              // 1.5x too fat, so clearing the fat capsule left a margin this
+              // squeeze could eat; a correctly-thin thumb has no such slack.
+              fingerMotion: [{ fingers: ['thumb'], type: 'tighten', amp: 0.012 }],
             },
           ],
         },
@@ -864,6 +894,23 @@ export const overhandLesson = {
         { text: 'Repeat it a dozen times and it still barely mixes — that is the overhand', appearAt: 0.1 },
       ],
     })
+
+    // THE HOLDING CRADLE BREATHES AT REDUCED AMPLITUDE, for the same reason
+    // hindu's and strip's do (see the note at the end of hindu.lesson.js). This
+    // hand is braced on a deck with its thumb seated tangent on the near end
+    // face, and the idle overlay adds 0.021rad of curl to every finger with a
+    // per-FINGER phase stagger, so it walks a tangent pad straight into the
+    // cards it is bracing against and drifts the pads away from each other at
+    // the same time. A braced hand is stabilised by that contact in life too, so
+    // damping it is the physical answer as well as the measured one.
+    //
+    // Applied to EVERY left keyframe, not just the holding ones: a scale that
+    // changes between segments steps the overlay discontinuously, and the deck
+    // rides this hand.
+    const HOLD_IDLE = 0.3
+    for (const st of steps) {
+      for (const kf of st.hands?.left ?? []) kf.idleScale = HOLD_IDLE
+    }
 
     return steps
   },

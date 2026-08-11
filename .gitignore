@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Visual-review output. scripts/inspect/captureFrames.mjs defaults to ./frames,
+# and with --reference the sheets embed third-party tutorial footage: review
+# material only, never committed. The scripts warn when their output would land
+# inside the repo; this is the second guard.
+frames/
+*-compare.png
