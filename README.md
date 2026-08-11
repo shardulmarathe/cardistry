@@ -1,8 +1,10 @@
 # Cardistry
 
 An interactive 3D card table and shuffle trainer. Spread a real 52-card deck into
-six layouts, or step through guided, scrubbable 3D lessons for the classic
-shuffles, riffle, overhand, hindu, faro, charlier, strip and wash.
+six layouts, or step through guided, scrubbable 3D lessons for four shuffles
+chosen to be as different from one another as possible: the table riffle, the
+overhand, the charlier cut and the card wash. Nothing animates until you ask it
+to — lessons open paused behind a "Play demo" button.
 
 **[Live demo →](https://cardistrycards.vercel.app)**
 
@@ -27,11 +29,17 @@ vertex-shader effect (`onBeforeCompile`, `uBend`) over one shared segmented
 geometry.
 
 **Contact and penetration are measured, not eyeballed.** `npm run verify` runs a
-headless harness that scores every lesson on two opposing metrics, how much of
-each fingertip is genuinely in contact with the cards, and how far any finger
-penetrates a card surface. Both are ratchets: contact may only go up, penetration
-only down. A lesson whose hands stop touching the cards fails the check rather
-than silently regressing to a hover.
+headless harness (~415k assertions, no browser and no WebGL) that scores every
+lesson on two opposing metrics: how much of each fingertip is genuinely in contact
+with the cards, and how far any finger penetrates a card surface. Having both means
+a lesson cannot pass the penetration check by simply hovering above the deck.
+Penetration only ratchets down. The contact floor is meant to only ratchet up, and
+where it has been lowered the reason is recorded at the entry — a hand that is
+releasing cards, for instance, genuinely cannot score fingertip contact.
+
+A third metric, **cards pierced**, exists because the penetration one saturates:
+once a capsule centre reaches a card, the depth reading pins and stops responding to
+anything you change. See `ARCHITECTURE.md` before trusting a penetration number.
 
 ## Running it
 
