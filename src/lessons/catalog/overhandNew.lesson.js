@@ -79,38 +79,46 @@ import { CARD_GAP } from '../../lib/constants'
 // "nothing I change matters". It is not: `cardDepth` returns a true OVERLAP depth, so
 // a capsule whose centre reaches a 0.003-thick card reads `radius + CARD_T/2` and
 // stays there no matter how much further into the STACK it goes. Those ceilings are
-// exactly the numbers this lesson kept printing:
+// exactly the numbers this lesson kept printing - 0.1007 for an index proximal,
+// 0.1057 for a thumb middle, 0.0908 for an index middle. All of them mean one thing,
+// "a capsule centre is inside a card", and none could move until that stopped.
 //
-//     index / ring proximal  0.1007      <- every drop beat reported 0.1006-0.1007
-//     thumb middle           0.1057      <- `rest` reported 0.1056
-//     index / ring middle    0.0908      <- `lift` reported 0.0911
-//
-// So those readings all mean one thing - "a capsule centre is inside a card" - and
-// they were never going to move until that stopped being true. `tryLesson` now also
-// reports CARDS PIERCED, the count of cards containing a capsule centre, which is
-// monotone and unbounded and therefore actually diagnostic.
-//
-// Measured that way the real state is far milder than 0.1056 suggests, and the target
-// is unambiguous:
+// `tryLesson` now also reports CARDS PIERCED, the count of cards containing a capsule
+// centre: monotone, unbounded, and diagnostic where the depth saturates. Against it:
 //
 //                        contact   median gap   pierced   worst depth
 //     wash (shipping)       -          -           0        0.0000
 //     overhand (shipping)   6%       0.155         0        0.0017
 //     charlier (shipping)  69%       0.014         0        0.0162
 //     riffle (shipping)    90%       0.009         0        0.0161
-//     this (re-modelled)   81%       0.008         2        0.1056
+//     this (re-modelled)   81%       0.008         1        0.1006
 //
-// EVERY SHIPPING LESSON PIERCES ZERO. Their 0.016 worsts are fingertips genuinely
-// grazing a card, real distances below saturation. This one is the only lesson where a
-// capsule centre gets inside a card at all - and it is 2 cards, by a finger SHAFT
-// (left index middle phalange at 1136ms), not a hand buried in the deck.
+// Two of the three pierces the gauge found are fixed, both in this file:
 //
-// So the remaining job is small and precisely aimed: get the left index's middle
-// phalange out of the top two cards of the pile. Pierce goes to 0 and the depth then
-// falls out of saturation into the sub-0.02 band the other three live in. Note the
-// shaft, not the tip, is the offender - `resolvePenetration` scales a whole finger's
-// curl uniformly, so it cannot clear a shaft while holding a tip on its target, and
-// the fix is where the wrist is SEATED rather than how hard the finger curls.
+//   * THE WITHDRAW. `rest` is ungripped - the cards descend to the table while the
+//     hands go somewhere unrelated - so the two paths crossed. It was the worst pierce
+//     in the lesson (2 cards at 2651ms) and it was not during the shuffle at all. An
+//     extra keyframe at 0.35 lifts each hand up and out before the deck lands.
+//   * AN INTERPOLATION BETWEEN TWO SOLVED POSES IS NOT ITSELF SOLVED. Across the lift
+//     the left hand goes from gripping 52 cards to gripping 15, and halfway is neither.
+//     A waypoint solved for the intermediate size keeps the path near solved poses.
+//
+// WHAT REMAINS IS ONE CARD, pierced by the left index's TIP at 814ms, mid-lift. Ruled
+// out by measurement, not by argument:
+//   - squeeze: swept 0.3 / 0.2 / 0.12, pierce stays 1 and contact stays 81%. Not the
+//     pressure model pressing pads into cards.
+//   - `stabilise: false` on the pile hand: pierce stays 2, contact drops 81% -> 74%.
+//     This also retires the earlier rejection for a better reason - it does not help.
+// It is a tip crossing a plane by a hair during a pose transition, which is the same
+// order as the 0.016 tip-grazes the three shipping lessons carry; they simply stay on
+// the near side of the surface.
+//
+// NOTE FOR WHOEVER WIRES THIS IN. `PENETRATION_BUDGET` cannot be the gate, because it
+// saturates: it would have to be relaxed 0.0079 -> 0.1006 to admit a lesson whose
+// hands are demonstrably closer to the cards than the version it replaces, and that
+// ratchet exists precisely to stop quiet relaxations. The honest change is to add
+// CARDS PIERCED to `verifyTracks.mjs` as the guard and keep depth as secondary. That
+// is a harness decision, not something to smuggle in with a lesson.
 //
 // A FIFTH HYPOTHESIS WAS TESTED AND REJECTED, and it is worth recording because it
 // sounded right. In a `long` pinch the index lies on the packet's TOP FACE as a
@@ -126,8 +134,8 @@ import { CARD_GAP } from '../../lib/constants'
 // CLEAR, which is a change to the seed or a `resolvePenetration` pass against the
 // pile size the hand actually rides at - not to which contacts are declared.
 //
-// Do not wire this in until CARDS PIERCED is 0. That, not the depth number, is the
-// bar the other three clear.
+// Do not wire this in until CARDS PIERCED is 0, or until the harness gates on pierce
+// instead of a saturating depth. That, not the depth number, is the real bar.
 export const overhandNewLesson = {
   id: 'overhand',
   title: 'Overhand Shuffle',
@@ -291,7 +299,16 @@ export const overhandNewLesson = {
       ease: 'easeInOutCubic',
       to: () => layoutOf(inBulk, inPile),
       hands: {
-        left: [key(1, pileAt(inPile.length))],
+        // AN INTERPOLATION BETWEEN TWO SOLVED POSES IS NOT ITSELF SOLVED. Across this
+        // beat the left hand goes from gripping all 52 cards to gripping the ~15 that
+        // remain, and halfway through it is at neither - which is where the lesson's
+        // last pierce lived (left index middle phalange, 1 card, 814ms). The waypoint
+        // at 0.5 is solved for the intermediate size, so the whole path stays near
+        // poses that were actually solved rather than cutting the corner between them.
+        left: [
+          key(0.5, pileAt(Math.round((N + inPile.length) / 2))),
+          key(1, pileAt(inPile.length)),
+        ],
         right: [
           { at: 0, pose: bulkGrip.pose, anchor: at(bulkGrip, -0.34) },
           key(1, bulkAt(inBulk.length), { ease: 'easeOutCubic' }),
@@ -358,9 +375,25 @@ export const overhandNewLesson = {
       ease: 'easeInOutCubic',
       to: (dk) => stackLayout(dk, 0.02),
       camera: 'overview',
+      // THE HANDS LEAVE BEFORE THE DECK LANDS. This beat is an ungripped withdraw -
+      // the cards descend to the table while the hands go somewhere unrelated - so
+      // the two paths cross unless the hands are routed out of the way FIRST. Measured
+      // with the pierce gauge, the crossing was the worst pierce in the whole lesson
+      // (2 cards at 2651ms, inside this beat and not during the shuffle at all), even
+      // though nothing here is gripped and no solve could have anticipated it.
+      //
+      // The extra keyframe at 0.35 lifts each hand UP and OUT early; only after that
+      // do they settle. A single `at: 1` keyframe interpolates straight through the
+      // descending deck.
       hands: {
-        left: [{ at: 1, pose: pileGrip.pose, anchor: at(pileGrip, -0.5), ease: 'easeOutCubic' }],
-        right: [{ at: 1, pose: bulkGrip.pose, anchor: [bulkGrip.anchor[0] + 0.6, bulkGrip.anchor[1] - 0.2, bulkGrip.anchor[2] + 0.2], ease: 'easeOutCubic' }],
+        left: [
+          { at: 0.35, pose: pileGrip.pose, anchor: [pileGrip.anchor[0] - 0.3, pileGrip.anchor[1] + 0.34, pileGrip.anchor[2] - 0.1], ease: 'easeOutCubic' },
+          { at: 1, pose: pileGrip.pose, anchor: at(pileGrip, -0.5), ease: 'easeInOutCubic' },
+        ],
+        right: [
+          { at: 0.35, pose: bulkGrip.pose, anchor: [bulkGrip.anchor[0] + 0.36, bulkGrip.anchor[1] + 0.3, bulkGrip.anchor[2] + 0.16], ease: 'easeOutCubic' },
+          { at: 1, pose: bulkGrip.pose, anchor: [bulkGrip.anchor[0] + 0.6, bulkGrip.anchor[1] - 0.2, bulkGrip.anchor[2] + 0.2], ease: 'easeInOutCubic' },
+        ],
       },
       annotations: [{ text: 'Blocks moved, but cards that started together are still together', appearAt: 0.3 }],
     })
