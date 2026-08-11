@@ -155,12 +155,37 @@ it"). Measured at yaws of 0, 0.79, 1.35 and 1.57 rad, the pad gaps are IDENTICAL
 (0.0168 / 0.0165 / 0.0165) and 3/3 throughout — a rigid transform preserves a rigid
 grip exactly.
 
-**The open question is the LEFT hand**, and the codebase already documents the trap:
-`grips.js` mirrors a grip frame's POSITION but not its QUATERNION, so a rotation
-applied to a left-hand grip turns the hand one way on screen and the packet it is
-holding the other — tableGrip records a 2x error from precisely this, putting 0.17
-of finger inside the riffle's own halves. The riffle needs both hands, so resolving
-that mirror behaviour is the first task of the rebuild, not an afterthought.
+**The LEFT hand is SAFE, measured** (`scripts/inspect/mirrorCheck.mjs`). The engine
+gives both hands the same pose object with the anchor's x negated and the rig under
+`root.scale.x < 0`. Evaluating a right-authored pinch as the left hand against the
+x-mirrored packet reproduces its pad gaps to **0.0000** — portrait, landscape and
+riffle-half orientations alike. So one solve serves both hands, provided the cards
+are the exact x-mirror, which `inHandsRiffleLayout` produces (`s = ±1` with negated
+yaw and tilt).
+
+The trap `tableGrip` records is narrower than it reads: it is about applying an
+EXTRA asymmetric rotation (a wrist roll of `-tilt`) to a mirrored grip, which turns
+the hand one way and the packet it holds the other. Mirroring the base grip is
+fine; mirroring a grip *plus* a one-sided roll is what produces the 2x error. Do
+not add a per-side roll on top of a mirrored grip.
+
+**And the yaw limit is now bounded**, with the face check that makes the numbers
+mean something:
+
+| packet yaw | reach | pads | faces | verdict |
+|---|---|---|---|---|
+| 0 (canonical) | 0.0004 | 3/3 | u/u/n | correct |
+| 45deg | 0.0033 | 3/3 | u/u/n | correct |
+| 68deg (a riffle half) | 0.3429 | 3/3 | **n**/u/n | **FALSE PASS** |
+| 90deg | 0.5113 | 2/3 | **x**/u/n | false pass |
+
+Note the third row carefully: it reports 3/3 pads in the contact band while having
+missed its targets by a third of a card, because the thumb slid onto the deck's
+BROAD face (`n`) instead of its end (`u`). Distance to the nearest card is not
+evidence of a correct grip — only distance to the *intended face* is. So a pinch may
+be solved directly for yaws up to about 45 degrees, and beyond that must be solved
+canonically and rotated rigidly (which preserves the gaps exactly, verified at 0,
+45, 77 and 90 degrees).
 
 ### Two open measurement problems, both flagged and neither fixed
 
