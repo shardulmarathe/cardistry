@@ -1495,6 +1495,44 @@ export const edgePinchGripAuto = (opts = {}) =>
     { byGap: true },
   )
 
+// --- Rigid re-orientation of a solved grip -----------------------------------
+// A grip is a rigid relationship between a hand and the cards it holds, so a rigid
+// transform of BOTH preserves it exactly. That is the only way to grip a packet
+// whose orientation the solver cannot reach directly.
+//
+// Why it is needed: the edge grips place the hand in WORLD axes, so a packet yawed
+// about world Y decouples from its hand. Measured (scripts/inspect/mirrorCheck.mjs)
+// the pinch solves cleanly up to about 45 degrees of yaw and then fails - at 68
+// degrees, a riffle half's yaw, the reach residual is 0.3429 and the thumb has slid
+// onto the deck's BROAD face while still reporting 3/3 pads "in contact". Rotating
+// a canonical solve instead preserves every pad gap to the digit, verified at 0,
+// 45, 77 and 90 degrees.
+//
+// MIRRORING IS FREE and does not need a second call. The engine gives both hands
+// the same pose with the anchor's x negated, and mirror(R_y(theta)) = R_y(-theta),
+// so one yawed grip serves the left hand on the x-mirrored packet - verified to
+// 0.0000. What must NOT be done is adding a further one-sided roll on top of a
+// mirrored grip; that is the 2x error tableGrip's `tilt` note records.
+// Takes ANY rotation, not just a yaw, because the orientations that need this do
+// not decompose into one axis: a riffle half is a roll ABOUT WORLD Z composed with
+// a yaw about world Y, and those do not commute (R_z*R_y != R_y*R_z), so applying
+// them as two separate steps lands on the wrong packet. Pass the same composite
+// quaternion the layout applies, and pivot about the packet's own centre so the
+// cards stay put and only the hand travels.
+const _rv = new THREE.Vector3()
+
+export function rotateGripRigid({ pose, anchor }, quat, pivot = [0, 0, 0]) {
+  if (!quat) return { pose, anchor }
+  _rv.set(anchor[0] - pivot[0], anchor[1] - pivot[1], anchor[2] - pivot[2]).applyQuaternion(quat)
+  const moved = [pivot[0] + _rv.x, pivot[1] + _rv.y, pivot[2] + _rv.z]
+  const out = cloneHandPose(pose)
+  out.wrist.pos.set(moved[0], moved[1], moved[2])
+  // Composed, never decomposed: the wrist quaternion is PRE-multiplied by the world
+  // rotation, which is what keeps the mirror policy intact for the left hand.
+  out.wrist.quat.premultiply(quat)
+  return { pose: out, anchor: moved }
+}
+
 export const straddleGripAuto = (opts = {}) =>
   autoPlace(straddleGrip, ['thumb', 'index'], STRADDLE_GRID, STRADDLE_MAX_DEPTH, opts)
 

@@ -92,6 +92,17 @@ export function inHandsHalfReachX(yaw = 0.22, tilt = 0.3, stack = 0) {
   return reach + Math.abs(v.x) * stack
 }
 
+// ONE DEFINITION OF A HALF'S ORIENTATION, shared by this layout and by whatever
+// grips the half. A riffle half is a roll about world Z composed with a yaw about
+// world Y, and those do not commute, so two places deriving it independently WILL
+// disagree. Returns the composite WITHOUT the face-down term, because callers need
+// it both to orient the card (composite * face-down) and to point the stack.
+export function inHandsHalfComposite(yaw = 0.22, tilt = 0.3, s = 1) {
+  return new THREE.Quaternion()
+    .setFromAxisAngle(new THREE.Vector3(0, 0, 1), -s * tilt)
+    .multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), s * (Math.PI / 2 - yaw)))
+}
+
 export function inHandsRiffleLayout(
   deck,
   { gap = null, baseY = 1.0, yaw = 0.22, tilt = 0.3, z = 0, telescope = 0, overlap = 0.01 } = {},
@@ -111,10 +122,17 @@ export function inHandsRiffleLayout(
     // leaves the halves side by side across their WIDTH and their short ends
     // never meet. It has to be a quarter turn MINUS the inward angle, which puts
     // the long axes along X with the inner ends pointing at each other.
-    const quat = faceQuat(false, s * (Math.PI / 2 - yaw))
-    quat.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -s * tilt))
-    // Stack along this half's own face normal.
-    _n.set(0, 0, 1).applyQuaternion(quat).multiplyScalar(local * CARD_GAP)
+    const C = inHandsHalfComposite(yaw, tilt, s)
+    const quat = faceQuat(false).premultiply(C)
+    // STACK ALONG THE ROTATED +Y, not along the card's face normal. Both point
+    // "through the deck", so either looks plausible in isolation - but a grip is
+    // solved on a FLAT portrait packet that stacks along world +y and is then
+    // rotated rigidly by this same composite, so only the rotated +y maps onto it.
+    // Stacking along the normal instead put the whole half half-a-stack out of
+    // register with the hand holding it: measured, the index pad sat 0.089 off the
+    // cards while every pad was still on the correct FACE, which is exactly the
+    // kind of error a face check alone will not catch.
+    _n.set(0, local * CARD_GAP, 0).applyQuaternion(C)
     // `telescope` is a DISTANCE each half slides inward, not a fraction of the
     // gap: the finishing push moves the halves together by about a tenth of a
     // card, and scaling the whole gap by a progress term drove them a full card
