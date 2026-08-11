@@ -145,9 +145,19 @@ import { CARD_GAP } from '../../lib/constants'
 // So the fix is not the lift's timing or path but THE RECEIVING GRIP ITSELF: it should
 // be an open palm-up cradle, with the pile resting in a cupped hand and nothing wrapped
 // over it, which is also what a real overhand's receiving hand does - it does not pinch
-// the pile by its edges. That is a new grip in the `contacts.js` vocabulary, not an edit
-// to this file, and it is the one change with evidence behind it rather than another
-// guess.
+// the pile by its edges. The plan's own wording for this move is "a pile the receiving
+// hand CRADLES", so that was the intent all along; this file reached for the pinch
+// because the pinch was the vocabulary that existed.
+//
+// AND THE REASON IT IS NOT A SMALL CHANGE, which is worth knowing before starting: every
+// entry in `GRIP_FRAME_TYPES` is FINGERTIP-WEIGHTED (`tips: {...}` over named fingers).
+// A cradle's cards rest on the PALM, so there is no fingertip combination that names
+// where they sit - `packetGrip` is `tableGrip` with cardYaw 0 and puts the hand OVER the
+// deck, which is worse here, and `cageGrip` holds an end from above. A cradle therefore
+// needs a palm-referenced frame, which is a genuinely new kind of entry rather than
+// another row in the table, plus a builder beside `edgePinchGrip`. That is the one change
+// with evidence behind it rather than another guess, and it wants starting deliberately
+// rather than tacked onto this pass.
 //
 // Worth weighing before spending more on it: one phalange grazing one card during one
 // 620ms beat at 81% contact, against a shipping version whose hands sit a full
