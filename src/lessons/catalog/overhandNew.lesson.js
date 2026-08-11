@@ -36,7 +36,7 @@ import { CARD_GAP } from '../../lib/constants'
 //
 //                      contact   median gap   worst penetration
 //   shipping (peel)       8%        0.156         0.0079
-//   this (re-modelled)   82%        0.019         0.0905
+//   this (re-modelled)   81%        0.008         0.1006
 //
 // Contact is a tenfold improvement and the median gap is eight times tighter, which
 // says the hands are genuinely on the cards for the first time in this lesson. The
@@ -54,17 +54,63 @@ import { CARD_GAP } from '../../lib/constants'
 //   2. EACH HAND MUST RIDE ITS PACKET'S SIZE. The pile grows 15 -> 52 cards and the
 //      bulk empties, so a hand left at one anchor gets buried by the difference.
 //      Worth 9% -> 20% and median 0.118 -> 0.036.
-//   3. The grips are solved for the LARGEST packet each will ever hold, not an
-//      average: a pinch's wrap is sized to the stack it was solved against.
+//   3. EACH BEAT SOLVES ITS OWN GRIP, at that beat's actual packet size. One solve
+//      plus a ride was tried first and it is subtly wrong: riding a hand by the size
+//      delta aligns its TOP card, but a pinch's wrap is solved against the WHOLE
+//      stack, so a 15-card pile under a hand solved for 52 has its bottom 0.111
+//      closer than the solve expected and the wrap is intruded. Worth median 0.019
+//      -> 0.008. Measured: the same grip solved AT 15, 26, 40 and 52 cards is clean
+//      at all four (3/3 pads, 0.0000 deep), which is what proved the grip itself was
+//      never the problem.
+//
+//      Re-solving is normally forbidden for a CARRIED grip, because different curls
+//      walk the cards under the pads. It is safe here for the same reason it is
+//      unsafe there: both hands hold their packets essentially still, so a curl
+//      difference between beats moves the frame a little rather than dragging a
+//      packet through a moving hand. The boundary-continuity check is what would
+//      catch it if that stopped being true.
 //   4. Layouts anchor stacks by their BOTTOM, because that is what
 //      `edgePinchGrip`'s `baseY` means and the layout has to agree with the solve.
 //      Anchoring by the top was tried and rejected (0.1057 -> 0.1056): it only moved
 //      the disagreement to the other end.
 //
-// WHAT IS LEFT: ~0.09 of penetration at every beat, and it is the LEFT HAND'S INDEX
-// against the pile it is holding - 0.0799 into the top card's broad face at the drop
-// beats, which is that capsule's own radius plus half a card, so the capsule CENTRE
-// is on the card plane rather than the finger merely grazing.
+// WHAT IS LEFT, AND THE FIRST THING TO KNOW IS THAT THE GAUGE WAS PINNED. Six
+// different fixes each reported ~0.10 and the number never budged, which read as
+// "nothing I change matters". It is not: `cardDepth` returns a true OVERLAP depth, so
+// a capsule whose centre reaches a 0.003-thick card reads `radius + CARD_T/2` and
+// stays there no matter how much further into the STACK it goes. Those ceilings are
+// exactly the numbers this lesson kept printing:
+//
+//     index / ring proximal  0.1007      <- every drop beat reported 0.1006-0.1007
+//     thumb middle           0.1057      <- `rest` reported 0.1056
+//     index / ring middle    0.0908      <- `lift` reported 0.0911
+//
+// So those readings all mean one thing - "a capsule centre is inside a card" - and
+// they were never going to move until that stopped being true. `tryLesson` now also
+// reports CARDS PIERCED, the count of cards containing a capsule centre, which is
+// monotone and unbounded and therefore actually diagnostic.
+//
+// Measured that way the real state is far milder than 0.1056 suggests, and the target
+// is unambiguous:
+//
+//                        contact   median gap   pierced   worst depth
+//     wash (shipping)       -          -           0        0.0000
+//     overhand (shipping)   6%       0.155         0        0.0017
+//     charlier (shipping)  69%       0.014         0        0.0162
+//     riffle (shipping)    90%       0.009         0        0.0161
+//     this (re-modelled)   81%       0.008         2        0.1056
+//
+// EVERY SHIPPING LESSON PIERCES ZERO. Their 0.016 worsts are fingertips genuinely
+// grazing a card, real distances below saturation. This one is the only lesson where a
+// capsule centre gets inside a card at all - and it is 2 cards, by a finger SHAFT
+// (left index middle phalange at 1136ms), not a hand buried in the deck.
+//
+// So the remaining job is small and precisely aimed: get the left index's middle
+// phalange out of the top two cards of the pile. Pierce goes to 0 and the depth then
+// falls out of saturation into the sub-0.02 band the other three live in. Note the
+// shaft, not the tip, is the offender - `resolvePenetration` scales a whole finger's
+// curl uniformly, so it cannot clear a shaft while holding a tip on its target, and
+// the fix is where the wrist is SEATED rather than how hard the finger curls.
 //
 // A FIFTH HYPOTHESIS WAS TESTED AND REJECTED, and it is worth recording because it
 // sounded right. In a `long` pinch the index lies on the packet's TOP FACE as a
@@ -80,7 +126,8 @@ import { CARD_GAP } from '../../lib/constants'
 // CLEAR, which is a change to the seed or a `resolvePenetration` pass against the
 // pile size the hand actually rides at - not to which contacts are declared.
 //
-// Do not wire this in until it is under ~0.01.
+// Do not wire this in until CARDS PIERCED is 0. That, not the depth number, is the
+// bar the other three clear.
 export const overhandNewLesson = {
   id: 'overhand',
   title: 'Overhand Shuffle',
@@ -133,9 +180,7 @@ export const overhandNewLesson = {
     // (0.104) plus half a card - the full-radius charge that means a capsule CENTRE
     // is on a card's mid-plane. Sized for the maximum, a smaller packet is merely
     // held more loosely, which costs contact and never penetration.
-    const BULK_N0 = Math.round(N * 0.72)
-    const PILE_N0 = N
-    const bulkGrip = pinchAt(BULK, BULK_N0)
+    const bulkGrip = pinchAt(BULK, Math.round(N * 0.72))
     // THE LEFT HAND'S GRIP IS SOLVED AT THE MIRROR OF ITS PACKET'S POSITION, and
     // this is the mirror rule doing exactly what it says. Anchors are authored in
     // RIGHT-hand coordinates and the engine negates x for the left hand, so a grip
@@ -147,7 +192,7 @@ export const overhandNewLesson = {
     // The mirror is only free when the CARDS are mirrored too (which is why it was
     // free for the riffle, whose halves are mirror images). Here the pile sits at one
     // specific world x, so the solve has to be done at its mirror image.
-    const pileGrip = pinchAt({ ...PILE, x: -PILE.x }, PILE_N0)
+    const pileGrip = pinchAt({ ...PILE, x: -PILE.x }, N)
 
     const at = (g, dy) => [g.anchor[0], g.anchor[1] + dy, g.anchor[2]]
     // EACH HAND RIDES ITS PACKET'S SIZE. Both packets stack upward from a fixed
@@ -163,11 +208,37 @@ export const overhandNewLesson = {
     // has to be constant is hand-to-packet, so the HAND moves by the size delta -
     // which is also what a real hand does, riding up as the pile grows under it and
     // down as the bulk empties.
-    const rideY = (g, count, solvedCount) => [
-      g.anchor[0],
-      g.anchor[1] + (count - solvedCount) * CARD_GAP,
-      g.anchor[2],
-    ]
+    // SOLVED PER BEAT, at that beat's actual packet size. One solve plus a ride was
+    // tried first and it is subtly wrong: riding the hand by the size delta aligns
+    // its TOP card, but a pinch's wrap is solved against the WHOLE stack, so a
+    // 15-card pile under a hand solved for 52 has its bottom 0.111 closer than the
+    // solve expected and the wrap is intruded. Measured 0.09 of index-in-card at
+    // every beat that way; the same grip solved at 15, 26, 40 and 52 cards is clean
+    // at all four (3/3 pads, 0.0000).
+    //
+    // Re-solving is normally forbidden for a CARRIED grip because different curls
+    // walk the cards under the pads. It is safe here for the reason it is unsafe
+    // there: these two hands hold their packets essentially still, so a small curl
+    // difference between beats moves the frame a little rather than dragging a
+    // packet through a moving hand. The boundary-continuity check is what would
+    // catch it if that stopped being true.
+    const gripFor = (c, count, mirrorX) =>
+      pinchAt(mirrorX ? { ...c, x: -c.x } : c, Math.max(count, 2))
+    // A hand keyframe takes ONLY pose and anchor from a solve; spreading the whole
+    // grip in would leak its contact targets into the keyframe.
+    const key = (at, g, extra) => ({ at, pose: g.pose, anchor: g.anchor, ...extra })
+    // Memoised so a beat that names the same packet twice solves the IK once.
+    const solves = new Map()
+    const pileAt = (count) => {
+      const k = `p${count}`
+      if (!solves.has(k)) solves.set(k, gripFor(PILE, count, true))
+      return solves.get(k)
+    }
+    const bulkAt = (count) => {
+      const k = `b${count}`
+      if (!solves.has(k)) solves.set(k, gripFor(BULK, count, false))
+      return solves.get(k)
+    }
     const layoutOf = (heldByBulk, heldByPile) => {
       const out = []
       heldByPile.forEach((c, i) =>
@@ -212,10 +283,10 @@ export const overhandNewLesson = {
       ease: 'easeInOutCubic',
       to: () => layoutOf(inBulk, inPile),
       hands: {
-        left: [{ at: 1, pose: pileGrip.pose, anchor: rideY(pileGrip, inPile.length, PILE_N0) }],
+        left: [key(1, pileAt(inPile.length))],
         right: [
           { at: 0, pose: bulkGrip.pose, anchor: at(bulkGrip, -0.34) },
-          { at: 1, pose: bulkGrip.pose, anchor: rideY(bulkGrip, inBulk.length, BULK_N0), ease: 'easeOutCubic' },
+          key(1, bulkAt(inBulk.length), { ease: 'easeOutCubic' }),
         ],
       },
       annotations: [{ text: 'The BULK moves once — after this, only packets fall', appearAt: 0.3 }],
@@ -241,10 +312,10 @@ export const overhandNewLesson = {
           right: { cards: inBulk.map((c) => c.id), frame: 'pinch', release: 'stagger', pressure: [{ at: 0, v: SQUEEZE }, { at: 1, v: SQUEEZE }] },
         },
         hands: {
-          left: [{ at: 1, pose: pileGrip.pose, anchor: rideY(pileGrip, newPile.length, PILE_N0) }],
+          left: [key(1, pileAt(newPile.length))],
           // The bulk's hand descends as it empties, which keeps the fall short and
           // closes the two hands on each other the way they do in life.
-          right: [{ at: 1, pose: bulkGrip.pose, anchor: rideY(bulkGrip, restBulk.length, BULK_N0) }],
+          right: [key(1, bulkAt(restBulk.length))],
         },
       })
       inBulk = restBulk
@@ -266,8 +337,8 @@ export const overhandNewLesson = {
         right: { cards: inBulk.map((c) => c.id), frame: 'pinch', release: 'stagger', pressure: [{ at: 0, v: SQUEEZE }, { at: 1, v: SQUEEZE }] },
       },
       hands: {
-        left: [{ at: 1, pose: pileGrip.pose, anchor: rideY(pileGrip, N, PILE_N0) }],
-        right: [{ at: 1, pose: bulkGrip.pose, anchor: rideY(bulkGrip, 0, BULK_N0) }],
+        left: [key(1, pileAt(N))],
+        right: [key(1, bulkAt(2))],
       },
     })
 

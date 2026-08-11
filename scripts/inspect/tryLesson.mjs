@@ -26,6 +26,16 @@ const _q = new THREE.Quaternion()
 const _p = new THREE.Vector3()
 const _t = new THREE.Vector3()
 let nonFinite = 0, belowFelt = 0, worstPen = 0, penWhere = ''
+// PIERCE COUNT: how many cards contain a capsule CENTRE, at the worst instant.
+//
+// `worstPen` alone cannot answer "how bad": it is a true overlap depth, so a capsule
+// whose centre sits on a 0.003-thick card reads r + CARD_T/2 and STAYS there however
+// much further into the STACK the capsule goes. Those ceilings are 0.1007 for an
+// index proximal and 0.1057 for a thumb middle, which is exactly what the overhand
+// rebuild kept reporting through six different fixes - a pinned gauge, not an
+// unchanged pose. Cards pierced is monotone and unbounded, so it can tell "grazed one
+// card" from "knuckle driven through twenty".
+let worstPierce = 0, pierceWhere = ''
 const gaps = []
 
 const N = 160
@@ -46,14 +56,20 @@ for (let i = 0; i <= N; i++) {
         const r = rad[s] * HAND_SCALE
         for (let k = 0; k <= 4; k++) {
           _p.copy(_j[s]).lerp(_j[s + 1], k / 4)
+          let pierced = 0
           for (const [id, c] of scene.cards) {
             const lp = _p.clone().sub(c.pos).applyQuaternion(_q.set(-c.quat.x, -c.quat.y, -c.quat.z, c.quat.w))
             const e = cardSurfaceExtents(lp, c.bend ?? 0)
+            if (e.x <= 0 && e.u <= 0 && e.n <= 0) pierced++
             if (e.x > r || e.u > r || e.n > r) continue
             const ox = Math.max(e.x, 0), ou = Math.max(e.u, 0), on = Math.max(e.n, 0)
             const out = Math.hypot(ox, ou, on)
             const d = out > 0 ? Math.max(0, r - out) : Math.min(-e.x, -e.u, -e.n) + r
             if (d > worstPen) { worstPen = d; penWhere = `${side} ${nm}[${s}] into ${id} @${Math.round(ms)}ms` }
+          }
+          if (pierced > worstPierce) {
+            worstPierce = pierced
+            pierceWhere = `${side} ${nm}[${s}] @${Math.round(ms)}ms`
           }
         }
       }
@@ -84,6 +100,7 @@ gaps.sort((a, b) => a - b)
 const frac = gaps.length ? gaps.filter((g) => Math.abs(g) < 0.025).length / gaps.length : 0
 console.log(`  non-finite ${nonFinite}   below felt ${belowFelt}`)
 console.log(`  worst finger-in-card ${worstPen.toFixed(4)}  ${penWhere}`)
+console.log(`  worst cards pierced  ${worstPierce}  ${pierceWhere}`)
 // Per-step worst, so a single bad beat is named rather than a single timestamp.
 const perStep = new Map()
 for (let i = 0; i <= N; i++) {
