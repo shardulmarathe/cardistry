@@ -208,7 +208,6 @@ export const overhandNewLesson = {
     // THE PACKETS: each beat releases one block from the bottom of the bulk; it
     // falls onto the pile. Both grips persist across every beat, so they are
     // captured once and the packets ride the hands the whole way.
-    let taken = 0
     PATTERN.forEach((size, k) => {
       const falling = inBulk.slice(0, Math.min(size, Math.max(0, inBulk.length - 2)))
       const restBulk = inBulk.slice(size)
@@ -234,7 +233,6 @@ export const overhandNewLesson = {
       })
       inBulk = restBulk
       inPile = newPile
-      taken += size
     })
 
     // Whatever is left drops as the last packet, then the deck squares up.
