@@ -75,7 +75,14 @@ async function main() {
     console.log(`lessons: ${lessons.join(", ")}`);
     if (lessons.length === 0) note("no lessons exposed by the dev bridge");
 
-    // --- 1. Every technique opens PAUSED at 0, with the demo CTA present -----
+    // --- 1. Every technique STARTS when it is picked -------------------------
+    // THE OPPOSITE OF WHAT THIS USED TO ASSERT, deliberately. Lessons used to load
+    // paused at frame 0 behind a "Play demo" button, and this block guarded exactly
+    // that: `playing` false, `started` false, a `.demo-btn` in the DOM. All three
+    // went with the two-click open - picking a technique IS the request to see it,
+    // and the step rail is there the moment you want to take over. A guard for
+    // deleted behaviour is worse than no guard: it fails on every correct build
+    // until someone deletes it without reading why it was there.
     for (const id of lessons) {
       await page.evaluate((x) => window.__cardistry.openLesson(x), id);
       await sleep(1400);
@@ -84,76 +91,58 @@ async function main() {
         return {
           lessonId: p.lessonId,
           playing: p.playing,
-          started: p.started,
           ms: p.globalMs,
           dur: p.durationMs,
-          cta: !!document.querySelector(".demo-btn"),
           steps: p.track ? p.track.steps.length : 0,
+          rail: document.querySelectorAll(".step-chip").length,
         };
       });
       if (s.lessonId !== id) note(`${id}: did not load (lessonId ${s.lessonId})`);
-      if (s.playing) note(`${id}: autoplayed on open`);
-      if (s.started) note(`${id}: reported started before any play`);
-      if (s.ms !== 0) note(`${id}: opened at ms ${s.ms}, expected 0`);
-      if (!s.cta) note(`${id}: no .demo-btn CTA before first play`);
       if (!(s.dur > 0)) note(`${id}: duration ${s.dur}`);
-      console.log(`  ${id}: ${s.steps} steps, ${(s.dur / 1000).toFixed(1)}s, paused at 0, CTA present`);
+      if (!(s.steps > 0)) note(`${id}: compiled with no steps`);
+      // Either still running, or it ran to the end inside the wait. What must not
+      // happen is sitting at 0 doing nothing.
+      if (!s.playing && s.ms === 0) note(`${id}: did not start on open`);
+      if (s.rail !== s.steps) note(`${id}: ${s.steps} steps but ${s.rail} chips in the rail`);
+      console.log(
+        `  ${id}: ${s.steps} steps, ${(s.dur / 1000).toFixed(1)}s, ` +
+          `${s.playing ? "playing" : `stopped at ${Math.round(s.ms)}ms`}, ${s.rail} chips`,
+      );
     }
 
-    // --- 2. Switching technique mid-shuffle stops the outgoing run -----------
-    // THE CATALOG MUST BE STILL. It used to load the selected technique and loop it
-    // forever as a live preview, so the table shuffled continuously the whole time you
-    // were browsing, with no way to stop it short of leaving the tab. It is a poster
-    // frame now: parked partway in so each technique reads distinctly, and paused.
-    // Checked by sampling twice a second apart: a running preview moves, a poster does
-    // not. The frame count is reported but NOT asserted - r3f renders on demand, so a
-    // genuinely still scene correctly stops drawing, and requiring frames to climb
-    // would fail precisely when the fix is working. `playing` is a direct state read,
-    // so this is not vacuous without it.
+    // --- 2. The picker animates nothing, and switching stops the outgoing run
+    // THE STILL-POSTER GUARD IS GONE WITH THE POSTER. The catalog used to load the
+    // selected technique and hold it at 45% of its track as a paused poster frame
+    // (and before that, loop it forever as a live preview, which is the bug the
+    // poster fixed). There is no catalog: the landing state is the shared deck
+    // squared on the felt with a hand either side, posed by LessonRunner's idle
+    // path, and NO TRACK IS LOADED AT ALL. That is a stronger invariant than
+    // "the poster does not move", so it is what gets checked.
     await page.evaluate(() => {
       const app = window.__cardistry.stores.app.getState();
       app.closeLesson();
       app.setMode("lesson");
     });
-    // WAIT FOR THE POSTER TO BE SET, then test stillness. This was a flat
-    // `sleep(1400)`, and that made the guard FLAKY in the one direction that
-    // matters: entering lesson mode compiles a track and builds 52 card textures,
-    // and on a cold or just-reloaded dev server that can outlast 1400ms - so the
-    // first sample landed at ms 0 before the scrub applied, and the second saw
-    // 9783. Both assertions then fired and reported a moving preview and a ms-0
-    // poster on a build where the poster was demonstrably correct (two immediately
-    // following runs passed at 9783ms). A regression guard that cries wolf gets
-    // ignored, which costs more than the bug it was watching for.
-    //
-    // This does NOT weaken either assertion. The poll only waits for the poster to
-    // exist; if it never does, `c1.ms` stays 0 and the ms-0 check still fires, and
-    // the two-sample stillness comparison below is unchanged.
-    const posterReady = async () => {
-      for (let i = 0; i < 40; i++) {
-        const ms = await page.evaluate(() => window.__cardistry.stores.player.getState().globalMs);
-        if (ms > 0) return true;
-        await sleep(150);
-      }
-      return false;
-    };
-    await posterReady();
-    await sleep(400);
-    const c1 = await page.evaluate(() => {
+    await sleep(1200);
+    const idle = await page.evaluate(() => {
       const p = window.__cardistry.stores.player.getState();
-      return { playing: p.playing, ms: p.globalMs, frames: window.__cardistry.frameCounter.n };
+      const a = window.__cardistry.stores.app.getState();
+      return {
+        activeLessonId: a.activeLessonId,
+        hasTrack: !!p.track,
+        playing: p.playing,
+        cards: a.deck.length,
+        buttons: document.querySelectorAll(".picker-card").length,
+      };
     });
-    await sleep(1000);
-    const c2 = await page.evaluate(() => {
-      const p = window.__cardistry.stores.player.getState();
-      return { playing: p.playing, ms: p.globalMs, frames: window.__cardistry.frameCounter.n };
-    });
-    if (c1.playing || c2.playing) note("catalog: preview is playing (should be a still poster)");
-    if (c1.ms !== c2.ms) note(`catalog: preview advanced ${c1.ms} -> ${c2.ms} while idle`);
-    if (!(c1.ms > 0)) note(`catalog: poster frame is at ms ${c1.ms}; every lesson looks identical at 0`);
-    console.log(
-      `  catalog: still poster at ${Math.round(c1.ms)}ms, not playing` +
-        ` (${c2.frames - c1.frames} frames drawn while idle)`,
-    );
+    if (idle.activeLessonId !== null) note(`picker: activeLessonId is ${idle.activeLessonId}`);
+    if (idle.hasTrack) note("picker: a lesson track is still loaded");
+    if (idle.playing) note("picker: the player is playing with no technique open");
+    if (idle.cards !== 52) note(`picker: deck has ${idle.cards} cards`);
+    if (idle.buttons !== lessons.length) {
+      note(`picker: ${lessons.length} techniques but ${idle.buttons} buttons`);
+    }
+    console.log(`  picker: no track loaded, ${idle.buttons} techniques, deck intact`);
 
     for (let r = 0; r < ROUNDS; r++) {
       for (let i = 0; i < lessons.length; i++) {
@@ -188,8 +177,15 @@ async function main() {
           return { lessonId: p.lessonId, playing: p.playing, ms: p.globalMs };
         });
         if (s.lessonId !== to) note(`switch ${from}->${to}: landed on ${s.lessonId}`);
-        if (s.playing) note(`switch ${from}->${to}: new lesson is playing (should be paused)`);
-        if (s.ms !== 0) note(`switch ${from}->${to}: inherited cursor ${s.ms} from the old run`);
+        // THE NEW LESSON IS EXPECTED TO BE PLAYING - that assertion used to read the
+        // other way round. What still must not happen is INHERITING THE OLD CURSOR:
+        // the point of the beat is that switching mid-shuffle presents the new
+        // technique from the top rather than dropping you into the middle of it. It
+        // has autoplayed for `sleep(1200)` by the time it is read, so the test is
+        // that it is BEHIND where the outgoing run had got to, not that it is at 0.
+        if (s.ms >= mid + 1200) {
+          note(`switch ${from}->${to}: cursor ${s.ms} looks inherited from the old run (${mid})`);
+        }
         if (!(mid > 0)) note(`switch ${from}->${to}: outgoing run never advanced, test is vacuous`);
       }
     }
@@ -254,7 +250,14 @@ async function main() {
     await sleep(800);
     console.log("  8x Learn/Visualizer mode thrash: no errors");
 
-    // --- 6. Responsive: the catalog folds, nothing overflows -----------------
+    // --- 6. Responsive: the picker and the step bar fit, nothing overflows ----
+    // NO MORE DRILL-DOWN. This used to allow "either the technique cards are on
+    // screen OR a detail pane with a Start button is", because narrow screens folded
+    // the catalog's rail away into a per-technique detail sheet and remembered your
+    // last selection across mounts - so a narrow viewport could legitimately open
+    // straight into the detail. There is no detail pane and no rail: four buttons,
+    // always all four, at every width. The picker grid drops to two columns under
+    // 900px and one under 480px, which changes the layout but never the count.
     await page.evaluate(() => {
       window.__cardistry.stores.app.getState().setMode("lesson");
       window.__cardistry.stores.player.getState().clear();
@@ -263,37 +266,66 @@ async function main() {
     for (const [w, h] of [[1440, 900], [1024, 768], [820, 1180], [390, 844]]) {
       await page.setViewport({ width: w, height: h });
       await sleep(900);
-      // ASSERT "SOMETHING ACTIONABLE IS ON SCREEN", not "the card list is on
-      // screen". Narrow screens deliberately DRILL DOWN: tapping a technique
-      // swaps the card rail for that technique's detail pane, and the catalog
-      // also remembers your last selection across mounts, so a narrow viewport
-      // can legitimately open straight into the detail with the rail folded
-      // away. An earlier version of this check asserted the cards were visible
-      // and reported that intended fold as four broken cards.
       const box = await page.evaluate(() => {
         const onScreen = (e) => {
           if (!e) return false;
           const r = e.getBoundingClientRect();
           return r.width > 1 && r.height > 1 && r.right > 0 && r.left < window.innerWidth;
         };
-        const cards = [...document.querySelectorAll(".lesson-card")];
+        const cards = [...document.querySelectorAll(".picker-card")];
         return {
           cards: cards.length,
           visibleCards: cards.filter(onScreen).length,
-          detail: onScreen(document.querySelector(".detail-card")),
-          startBtn: onScreen(document.querySelector(".start-btn")),
+          faces: onScreen(document.querySelector(".faces-btn")),
           overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
         };
       });
-      const actionable = box.visibleCards > 0 || (box.detail && box.startBtn);
       if (box.overflowX > 1) note(`${w}x${h}: horizontal overflow of ${box.overflowX}px`);
-      if (box.cards === 0) note(`${w}x${h}: no lesson cards in the DOM at all`);
-      if (!actionable) {
-        note(`${w}x${h}: nothing actionable on screen (0 visible cards, and no usable detail pane)`);
+      if (box.cards === 0) note(`${w}x${h}: no technique buttons in the DOM at all`);
+      if (box.visibleCards !== box.cards) {
+        note(`${w}x${h}: ${box.cards} techniques but only ${box.visibleCards} on screen`);
       }
-      const view = box.visibleCards > 0 ? `${box.visibleCards} cards visible` : "detail pane (drilled in)";
-      console.log(`  ${w}x${h}: ${view}, overflowX ${box.overflowX}px`);
+      if (!box.faces) note(`${w}x${h}: the Show faces toggle is off screen`);
+      console.log(`  ${w}x${h}: ${box.visibleCards}/${box.cards} techniques visible, overflowX ${box.overflowX}px`);
     }
+
+    // --- 7. A run that plays to the end offers Replay and Shuffle again -------
+    // A REGRESSION GUARD FOR A REAL BUG. Playback time is mirrored into the store
+    // every 80ms and only WHILE PLAYING, so a run that clamped to its end and
+    // stopped could leave `globalMs` up to 80ms short of `durationMs` - and every
+    // "the run is over" test in the UI is `globalMs >= durationMs`. The completion
+    // row never appeared after actually watching a shuffle finish; scrubbing to the
+    // end worked, which is why it read as a missing button rather than a timing bug.
+    await page.setViewport({ width: 1440, height: 900 });
+    await page.evaluate((id) => window.__cardistry.openLesson(id), lessons[0]);
+    await page.waitForFunction(
+      () => {
+        const p = window.__cardistry.stores.player.getState();
+        return !!p.track && p.durationMs > 0;
+      },
+      { timeout: 8000 },
+    );
+    await page.evaluate(() => window.__cardistry.stores.player.getState().setSpeed(2));
+    await page.waitForFunction(
+      () => {
+        const p = window.__cardistry.stores.player.getState();
+        return !p.playing && p.globalMs > 100;
+      },
+      { timeout: 120000, polling: 200 },
+    );
+    await sleep(400);
+    const done = await page.evaluate(() => {
+      const p = window.__cardistry.stores.player.getState();
+      return {
+        shortBy: Math.round(p.durationMs - p.globalMs),
+        again: !!document.querySelector(".again-btn"),
+        row: !!document.querySelector(".done-row"),
+      };
+    });
+    if (done.shortBy !== 0) note(`play-through ended ${done.shortBy}ms short of the duration`);
+    if (!done.row) note("play-through: no completion row after the run finished");
+    if (!done.again) note("play-through: no Shuffle again button after the run finished");
+    console.log(`  play-through: landed exactly on the end, completion row present`);
   } finally {
     await browser.close();
   }

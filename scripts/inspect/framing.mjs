@@ -58,7 +58,8 @@ const STEP_SAMPLES = 12
 // 1200x860 content box, the shape every preset in constants.js was tuned at.
 const VIEW_W = 1200
 const VIEW_H = 860
-// The PANEL inset in pixels, i.e. what `TransportBar` publishes as `uiInset` and
+// The PANEL inset in pixels, i.e. what the Learn step bar (`ui/LessonStrip.jsx`)
+// measures itself as and publishes as `uiInset`, which
 // `ResponsiveCamera` hands to `setViewOffset` as the extra virtual height. 200px of
 // an 860px canvas is what PANEL_FRAC 0.19 below is derived from.
 const VIEW_INSET = 200
@@ -100,10 +101,10 @@ const ASPECT = VIEW_W / (VIEW_H + VIEW_INSET)
 // constants.js was tuned against exactly this and several of their comments
 // quote usable half-heights derived from it, so it stays the gate: changing it
 // would silently re-score every preset in the same commit as a hand fix. The
-// real panel is ~200-260px tall at desktop (16/20/18px of padding, a 40px button
-// row, title + step + fact lines, and it GROWS with the mixing strip and the
-// replay history, which is why TransportBar measures itself instead of assuming
-// a height), so 0.40 is conservative on the panel's actual share of an 860px
+// real panel measures ~208px at desktop (a title row, the step rail, and the
+// transport row; it GROWS by the completion row when a run finishes, which is why
+// `LessonStrip` measures itself instead of assuming a height - and why it is kept
+// inside this budget on purpose), so 0.40 is conservative on its share of an 860px
 // viewport. Re-derive it in the pass that re-derives the presets, not before.
 const TRANSPORT_RESERVE = 0.4
 // NDC y below this is behind the panel. NDC y runs -1 (bottom) .. +1 (top).

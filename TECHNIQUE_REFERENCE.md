@@ -267,6 +267,15 @@ silently pinning every edge contact to the middle of the deck.
 
 ## Per technique
 
+Four of these are in the catalog: **riffle (tabled)**, **overhand**, **wash** and
+**charlier**. The rest are kept as reference only — `hindu`, `strip`, `waterfall`,
+`faro`, `pileShuffle`, `pressureFan` and `springPrimer` were deleted when Learn was
+cut to four techniques chosen to look severely different from one another, and their
+lesson files no longer exist. The mechanics below are still worth having (they are
+sourced from footage, not memory) and several of the grip findings above came out of
+them, so they are marked rather than dropped. Nothing here should cite a
+`*.lesson.js` that is gone.
+
 Card orientation below is stated as *portrait* (short ends toward/away from the
 dealer) or *landscape* (long edges toward/away).
 
@@ -306,7 +315,7 @@ springs off — a local crease radius at the contact point, not the uniform arc 
 `bend` shader applies across the whole card. If in-hands riffle is ever added,
 the bend shader needs a localised variant.
 
-### Faro — `faro.lesson.js`
+### Faro — not in the catalog
 
 **Real mechanics.** Halves held one per hand, **thumbs on the inner edges,
 fingers on the outer edges**. The corners of the two halves are brought **into
@@ -333,16 +342,20 @@ time onto the accumulating pile**. The receiving hand's **pinky and index cradle
 the pile** to keep it square; the ring finger supports.
 
 Note the direction: cards are *released downward from the lifted mass* onto the
-pile, not *peeled upward off a static deck*. The app's own header comment already
-concedes the thumb cannot do the peel on this rig, which is why it uses
-`fingerDraw`. The research says the peel is not the move anyway — **the grasp-
-and-release is** — so `fingerDraw` may be solving the wrong problem.
+pile, not *peeled upward off a static deck*.
 
-**What the app gets wrong.** 4% contact — it visibly hovers. The receiving hand
-does not cradle with pinky and index. The stroke models a top-peel rather than a
-bottom-grasp-and-release.
+**Where the app stands.** The top PEEL this section was written against is gone -
+it measured 4% contact and visibly hovered, and the research above is why it went.
+So was the grasp-and-release that replaced it, for a different reason: it is the
+sourced move, and it measured 100% contact, but the deck left the table whole in
+the first two seconds and the shuffle the lesson is named for was never seen
+against a deck. What ships is a STRIP TO THE SIDE - the right hand takes a random
+6-20 card packet off the top and stacks it on a pile beside it, all on the felt -
+which is the same block transport read at a glance. 100% contact on the three pads
+that touch, penetration 0.0001, zero top-card swaps. The one finding here it does
+NOT follow is the receiving cradle, because there is no receiving hand.
 
-### Hindu — `hindu.lesson.js`
+### Hindu — not in the catalog
 
 **Real mechanics.** Deck held **face down, middle finger on one long edge and
 thumb on the other** — an edge grip, explicitly. The other hand takes the
@@ -356,7 +369,7 @@ escaping**. The fingers form a *trap*.
 between them. No index-finger trap. The grips are face-aimed rather than the
 explicit long-edge thumb/middle pinch the sources describe.
 
-### Strip / running cuts — `strip.lesson.js`
+### Strip / running cuts — not in the catalog
 
 **Real mechanics.** A strip is "quickly moving cards from the centre of the deck
 to the top" — i.e. a cut. Running cuts: the deck is **held in the air**, a portion
@@ -388,12 +401,20 @@ deck then falls onto the lower half of the hand and the raised packet lands on
 top of it. Sources differ on whether the index, middle, or ring drives the push —
 which means it is genuinely a hand-size-dependent detail, not a fact to nail.
 
-**What the app gets wrong.** Packets float in clear air above the hand rather
-than sitting *in* the palm in straddle grip. Contact is the best in the catalog
-(69%) but the *staging* is wrong: there is no straddle grip and no palm to fall
-into.
+**Where the app stands.** It is one-handed and the packet rides the index, which
+is the move. Two of the departures this section recorded are fixed: nothing floats
+unsupported any more (the beat that left the deck alone in mid-air is replaced by a
+rigid flip that turns hand and cards together, and the top half now rides the
+fingers that are already extended under it), and the cut ends where it starts, on
+the felt, face-down. THE ONE THAT STANDS is the grip: the hold is still a palm
+CRADLE rather than a straddle, so the halves sit ON the fingers instead of clamped
+by the deck's perimeter. That matters more than it sounds - a from-below cradle
+cannot take the bottom half away without the top half following it down, which is
+the whole reason the top half has to travel at all. A straddle-based rebuild is the
+open item; `straddleGrip` exists and was benchmarked on this lesson's geometry, but
+no lesson uses it yet.
 
-### Waterfall / spring — `waterfall.lesson.js`, `springPrimer.lesson.js`
+### Waterfall / spring — not in the catalog
 
 **Real mechanics.** **Straddle grip**, deck **bent between thumb and fingers into
 a U**. Pressure is released *slowly from the fingers* so the cards cascade into

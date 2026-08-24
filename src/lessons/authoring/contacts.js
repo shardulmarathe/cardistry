@@ -1711,9 +1711,9 @@ export function tableTopGrip({
 // to be empty. A `long` edge pinch cannot promise that: its index lies on the
 // top face as a stabiliser and its thumb/middle WRAP the pile, so the fingers
 // occupy the very space a falling packet passes through. That is the one pierce
-// `overhandNew.lesson.js` could not remove in nine measured attempts, and its
-// header's conclusion -- "the fix is not the lift's timing or path but the
-// receiving grip itself" -- is this grip.
+// a deleted overhand staging could not remove in nine measured attempts, and its
+// conclusion -- "the fix is not the lift's timing or path but the receiving grip
+// itself" -- is this grip.
 //
 // THE PILE IS LANDSCAPE BY DEFAULT, and that is a reach fact rather than a
 // taste. The four knuckles sit BEYOND the far edge and the pads have to curl
@@ -1757,8 +1757,8 @@ export function tableTopGrip({
 // The pinch is anchored to a pad at mid-stack, so it climbs half of every packet
 // that lands and drags the whole carry frame with it. The cradle is anchored to a
 // bottom card that does not move, so the cup fills up instead. That is the entire
-// difference between the two, and it is why `overhandNew`'s "each beat solves its
-// own grip at that beat's actual packet size" is a workaround rather than a fix.
+// difference between the two, and it is why "each beat solves its own grip at that
+// beat's actual packet size" is a workaround rather than a fix.
 //
 // THE FOUR FINGERS ARE NOT ON THE CARDS, and this is recorded rather than hidden:
 // their pads measure 0.16-0.34 from the pile (closing as it grows), because the

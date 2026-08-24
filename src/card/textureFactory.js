@@ -123,9 +123,18 @@ export function buildFaceTextures(cards, maxAnisotropy = 8) {
 
 // ---------------------------------------------------------------------------
 // Back, bone-bordered art-deco card back with a gold monogram "S" medallion.
-// One shared texture for all 52 cards. The design is ~180°-symmetric (the
-// glyph "S" is itself rotationally symmetric) so it reads correctly whichever
-// way a card is turned.
+// One shared texture for all 52 cards.
+//
+// THE DESIGN IS 180°-SYMMETRIC, AND THAT IS A REQUIREMENT RATHER THAN AN
+// OBSERVATION. Nothing in this app agrees on which way up a face-down card is:
+// the visualizer composes its face-down orientation as faceQuat(true) turned about
+// the card's own long axis (so its flip animation reads as laying a card over),
+// while every lesson layout uses faceQuat(false) directly - and those two differ by
+// exactly 180° about the card's normal. The charlier's flip beat turns the whole
+// deck over and depends on the same thing. So any up/down asymmetry in this drawing
+// shows up as the back "looking reversed" in one mode and not the other, which is
+// precisely what was reported. Keep every gradient symmetric about the centre and
+// every shadow unoffset; the glyph "S" is already rotationally symmetric.
 //
 // The bone border is doing the heavy lifting: the felt is oxblood, so a
 // full-bleed red back made a face-down 52-card fan read as one undifferentiated
@@ -248,18 +257,26 @@ function drawBack(ctx, w, h) {
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   ctx.font = `700 ${Math.round(h * 0.34)}px ${DECO_FONT}`
-  // Soft centered drop shadow (blurred, no lateral offset) so the S never reads
-  // as a doubled/reversed glyph.
+  // Soft centered drop shadow, blurred and with NO offset at all - lateral or
+  // vertical. See the symmetry note above: a 1px vertical offset is enough to make
+  // the medallion read as lit from the wrong side once the card is turned.
   ctx.save()
   ctx.shadowColor = 'rgba(20, 3, 6, 0.85)'
   ctx.shadowBlur = 10
   ctx.fillStyle = 'rgba(20, 3, 6, 0.9)'
-  ctx.fillText('S', cx, cy + 1)
+  ctx.fillText('S', cx, cy)
   ctx.restore()
-  // Gold gradient face.
+  // Gold gradient face, SYMMETRIC ABOUT THE CENTRE. It used to run light at the
+  // top to dark at the bottom, which is the ordinary way to bevel a glyph and the
+  // reason the back was not actually 180°-symmetric: spun half a turn the S was
+  // lit from below and read as reversed. A centre-bright ramp keeps the polished
+  // metal without encoding an up direction, so the same three colours now survive
+  // the turn. Same palette, mirrored.
   const sGrad = ctx.createLinearGradient(0, cy - h * 0.18, 0, cy + h * 0.18)
-  sGrad.addColorStop(0, '#ffe0a4')
-  sGrad.addColorStop(0.5, COLORS.goldBright)
+  sGrad.addColorStop(0, '#b8801f')
+  sGrad.addColorStop(0.3, COLORS.goldBright)
+  sGrad.addColorStop(0.5, '#ffe0a4')
+  sGrad.addColorStop(0.7, COLORS.goldBright)
   sGrad.addColorStop(1, '#b8801f')
   ctx.fillStyle = sGrad
   ctx.fillText('S', cx, cy)

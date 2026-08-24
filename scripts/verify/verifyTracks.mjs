@@ -379,12 +379,12 @@ function assertNoPenetration(scene, label, budget) {
 // Two things about the port, both verified rather than assumed:
 //   - The capsule sampling matches tryLesson (5 points per phalange) and the two
 //     cheap rejects below change nothing: checked frame-for-frame against the
-//     unoptimised all-cards loop over the unwired `overhandNew` track, 161 of 161
+//     unoptimised all-cards loop over an unwired overhand track, 161 of 161
 //     frames identical.
 //   - The TIME grid here is denser than tryLesson's (this harness samples ~250
 //     instants plus every segment boundary; tryLesson samples 160), so this gate
 //     can report a HIGHER count on the same lesson. Measured, again on
-//     `overhandNew`: tryLesson finds 1 pierced card at 814ms, this finds 6 at
+//     that overhand track: tryLesson finds 1 pierced card at 814ms, this finds 6 at
 //     1200ms, an instant tryLesson's grid steps straight over. If the two
 //     disagree, this one is the stricter reading, not a bug in either.
 const PIERCE_SAMPLES = 5 // points per phalange axis, inclusive of both ends

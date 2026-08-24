@@ -403,8 +403,8 @@ export const GRIP_FRAME_TYPES = {
   // crosses the TOP FACE, because that face is where packets land -- the
   // single geometric fact that a `long` edge pinch cannot satisfy (its index
   // lies on the top face as a stabiliser, and the overhand's departing bulk
-  // rises straight through it; nine escape routes are recorded in
-  // overhandNew.lesson.js and none of them was the timing).
+  // rises straight through it; nine escape routes were measured on a deleted
+  // overhand staging and none of them was the timing).
   //
   // THE CARRY ANCHOR IS THE PALM, and that is the whole point rather than a
   // detail. A cradled pile GROWS -- the overhand's goes 15 -> 52 cards -- and

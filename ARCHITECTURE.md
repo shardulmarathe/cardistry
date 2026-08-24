@@ -12,41 +12,83 @@ Four earlier lessons (`hindu`, `strip`, `waterfall`, `faro`) were deleted outrig
 along with `pileShuffle`, `pressureFan` and `springPrimer`; anything in this file
 or in comments that still names them is stale and should be removed on sight.
 
-**Nothing plays without a click.** Opening a technique loads its track PAUSED at
-frame 0 behind a "Play demo" button, and the catalog shows a STILL POSTER FRAME
-(`scrubTo` to 45% of the track, paused) rather than a looping preview. Both are
-load-bearing UX decisions, and both have regression guards in
-`scripts/inspect/stressTest.mjs` — a catalog that animates while you browse is the
-specific bug those guards exist to catch. The poster is taken at 45% and not 0
-because every lesson starts on the same squared deck, so at frame 0 all four
-posters are identical.
+**Two states, and nothing else.** The landing state is the shared deck squared in
+the middle of the felt with a hand either side of it, and four buttons. Picking a
+technique starts it. The running state is the steps as a clickable scroll rail
+along the bottom, a scrubber, and the mixing readout docked right.
+
+This replaced a two-column catalog with a technique rail, a detail pane, a
+"Mixing & grips" reference sheet, a debounced poster-frame compile per hover and a
+"Start lesson" button behind all of it — four things to read and three clicks
+before a card moved. `ui/LessonCatalog.jsx`, `ui/TransportBar.jsx`,
+`ui/OrderStrip.jsx`, `ui/LessonInstructions.jsx` and `ui/orderStrip.css` are gone;
+`RANDOMNESS_GUIDE` and `GRIP_GLOSSARY` went with the sheet. Anything that still
+names them, or a "Play demo" button, or a catalog poster frame, is stale.
+
+**One deck across both tabs.** Card order and each card's `isFaceUp` are the only
+things that cross the tab boundary; the visualizer's ARRANGEMENT deliberately does
+not follow, because Learn always squares the deck in the middle, which is where
+every technique starts. "Show faces" writes the real per-card flag rather than a
+render-time override, so the choice survives the tab switch, and `LessonRunner`
+turns a card over at render time by post-multiplying a half-turn about its own long
+axis — every lesson is COMPILED FACE-DOWN, so the flip cannot be authored into a
+track.
+
+**A face-down card has two legal orientations and they differ by a half-turn.**
+The visualizer composes its face-down pose as `faceQuat(true)` turned about the
+card's long axis (so its flip animation reads as laying a card over); every lesson
+layout uses `faceQuat(false)` directly. Those differ by exactly 180° about the
+card's normal, so the BACK TEXTURE HAS TO BE 180°-SYMMETRIC or the same deck reads
+differently in the two tabs — which it did, because the monogram's gradient ran
+light-top to dark-bottom. See the note over `drawBack` in `card/textureFactory.js`.
 
 Where each lesson stands, from `npm run verify`:
 
 | Lesson | Duration | Contact | Median gap | Worst penetration | Pierced |
 |---|---|---|---|---|---|
 | `wash` | 21.7s | n/a — nothing is gripped | — | 0.0000 | 0 |
-| `overhand` | 12.6s | 100% of 562 | 0.014 | 0.0034 | 0 |
-| `charlier` | 8.2s | 83% of 169 | 0.012 | 0.0108 | 0 |
-| `riffle` | 7.7s | 72% of 275 | 0.012 | 0.0142 | 0 |
+| `overhand` | 8.6s | 100% of 300 | 0.014 | 0.0001 | 0 |
+| `charlier` | 12.6s | 81% of 371 | 0.012 | 0.0037 | 0 |
+| `riffle` | 10.1s | 90% of 418 | 0.008 | 0.0025 | 0 |
 
 Read that table beside the `scored on [...]` list `verify` prints for each lesson.
 Two of these lessons legitimately changed WHICH surfaces they score, and the
 percentage alone cannot tell a real gain from a narrowed set — see `CONTACT_FLOOR`
 in `verifyTracks.mjs`, where the evidence for each is recorded.
 
-Where these came from, since three of the four moved a long way in one pass:
-- **`overhand` was rebuilt** from a top PEEL into the move real shufflers make (the
-  pack lifted clear by its long edges, five uneven packets falling onto a palm-up
-  CRADLE). 8% → 100%, median 0.156 → 0.014, penetration 0.0079 → 0.0034. It was the
-  worst-looking lesson in the app; it is now the only one with zero `CROPPED` beats.
-- **`charlier`** had 14mm of visible air under its packet through the whole pivot
-  (that beat scored 0%). Moving `indexPivot`'s anchor from the index TIP to its
-  dorsal CREST took the beat to 100% at a median gap of 0.001. Its `handover` step,
-  which left the deck genuinely unsupported in mid-air for ~500ms, is gone.
-- **`riffle`** stopped scoring a thumb that was never touching anything (0% at every
-  beat, 0.104–0.131 clear — the pinch cannot solve a yawed landscape half), and its
-  release cadence was re-timed off a metronome.
+Where these came from, since three of the four were rebuilt:
+
+- **`overhand` is a strip to the side.** The right hand takes a random 6–20 card
+  packet off the top of the deck and stacks it on a pile beside it, all on the
+  felt. Two earlier stagings are recorded in the file and neither should come back:
+  a top PEEL (8% contact, a quarter of a card width of air under the fingers
+  supposedly moving the cards) and a lift-the-bulk-and-drop (100% contact, but the
+  deck left the table whole in the first two seconds and the move it is named for
+  was never seen against a deck). Top-card swaps 221 → 0, penetration 0.0034 →
+  0.0001, unmotivated motion 5% → 1%, 12.6s → 8.6s. AN EDGE PINCH CANNOT GRIP A
+  SUB-STACK — the wrapping finger enters the deck underneath, 0.0957 deep, and
+  straightening the un-aimed fingers to zero does not move it — so it uses a face
+  grip, whose builder already resolves against a solid column for this exact case.
+
+- **`charlier` is one-handed.** The hand picks the deck up, TURNS IT OVER, cuts it,
+  and rolls it back face-down. That is not a flourish: lifting a deck off felt is
+  only possible from above and cutting it is only possible from below, and the
+  pickup grip and the cutting cradle are exactly 180° apart about world z — so the
+  flip IS the transition. The second hand that used to hold the top half is gone
+  because that half now travels on its own beat, sliding down carriers that are
+  already extended under it; done during the pivot instead, the sweep and the
+  slide met (0.0522 of ring finger through a card). Card-vs-card clipping 0.0304 →
+  0, inert contact 19% → 8%, unmotivated 16% → 10%.
+
+- **`riffle` has its second half.** After the weave the pack is cupped at both
+  ends, bowed into a bridge and released to fold down square. The hands do NOT
+  squeeze inward (the arch is the CARDS, and inward is the axis this lesson's
+  thumb-clearance budget lives on — closing 0.05 drove the thumb tips 0.7 card
+  thicknesses into each other), the fold is NOT staggered (52 cards 0.003 apart
+  travelling different distances pass through each other wholesale: 1766 clipping
+  pair-frames), and the bridge declares NO grip (a `tableTop` hold is solved
+  against a flat pack; welded to a bowed one every scored pad leaves the surface).
+  Inert contact 3% → 1%, unmotivated 33% → 30%.
 
 The riffle is a TABLE riffle: two halves flat on the felt, thumbs bending the
 inner ends up, cards ratcheting free one at a time. It replaced an in-hands
@@ -755,15 +797,16 @@ src/
                              thumbRatchetKeyframes (staged release)
     catalog/*.lesson.js      per-lesson definitions + index
     annotations/             guides.jsx  ghost cards / arrows / path traces
-                             (the teaching TEXT is not here: it is a docked DOM
-                             banner, ui/LessonInstructions.jsx, because in-scene
-                             3D callouts covered the cards. An unused
-                             AnnotationLayer.jsx held the old <Html> version and
-                             styled itself with a CSS class that no stylesheet
-                             defined; it was never imported and is deleted.)
+                             (the teaching TEXT is not here: each beat's label is
+                             a chip in the step rail, because in-scene 3D callouts
+                             covered the cards and a docked banner duplicated the
+                             rail. AnnotationLayer.jsx held an old <Html> version,
+                             was never imported, and is deleted.)
   visualizer/                free-play fan / flip / layout driver
-  ui/                        UIChrome, VisualizerControls, LessonCatalog,
-                             TransportBar, chrome.css
+  ui/                        UIChrome, VisualizerControls, chrome.css;
+                             Learn is LessonPicker (four buttons) + LessonStrip
+                             (steps + scrubber) + MixDock (the mixing readout,
+                             mixDock.css) + FacesToggle + MixMeter
   devBridge.js               window.__cardistry for headless drivers (dev only)
 scripts/
   capture-og.mjs             OpenGraph card capture
@@ -775,13 +818,23 @@ scripts/
                                which card it is in — this is what names a cause
     framing.mjs                does each lesson fit its camera? flags OVERFLOWS
     captureFrames.mjs          per-beat PNGs through a real browser
-    stressTest.mjs             the interactive layer: paused-on-open, the still
-                               catalog poster, mid-shuffle switching, transport
-                               spam, deck integrity, responsive down to 390px
+    stressTest.mjs             the interactive layer: mid-shuffle switching,
+                               transport spam, deck integrity, responsive down to
+                               390px. Its paused-on-open and still-poster guards
+                               are GONE with the behaviour they guarded - picking
+                               a technique now starts it, and there is no catalog
+                               preview to hold still
     washRake.mjs               the wash only: pad reach vs spread, per-card path
                                length, and per-step pad-to-card clearance (tip AND
                                whole-finger, because tip-only overstates a flat rake ~4x)
     gripProbe.mjs              sweep a grip's placement; never place one by hand
+    cardClip.mjs               card-vs-card: how deep one card passes through
+                               another, and TOP-CARD SWAPS - overlapping pairs
+                               trading which is on top, which is the only depth
+                               cue two coplanar cards have. Exported into
+                               verifyTracks, so it is a gate, not just a tool
+    handClash.mjs              hand-vs-hand: the closest capsule pair per beat
+    inertContact.mjs           cards standing still under a moving hand
     mirrorCheck.mjs            left/right parity
     refFrames.mjs              reference footage frames (scratchpad only, never
                                committed — sidesteps licensing entirely)

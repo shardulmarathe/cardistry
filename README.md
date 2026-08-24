@@ -1,16 +1,26 @@
 # Cardistry
 
 An interactive 3D card table and shuffle trainer. Spread a real 52-card deck into
-six layouts, or step through guided, scrubbable 3D lessons for four shuffles
-chosen to be as different from one another as possible: the table riffle, the
-overhand, the charlier cut and the card wash. Nothing animates until you ask it
-to — lessons open paused behind a "Play demo" button.
+six layouts, or watch scrubbable 3D lessons for four shuffles chosen to be as
+different from one another as possible: the table riffle, the overhand, the
+charlier cut and the card wash. Both tabs hold the SAME deck — reorder or flip
+cards in the visualizer and Learn shuffles that deck; finish a shuffle and the
+visualizer lays out the result.
 
 **[Live demo →](https://cardistrycards.vercel.app)**
 
 Built with React 19, Vite and react-three-fiber.
 
 ## What makes it interesting
+
+**It shows you how well each shuffle actually mixes.** The deck's order is read
+back out of the compiled track — a squared stack is sorted by height — and scored
+two ways: rising sequences (1 is untouched, ~26 is random for 52 cards) and how
+many originally-adjacent pairs are still adjacent. So the claims are checkable
+rather than asserted: one wash reads 24 of 26 with 6% of neighbours kept, one
+overhand reads 4 with 94% kept, and a charlier cut reads 2 with 98% — which is
+what a cut is. Repeat a technique and the tally accumulates, which is the
+~7-riffles result as something you watch happen.
 
 **Every lesson is a pure function of time.** A lesson definition compiles once
 into a deterministic keyframe track, which is then sampled by a pure
@@ -29,7 +39,7 @@ vertex-shader effect (`onBeforeCompile`, `uBend`) over one shared segmented
 geometry.
 
 **Contact and penetration are measured, not eyeballed.** `npm run verify` runs a
-headless harness (~420k assertions, no browser and no WebGL) that scores every
+headless harness (~336k assertions, no browser and no WebGL) that scores every
 lesson on opposing metrics: how much of each gripping surface is genuinely in
 contact with the cards, and how far any finger penetrates a card surface. Having
 both means a lesson cannot pass the penetration check by simply hovering above the

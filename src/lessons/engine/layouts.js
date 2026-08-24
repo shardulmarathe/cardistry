@@ -206,23 +206,6 @@ export function fanLayout(deck, { spread = Math.PI * 0.92, radius = 2.0 } = {}) 
   })
 }
 
-// Lay a set of contiguous packets out in a row (overhand / hindu / strip).
-export function blocksRowLayout(blocks, { spacing = 0.66, z = 0.12 } = {}) {
-  const B = blocks.length
-  const poses = []
-  blocks.forEach((block, b) => {
-    const x = (b - (B - 1) / 2) * spacing
-    block.forEach((card, i) => {
-      poses.push({
-        id: card.id,
-        pos: new THREE.Vector3(x, 0.02 + i * CARD_GAP, z),
-        quat: faceQuat(card.isFaceUp),
-        bend: 0,
-      })
-    })
-  })
-  return poses
-}
 
 // A full ring / mandala, cards radiate outward around the table center.
 export function circleLayout(deck, { radius = 2.15 } = {}) {
@@ -279,50 +262,7 @@ export function gridLayout(deck, { cols = 13 } = {}) {
   })
 }
 
-// Deal round-robin into N piles laid out in a row.
-export function pilesLayout(deck, pileCount = 4, { spacing = 0.85 } = {}) {
-  const piles = Array.from({ length: pileCount }, () => [])
-  deck.forEach((card, i) => piles[i % pileCount].push(card))
-  const poses = []
-  piles.forEach((pile, p) => {
-    const x = (p - (pileCount - 1) / 2) * spacing
-    pile.forEach((card, i) => {
-      poses.push({
-        id: card.id,
-        pos: new THREE.Vector3(x, 0.02 + i * CARD_GAP, 0.1),
-        quat: faceQuat(card.isFaceUp),
-        bend: 0,
-      })
-    })
-  })
-  return poses
-}
 
-// Charlier cut: bottom half pivots up and over to the top (one-handed cut pose).
-export function charlierLayout(deck, progress = 1, baseY = 0.02) {
-  const mid = Math.floor(deck.length / 2)
-  const lift = progress * 0.9
-  const tilt = progress * Math.PI * 0.55
-  return deck.map((card, i) => {
-    const isBottom = i < mid
-    const localIndex = isBottom ? i : i - mid
-    if (isBottom) {
-      const x = -0.15 + progress * 0.3
-      const y = baseY + localIndex * CARD_GAP + lift
-      const z = 0.12 + progress * 0.2
-      const q = faceQuat(card.isFaceUp)
-      const pivot = new THREE.Quaternion().setFromEuler(new THREE.Euler(-tilt, 0.3 * progress, 0))
-      q.premultiply(pivot)
-      return { id: card.id, pos: new THREE.Vector3(x, y, z), quat: q, bend: progress * 1.2 }
-    }
-    return {
-      id: card.id,
-      pos: new THREE.Vector3(0.08, baseY + localIndex * CARD_GAP, 0),
-      quat: faceQuat(card.isFaceUp),
-      bend: 0,
-    }
-  })
-}
 
 
 

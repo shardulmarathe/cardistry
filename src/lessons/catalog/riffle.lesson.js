@@ -172,8 +172,8 @@ export const riffleLesson = {
     // One solve, mirrored. The two halves are mirror images of each other about x,
     // and the engine gives the left hand the same pose with the anchor's x negated,
     // so a single solve on the RIGHT half serves both hands. That is only free
-    // because the cards are mirrored too - the overhand pays for getting this
-    // backwards, see overhandNew.lesson.js.
+    // because the cards are mirrored too - a deleted overhand staging paid for
+    // getting this backwards.
     //
     // HISTORY, KEPT BECAUSE IT NAMES A TRAP THAT IS STILL THERE. This lesson used to
     // hold each half in an `edgePinchGrip`, and the pinch cannot solve this orientation:
@@ -507,7 +507,7 @@ export const riffleLesson = {
         //   2. ONE HAND takes the TOP half (26 cards up) and carries it out, the other
         //      flies in as before. Right middle distal 0.0212 into the deck at t=0;
         //      73 failures. The cause is geometric and is the same one that defeated
-        //      `overhandNew`: an edge pinch WRAPS its packet, so its fingers need the
+        //      a deleted overhand staging: an edge pinch WRAPS its packet, so its fingers need the
         //      space below the packet's bottom face - and over a squared deck the
         //      BOTTOM HALF is in exactly that space.
         //

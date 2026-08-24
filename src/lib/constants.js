@@ -40,17 +40,20 @@ export const COLORS = {
 // Camera presets: { position:[x,y,z], target:[x,y,z], fov }
 // A gentle-orbit "dealer's seat" is the default reading angle.
 //
-// PRUNED with the catalog. This carried eleven presets, seven of which existed
-// for lessons that no longer do (springProfile/springArch for the waterfall's
-// squeeze, handsCradle/handsHigh for hindu and strip, handCut for the charlier's
-// old staging, weave for the tabled riffle's interlace, overShoulder for nothing
-// still shipping). Each came with a paragraph of reasoning about framing a beat
-// that has been deleted, which is worse than no comment at all. Add a preset back
-// when a beat needs it, with the measurement that justifies it.
+// PRUNED WITH THE CATALOG, TWICE. This carried eleven presets, seven of which
+// framed beats in lessons that no longer exist (springProfile/springArch for the
+// waterfall's squeeze, handsCradle/handsHigh for hindu and strip, weave for the
+// tabled riffle's interlace, overShoulder for nothing still shipping). Three more
+// went with the lesson rebuilds: `inHands` framed an in-hands riffle that was
+// replaced by the tabled one, `overhandBulk` framed the overhand's in-air staging
+// (it now runs on one table preset from start to finish, because nothing leaves
+// the felt), and `closeUp` had no callers left at all. Each came with a paragraph
+// of reasoning about framing a beat that has been deleted, which is worse than no
+// comment at all. Every preset below has a live caller - `grep` before adding one,
+// and bring the measurement that justifies it.
 export const CAMERA_PRESETS = {
   overview: { position: [0, 4.3, 4.9], target: [0, 0.15, 0], fov: 35 },
   dealerPOV: { position: [0, 3.4, 5.4], target: [0, 0.35, -0.2], fov: 38 },
-  closeUp: { position: [0, 2.5, 3.6], target: [0, 0.3, 0], fov: 34 },
   // Straight down on the felt, and now used ONLY by the wash - the one technique
   // whose subject is a wide 2D spread rather than a deck. Pulled back from 6.2 to
   // 8.2: at 6.2 the spread (x -1.13..0.97, z -0.59..0.66, so 1.57 x 1.10 of
@@ -58,17 +61,6 @@ export const CAMERA_PRESETS = {
   // sides once the transport panel had taken the bottom of it. Geometry alone said
   // it fitted, which is why this was found by looking rather than by arithmetic.
   topDown: { position: [0, 8.2, 0.4], target: [0, 0, 0], fov: 40 },
-  // IN-HANDS work, which is a different shot from anything on the felt. Measured
-  // on the in-hands riffle (scripts/inspect/framing.mjs): its cards span y
-  // 0.02..1.21 with the busiest band at 1.0, and its WRISTS sit at a median of 1.62
-  // because a palm-down pinch holds the packet from ABOVE. So the subject is tall
-  // and high, and the first version of this preset - aimed at 1.0 from 4.2 out -
-  // cropped both hands off the top and left a third of the shot as empty felt.
-  //
-  // Aimed between the cards and the wrists, and pulled back far enough that the
-  // whole subject fits in the strip ABOVE the transport panel (which covers roughly
-  // the bottom 40%, so the framed height has to be about 1.7x the subject).
-  inHands: { position: [0, 2.2, 5.2], target: [0, 1.28, 0], fov: 34 },
   // A ONE-HANDED CUT HAPPENS IN THE AIR. Measured on the charlier's compiled
   // track (scripts/inspect/framing.mjs): its cards span y 0.02..1.11 and the
   // BUSIEST band - where most card mass actually sits - is y 0.9. Every table
@@ -80,26 +72,6 @@ export const CAMERA_PRESETS = {
   // Stays ABOVE the cut - dropping under it frames the deck's unlit underside,
   // which renders near-black beneath the overhead key.
   handCut: { position: [-1.35, 3.15, 4.5], target: [0.02, 0.86, 0.1], fov: 34 },
-  // The overhand's IN-AIR beats: the pack carried clear by its long edges while
-  // packets fall onto a pile in the other hand. This subject is TALL, and no table
-  // preset frames it - every one of them aims at y 0.15..0.35.
-  //
-  // RE-MEASURED after the overhand was rebuilt from a top peel into a lift-and-drop
-  // (framing.mjs, which now measures whole hand extents rather than wrist joints):
-  // cards span y 0.02..1.02 and x -0.47..0.43, with z only -0.01..0.01 and a wrist
-  // median of 0.52. The previous note here described the deleted staging - two
-  // packets one above the other, deep in z (-0.44..0.62) and off-centre in x - and
-  // its OVERFLOWS finding was against that subject, not this one.
-  //
-  // It still needs no retune, which is why the numbers above are recorded rather
-  // than acted on: at d 5.4 it frames the current subject with exactly ONE cropped
-  // beat across all sixteen - `rest`, where the withdrawing hand passes 0.07 off the
-  // left edge at 98% in shot, which is a hand leaving frame as the lesson ends. Note
-  // the declared `fov` below is only the Canvas seed: ResponsiveCamera overwrites it
-  // with `fovForAspect(canvasAspect)` at runtime. `overhandDraw` was deleted with the
-  // peel it existed for.
-  // The lesson's opening beats use `dealerPOV`, which already existed.
-  overhandBulk: { position: [0, 2.7, 5.4], target: [0, 0.96, 0], fov: 36 },
   // A NEAR-SIDE WASH IS DEEPER THAN A TABLE PRESET CAN SEE. Once the hands come in
   // from the near side rather than sweeping in from left and right, they push cards
   // along z as well as x: measured, the spread runs z -0.83..0.59, a span of 1.27
