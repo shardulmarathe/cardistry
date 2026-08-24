@@ -6,7 +6,12 @@ import { compileLesson } from '../../src/lessons/engine/compileLesson.js'
 import { sampleTrack } from '../../src/lessons/engine/sampleTrack.js'
 import { createDeck } from '../../src/deckModel.js'
 import { FINGER_NAMES, FINGERS, HAND_SCALE } from '../../src/hands/handRigSpec.js'
-import { fingerJointsWorld, fingertipWorld, GRIP_FRAME_TYPES } from '../../src/hands/handKinematics.js'
+import {
+  fingerJointsWorld,
+  gripContacts,
+  contactSurfaceWorld,
+  contactSurfaceRadius,
+} from '../../src/hands/handKinematics.js'
 import { cardSurfaceExtents } from '../../src/lessons/authoring/contacts.js'
 import { CARD_W, CARD_H, CARD_T } from '../../src/lib/constants.js'
 
@@ -85,14 +90,18 @@ for (let i = 0; i <= N; i++) {
   }
   for (const h of track.holds ?? []) {
     if (ms < h.tStart || ms > h.tEnd) continue
-    const grippers = GRIP_FRAME_TYPES[h.frame]?.pressure
+    // Scored set is `contacts` (falling back to `pressure` read as fingertips),
+    // plus any per-beat override the hold carries.
+    const grippers = gripContacts(h.frame, h.contacts)
     if (!grippers) continue
     const pose = scene.hands[h.side]
     if (!pose) continue
     const held = [...h.offsets.keys()].filter((id) => ms <= (h.releases?.get(id) ?? h.tEnd)).map((id) => scene.cards.get(id)).filter(Boolean)
     if (!held.length) continue
-    for (const nm of Object.keys(grippers)) {
-      fingertipWorld(pose, h.side, nm, _t)
+    for (const key of Object.keys(grippers)) {
+      const desc = grippers[key]
+      const nm = desc.finger
+      contactSurfaceWorld(pose, h.side, desc, _t)
       const surfaceGap = (pt, r) => {
         let b = Infinity
         for (const c of held) {
@@ -103,8 +112,10 @@ for (let i = 0; i <= N; i++) {
         }
         return b
       }
-      const best = surfaceGap(_t, 0) 
-      const gap = best - FINGERS[nm].rad[2] * HAND_SCALE
+      const best = surfaceGap(_t, 0)
+      // A tip point is a joint CENTRE and owes its distal radius; a palm/crest
+      // point is already on the skin and owes nothing.
+      const gap = best - contactSurfaceRadius(desc)
       // WHOLE-FINGER contact, alongside the fingertip number rather than replacing it.
       // Some frames seat a card on a curled finger's CREST, not its pad - the charlier's
       // `indexPivot` is one, where a correctly seated packet is necessarily a crest-
@@ -113,6 +124,10 @@ for (let i = 0; i <= N; i++) {
       // part of the finger actually carrying the card. Reported separately because
       // `verifyTracks`' CONTACT_FLOOR ratchets are calibrated on the tip definition and
       // silently changing what they mean would let a real regression through.
+      // A PALM contact has no phalanges to walk, so it has no whole-finger reading
+      // at all. It is already reported in the fingertip column above; walking it
+      // here would either crash or invent a finger it does not name.
+      if (!nm) continue
       fingerJointsWorld(pose, h.side, nm, _j)
       let whole = Infinity
       for (let sg = 0; sg < 3; sg++) {

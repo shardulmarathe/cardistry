@@ -22,22 +22,11 @@ import { riffleLesson } from './riffle.lesson'
 // throwaways.
 export const LESSONS = [washLesson, overhandLesson, charlierLesson, riffleLesson]
 
-// Load-bearing randomness facts surfaced in the catalog info panel.
-export const RANDOMNESS_GUIDE = [
-  { technique: 'Riffle', strength: 'Excellent', detail: '~7 riffles randomize a 52-card deck (Bayer–Diaconis cutoff).' },
-  { technique: 'Wash', strength: 'Very good', detail: 'Cards move freely in 2D — one of the strongest physical shuffles.' },
-  { technique: 'Overhand', strength: 'Weak', detail: 'Only transports blocks — thousands of shuffles needed to truly mix.' },
-  { technique: 'Charlier cut', strength: 'Display only', detail: 'A cut moves a block to the other end; it does not mix at all.' },
-]
-
-// Only the grips the app actually implements. This list used to name five,
-// including three the engine has no vocabulary for, which made the glossary a
-// description of a different program.
-export const GRIP_GLOSSARY = [
-  { name: "Dealer's grip", detail: 'Long edges parallel to the table — the standard dealing hold.' },
-  { name: 'Straddle grip', detail: 'Deck in the palm, thumb on one long edge and the fingers wrapped round the other — the one-handed cut and spring hold.' },
-  { name: 'End grip', detail: 'Hold the short ends between thumb and fingers — how a packet is carried clear of the deck.' },
-]
+// The randomness reference table and the grip glossary that used to live here
+// are gone with the catalog's "Mixing & grips" sheet. Both were prose ASSERTING
+// things the app can now SHOW: each technique carries its own `randomizes`
+// rating (the picker's meter, the mixing dock's header) and the dock scores the
+// real deck run by run, which is the same claim made checkable.
 
 export function getLessonById(id) {
   return LESSONS.find((l) => l.id === id)

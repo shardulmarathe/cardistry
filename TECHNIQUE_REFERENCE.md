@@ -444,3 +444,42 @@ Ranked by visual payoff per unit of work:
 - [Manual Card Shuffling Methods — Shuffle Tech](https://shuffletech.com/card-shuffling-methods-types-techniques/)
 - Video: Jason Parker, *the perfect faro shuffle* (frames at 0:95, 1:58, 5:00)
 - Video: Jason Parker, *Riffle Shuffle with Bridge in the hands*
+
+## Reference frames: how to check a change against real footage
+
+The sources above are prose. `scripts/inspect/refjobs.json` is the same grounding made
+REPRODUCIBLE: video ids plus timestamps, per technique, so anyone can regenerate the
+exact frames a change was judged against instead of trusting a previous session's
+description of them. It records only metadata — no footage is committed, ever.
+
+```
+node scripts/inspect/refFrames.mjs --jobs scripts/inspect/refjobs.json --out $TMPDIR/ref
+node scripts/inspect/captureFrames.mjs --out $TMPDIR/app --steps --port 5173
+```
+
+Then read the PNGs side by side, or let `captureFrames --reference $TMPDIR/ref` build
+one contact sheet per technique.
+
+**YOU MUST RUN THESE UNDER AN ARM64 NODE.** The repo's default `node` here is x64, so
+on Apple Silicon macOS runs puppeteer's Chrome under Rosetta with software WebGL, and
+both scripts fail — app capture dies with a `ProtocolError` mid-lesson and YouTube never
+finishes navigating. It is not a code fault and it reproduces identically on `master`.
+With `~/.nvm/versions/node/v20.20.2/bin/node` the same riffle capture that used to
+time out finishes in about 75 seconds.
+
+**What the reference has already caught**, recorded so the value is not theoretical:
+
+- **Cards visible THROUGH the fingers.** The most obviously wrong thing in the app,
+  and no metric could see it: penetration, pierce and contact were all green. Real
+  fingers occlude. It was the x-ray fade (`XRAY_OVER`), which had been set high to
+  compensate for a pose that covers too much of the card in the first place. 0.62 → 0.25.
+- **The riffle's hands approach from the WRONG DIRECTION.** In the footage both hands
+  come from the dealer's near side and sit on top of their own half, fingertips near the
+  inner end, with the backs of the cards still readable. The app's come in from the
+  left and right with the fingers lying flat ACROSS the card faces, covering most of
+  both halves. Still open: `edgePinchGrip`'s `yaw` is the parameter for exactly this and
+  it cannot be used here — the pinch already fails to solve a ~90°-yawed landscape half
+  (residual 0.3094 against 0.0004 unyawed), and adding yaw takes the suite from 0 to
+  178+ failures. A real table riffle is not a pinch at all: the fingers press the top
+  face down, the thumb levers the inner end up, and THE TABLE IS THE OPPOSING JAW.
+  `tableGrip` is the closer vocabulary and is currently unused.

@@ -6,8 +6,17 @@ import { COLORS } from '../lib/constants'
 export default function LightingRig() {
   return (
     <>
-      {/* Kept low on purpose: ambient fill is what flattens a spotlit table. */}
-      <ambientLight intensity={0.13} color="#ffd9c2" />
+      {/* Ambient fill is what flattens a spotlit table, so this stays low - but
+          0.13 was set when the hands were translucent and the felt read through
+          their shadow side. Solid, with a skin albedo instead of a near-white
+          one, the unlit side of a finger measured (64,27,16): crushed to almost
+          nothing, which is what makes a curled hand read as one dark lump
+          instead of separate digits. 0.19 lifts it to a legible ~(85,45,30).
+          Ambient scales with ALBEDO, so this is nearly free everywhere it could
+          do harm: the felt's dark vignette is dark because its albedo is low
+          (+0.001 linear there), and the cards gain ~4% - it lands almost
+          entirely on the mid-albedo skin it was raised for. */}
+      <ambientLight intensity={0.19} color="#ffd9c2" />
 
       <directionalLight
         position={[-3.4, 6.2, 3.2]}
@@ -23,7 +32,15 @@ export default function LightingRig() {
         shadow-camera-top={3.2}
         shadow-camera-bottom={-3.2}
         shadow-bias={-0.0004}
-        shadow-normalBias={0.02}
+        // 0.02 world units is 2mm, and it was set when the only casters were
+        // large and far from what they shadowed. normalBias offsets the RECEIVER
+        // sample toward the light, so it erases any shadow whose caster is
+        // nearer than the offset - i.e. it deletes exactly the contact shadow
+        // that tells you a fingertip is touching a card, right at the moment of
+        // contact (peter-panning). Halved to 1mm, which still covers the depth
+        // slope on the felt at this ortho size (6.4 units / 2048 = 3.1mm per
+        // texel) while letting a pad keep its own shadow.
+        shadow-normalBias={0.01}
       />
 
       {/* Overhead pooled downlight for the casino highlight on the felt. Hung
@@ -40,8 +57,10 @@ export default function LightingRig() {
         castShadow={false}
       />
 
-      {/* Cool rim from behind, grazing, so the deck silhouette and the
-          translucent hands separate from the dark felt. */}
+      {/* Cool rim from behind, grazing, so the deck silhouette and the hands
+          separate from the dark felt. (The hands are no longer translucent;
+          this light matters MORE now, because it is what draws the edge of a
+          solid hand against the felt behind it.) */}
       <directionalLight position={[3, 1.6, -4.2]} intensity={0.9} color="#a9beff" />
 
       <hemisphereLight args={[COLORS.gold, COLORS.feltEdge, 0.18]} />

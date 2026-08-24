@@ -22,7 +22,9 @@ const JOINT_WEIGHTS = [1, 0.7, 0.45]
 const IDLE_W1 = (2 * Math.PI) / 2900
 const IDLE_W2 = (2 * Math.PI) / 4700
 const IDLE_CURL_AMP = 0.021
-const IDLE_WRIST_AMP = 0.0045
+// Exported: a lesson that must keep a pad within a 0.025 contact band has to
+// account for the idle overlay's own wrist drift, and was retyping this literal.
+export const IDLE_WRIST_AMP = 0.0045
 const SIDE_PHASE = { right: 0, left: 2.4 }
 const FINGER_PHASE = [0.0, 1.3, 2.5, 3.7, 4.9]
 

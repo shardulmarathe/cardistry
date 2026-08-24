@@ -99,24 +99,25 @@ export const RANDOM_RISING = (n) => (n + 1) / 2
 
 // --- colour ramp -----------------------------------------------------------
 
-// Viridis: perceptually uniform, monotone in lightness, and readable under all
-// common colour-vision deficiencies, a rainbow would fail both tests and fight
-// the oxblood chrome. The domain is lifted off 0 so the darkest cells stay
-// distinct from the dark red panel behind them.
+// Black to red, deepest to brightest. The ramp has ONE job: tell you where a
+// card started, so it has to be monotone in lightness (52 steps have to stay
+// tellable apart, and it must survive any colour-vision deficiency) while
+// sitting inside the oxblood table rather than fighting it. A rainbow fails the
+// first test; this is a single hue climbing in luminance.
 const STOPS = [
-  [68, 1, 84],
-  [72, 40, 120],
-  [62, 74, 137],
-  [49, 104, 142],
-  [38, 130, 142],
-  [31, 158, 137],
-  [53, 183, 121],
-  [109, 205, 89],
-  [180, 222, 44],
-  [223, 227, 24],
-  [253, 231, 37],
+  [12, 6, 9],
+  [46, 8, 14],
+  [78, 10, 18],
+  [110, 12, 21],
+  [143, 15, 24],
+  [175, 21, 27],
+  [204, 32, 33],
+  [226, 52, 44],
+  [241, 79, 60],
+  [250, 110, 84],
+  [255, 146, 118],
 ]
-const RAMP_FLOOR = 0.12
+const RAMP_FLOOR = 0.14
 
 const clamp01 = (t) => (t < 0 ? 0 : t > 1 ? 1 : t)
 const hex2 = (v) => Math.round(v).toString(16).padStart(2, '0')
@@ -202,15 +203,16 @@ export function frameAt(timeline, stepIndex) {
 
 // --- view state ------------------------------------------------------------
 
-// Opt-in analysis overlay. Default OFF: the felt and the card backs are the
-// point of the scene, and a permanently false-coloured deck would bury them.
-// Closing the panel also drops the 3D tint so the table can never be left
-// rainbow-coloured behind a hidden control.
+// The mixing dock is mounted for the whole of a run, so there is no "is the
+// panel open" flag any more. What IS opt-in is painting the RAMP ONTO THE REAL
+// CARDS: the printed faces and backs are the point of the scene, and a
+// permanently false-coloured deck would bury them (and fight "Show faces").
+// `colors` is published by the dock and cleared when it unmounts, so the table
+// can never be left tinted behind a control that is no longer on screen.
 export const useMixingView = create((set) => ({
-  enabled: false,
   tint: false,
-  colors: null, // Map<cardId, hex>, the card's ORIGINAL position, published by OrderStrip
-  toggle: () => set((s) => ({ enabled: !s.enabled, tint: s.enabled ? false : s.tint })),
+  colors: null, // Map<cardId, hex>, the card's ORIGINAL position in the deck
   toggleTint: () => set((s) => ({ tint: !s.tint })),
+  setTint: (tint) => set({ tint }),
   setColors: (colors) => set({ colors }),
 }))

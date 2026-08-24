@@ -29,17 +29,24 @@ vertex-shader effect (`onBeforeCompile`, `uBend`) over one shared segmented
 geometry.
 
 **Contact and penetration are measured, not eyeballed.** `npm run verify` runs a
-headless harness (~415k assertions, no browser and no WebGL) that scores every
-lesson on two opposing metrics: how much of each fingertip is genuinely in contact
-with the cards, and how far any finger penetrates a card surface. Having both means
-a lesson cannot pass the penetration check by simply hovering above the deck.
-Penetration only ratchets down. The contact floor is meant to only ratchet up, and
-where it has been lowered the reason is recorded at the entry — a hand that is
-releasing cards, for instance, genuinely cannot score fingertip contact.
+headless harness (~420k assertions, no browser and no WebGL) that scores every
+lesson on opposing metrics: how much of each gripping surface is genuinely in
+contact with the cards, and how far any finger penetrates a card surface. Having
+both means a lesson cannot pass the penetration check by simply hovering above the
+deck. Penetration only ratchets down; the contact floor only ratchets up, and any
+change to either is argued at the entry.
 
-A third metric, **cards pierced**, exists because the penetration one saturates:
-once a capsule centre reaches a card, the depth reading pins and stops responding to
-anything you change. See `ARCHITECTURE.md` before trusting a penetration number.
+**Cards pierced** is a hard gate at zero, and it exists because the penetration
+number saturates: once a capsule centre reaches a card, the depth reading pins and
+stops responding to anything you change. It is the only one of the three that is
+monotone and unbounded, and it has already caught a change that every other metric
+scored as an improvement.
+
+Read the contact percentage next to the `scored on [...]` list printed beside it.
+A grip declares which surfaces are actually on the cards, so the percentage can be
+raised either by putting a hand where it belongs or by scoring fewer surfaces — and
+only the first is worth having. See `ARCHITECTURE.md` before trusting any of these
+numbers.
 
 ## Running it
 

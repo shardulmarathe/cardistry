@@ -23,12 +23,30 @@ posters are identical.
 
 Where each lesson stands, from `npm run verify`:
 
-| Lesson | Duration | Contact | Median gap | Worst penetration |
-|---|---|---|---|---|
-| `wash` | 21.7s | n/a — nothing is gripped | — | 0.0000 |
-| `overhand` | 16.5s | 8% — still a hover, see below | 0.156 | 0.0079 |
-| `charlier` | 10.9s | 74% | 0.013 | 0.0162 |
-| `riffle` | 7.7s | 37% — a release cannot score, see below | 0.044 | 0.0142 |
+| Lesson | Duration | Contact | Median gap | Worst penetration | Pierced |
+|---|---|---|---|---|---|
+| `wash` | 21.7s | n/a — nothing is gripped | — | 0.0000 | 0 |
+| `overhand` | 12.6s | 100% of 562 | 0.014 | 0.0034 | 0 |
+| `charlier` | 8.2s | 83% of 169 | 0.012 | 0.0108 | 0 |
+| `riffle` | 7.7s | 72% of 275 | 0.012 | 0.0142 | 0 |
+
+Read that table beside the `scored on [...]` list `verify` prints for each lesson.
+Two of these lessons legitimately changed WHICH surfaces they score, and the
+percentage alone cannot tell a real gain from a narrowed set — see `CONTACT_FLOOR`
+in `verifyTracks.mjs`, where the evidence for each is recorded.
+
+Where these came from, since three of the four moved a long way in one pass:
+- **`overhand` was rebuilt** from a top PEEL into the move real shufflers make (the
+  pack lifted clear by its long edges, five uneven packets falling onto a palm-up
+  CRADLE). 8% → 100%, median 0.156 → 0.014, penetration 0.0079 → 0.0034. It was the
+  worst-looking lesson in the app; it is now the only one with zero `CROPPED` beats.
+- **`charlier`** had 14mm of visible air under its packet through the whole pivot
+  (that beat scored 0%). Moving `indexPivot`'s anchor from the index TIP to its
+  dorsal CREST took the beat to 100% at a median gap of 0.001. Its `handover` step,
+  which left the deck genuinely unsupported in mid-air for ~500ms, is gone.
+- **`riffle`** stopped scoring a thumb that was never touching anything (0% at every
+  beat, 0.104–0.131 clear — the pinch cannot solve a yawed landscape half), and its
+  release cadence was re-timed off a metronome.
 
 The riffle is a TABLE riffle: two halves flat on the felt, thumbs bending the
 inner ends up, cards ratcheting free one at a time. It replaced an in-hands
@@ -128,7 +146,49 @@ for both contact metrics, a finger a world unit away was scored as a gripper on
 every frame of the beat.
 
 A grip is declared as
-`grip: { side: { cards, frame, pressure: [{at, v}], bendGain, release } }`.
+`grip: { side: { cards, frame, pressure: [{at, v}], bendGain, release, contacts } }`.
+
+**`GRIP_FRAME_TYPES` used to conflate three different things in one `pressure` map,
+and separating them is what unblocked three lessons at once.** `pressure` was the
+visible squeeze AND (via `grippingFingers`) the set `reseatGrippingTips` interpolates
+AND (in `verifyTracks.measureContact`) the set the contact metric scores. So a grip
+could not say "these fingers tighten but are not the things touching the cards", and a
+palm-up cradle — whose cards rest on the PALM with no fingertip owning them — was
+inexpressible. The three roles are now:
+
+| Role | Field | Means |
+|---|---|---|
+| carry anchor | `tips` / `anchor` | where the cards ride |
+| visible squeeze | `pressure` | which fingers tighten, and how hard |
+| scored + reseated | `contacts` | what is actually ON the cards |
+
+Always read the last one through **`gripContacts(frameType, override?)`**, never off the
+spec — absent, it defaults to `Object.keys(pressure)` read as fingertips, so every
+pre-existing frame scores exactly as it did. `contacts` may also be overridden PER BEAT
+from the grip declaration (threaded `step.grip[side].contacts` → `gripDecl` → `hold`),
+which is how a release window names the surfaces still on the cards instead of the
+floor being cut a third time. Distinct overrides are part of the hold-coalescing key,
+so a release beat is never merged into the whole carry.
+
+**Anchors are no longer only fingertips.** `contactFrame` sums `tips` plus an optional
+`anchor` list of surface descriptors:
+- `{ kind: 'palm', region?: 'palm'|'thenar', u?, v?, lift? }` — a point on the palmar
+  SURFACE. Independent of every joint angle, so it is the most continuous anchor
+  available: measured 0.0mm of drift across a 15→52-card interpolation, where an edge
+  pinch drifts 67.7mm.
+- `{ kind: 'crest', finger, joint?, along?, facing?: ±1 }` — a point on a phalange's
+  outer surface. `facing:+1` is the pad side, `−1` the nail side.
+
+**The crest convention is AUTHORED and frame-local, deliberately not "the highest
+point".** That phrase is a world-Y notion on a hand that turns over, and it is an argmax
+over a continuum, so the winning point HOPS between phalanges mid-curl — and a jump in a
+carry anchor is a card snapping. Under a palm-up cradle local +z *is* world up, so
+`facing:+1` returns the highest point in the one case where the phrase is well defined.
+
+**`contactSurfaceRadius` is the trap here.** A tip descriptor's point is a joint CENTRE
+and owes its own distal radius; a `palm` or `crest` point is already ON the skin and owes
+nothing. Charging a radius for a palm point reports a grip that is touching as a whole
+radius clear.
 `pressure` tightens the gripping fingers and, scaled by `bendGain`, bows the held
 packet. `release: 'stagger'` makes each card leave the hand exactly when its own
 travel segment begins.
@@ -160,7 +220,26 @@ Three numbers are printed per lesson. None of them is trustworthy alone, and eac
 has a documented blind spot that cost real debugging time.
 
 - **`PENETRATION_BUDGET`** — deepest finger intrusion. Only ratchets **down**.
-- **`CONTACT_FLOOR`** — percentage of gripping fingertips within 0.025 of a card.
+- **`CARDS PIERCED`** — the number of cards whose shell contains a capsule sample
+  point. A **HARD GATE at 0**, and the only one of these that is monotone and
+  unbounded. It exists because the depth reading above SATURATES (see below), so a
+  gauge pinned at ~0.10 cannot tell "grazed one card" from "knuckle through twenty".
+  It is ADDITIVE, not a replacement: a capsule can overlap nearly a full radius with
+  its axis still outside every card, so depth stays the primary graze cap and pierce
+  catches what depth cannot see.
+- **`CAUSALITY_BUDGET`** — the fraction of card MOTION that nothing causes. Ratchets
+  **down**. This is the one metric that asks the question the app is actually about,
+  and it is the newest: every other number here asks "is a hand near a card", while
+  this asks, for each card that MOVED, whether there was anything to move it. A lesson
+  can score 100% fingertip contact and still be a gesture performed beside a shuffle
+  that happens by itself — contact is measured over the cards a grip DECLARES, this is
+  measured over every card that actually moved. Three legitimate movers: the card is
+  GRIPPED (it rides a contact frame), a HAND SURFACE is on it (any phalange, palm or
+  thenar, within 5mm of the card's surface), or GRAVITY (downward-dominant motion).
+  A fourth exists in the world and not in this engine — card-on-card contact — and is
+  deliberately NOT exempted, because exempting it would exempt exactly the authored
+  motion the metric exists to find.
+- **`CONTACT_FLOOR`** — percentage of gripping contacts within 0.025 of a card.
   Ratchets **up**, except where noted below. A lesson measuring 0% is recorded as
   *broken*, not passing.
 - **The median gap**, printed beside the percentage. Read it. `CONTACT_FLOOR` is a
@@ -169,8 +248,84 @@ has a documented blind spot that cost real debugging time.
 
 Having both ratchets means a lesson cannot satisfy the penetration check by
 hovering above the deck, which is the failure mode the floor exists to catch — the
-shipping overhand is exactly that shape: a clean 0.0079 bought with 8% contact and
-its pads a full card-length off the cards.
+overhand USED to be exactly that shape: a clean 0.0079 bought with 8% contact and
+its pads a full card-length off the cards. It has since been rebuilt and now
+measures 100% at 0.0034, so the example is historical — but the failure mode is
+not, and it is why the floor exists.
+
+**CARDS ARE ZERO-THICKNESS PLANES IN THE RENDERER.** `CARD_T` (0.003 = 0.30mm) exists
+only in the collision maths; the mesh is a `PlaneGeometry` with no thickness at all. This
+is the most load-bearing fact about card-on-card clipping, because it means **two parallel
+cards at distinct heights cannot intersect, at any separation.** Every clipping fix in the
+app rests on it.
+
+**CARD-ON-CARD CLIPPING is gated (`CLIP_BUDGET`), and the geometry that causes it is one
+rule.** A card bowed by `b` stands its ends `(1 − cos((CARD_H/2)·b))/b` off its own centre
+plane, while a stack spaces cards ONE card thickness apart. So any bow larger than the
+spacing makes crossings unavoidable between overlapping cards at different bends —
+regardless of position, angle or tuning. Measured:
+
+| | arch, in card thicknesses | outcome |
+|---|---|---|
+| wash `BEND_MAX` 0.14 | 4.5, inside a 1.4mm height band holding all 52 cards | 15,333 clipping pair-frames |
+| riffle `BEND` 1.1 | 35 | 963 pair-frames, 19.8 cards deep |
+| riffle `BEND` 0.8 | 26 | 533 pair-frames, 12.2 cards deep |
+
+The wash is fixed OUTRIGHT and stays at a hard zero: its cards are flat (`BEND_MAX` → 0)
+and `restInOrder` hands each layout's height draws back out in STACKING ORDER, so no two
+overlapping cards share a height. Same distribution, same band, strictly ordered — and
+because the planes are then parallel and distinct, it cannot creep back by fractions. It
+can only return if someone reintroduces a bend or a tilt, and then it returns loudly.
+The riffle can NOT take that fix: its bow is the thing the lesson teaches and the user
+asked for explicitly, so its arch is traded down instead of removed.
+
+**"Just stack the cards physically" does not work for the wash, and this was measured
+rather than assumed:** 52 cards is 29.1 wu² over a 2.68 × 0.9 field, or 12× coverage, and
+honest layering gives a longest overlap chain of 33 — a 0.111-tall mound even at zero
+bend, which lifts every palm with it and forfeits the pad clearances entirely.
+
+**Measure card-vs-card with EDGE-versus-FACE, never point-in-volume.** A 3×3 grid of
+points per card reported the whole catalog clipping-free at 0.2mm when the true worst was
+68mm: a card is 63.5 × 88.9mm and 0.30mm thick, so grid points 31mm apart pass cleanly
+between the plates of an X crossing, and refining the grid does not help because the
+target set is measure-zero. Also do NOT filter by a minimum crossing angle, however
+reasonable it sounds — the worst crossing angle in the wash is 6°, and a 4° gate discards
+98% of the real defect. Shallow crossings are exactly what produce a long visible seam.
+
+**INERT CONTACT is gated too** (`INERT_BUDGET`), the reciprocal of `CAUSALITY_BUDGET`:
+a MOVING hand is on a card and the card does not move. A lesson can satisfy causality
+completely and still show a palm sweeping through a static spread, which is what a user
+reported seeing while every metric was green.
+
+**`captureFrames.mjs` must not wait on `networkidle2`.** With the analytics beacon and
+vite's HMR socket both open, "no more than two connections for 500ms" never arrives, and
+the one tool whose entire job is looking at the app dies after a full minute with a
+navigation timeout. The dev bridge appearing is the readiness signal; it lands in seconds.
+
+**A metric that measures hands can be fooled by a hand-shaped NaN.** The causality
+metric's first version passed palm points to `wristLocalToWorld` as plain arrays; that
+function does `out.copy(p)`, which reads `.x/.y/.z`, so every palm sample was NaN. And
+because `NaN > band` is false, the search loop broke on the first NaN and skipped
+whichever hand was checked second. It reported the overhand — the one lesson built
+around a palm cradle — as 18% unmotivated when the true figure is 6%. If a hand-contact
+number looks worse than the frames do, check that the palm is actually being measured.
+
+**Contact-timed stagger, and where it is wrong.** `stagger: { by: 'contact' }` deals
+each card at the instant a hand actually reaches it, sampled off the COMPILED hand
+track, instead of at its rank in an authored order. It exists because a rank stagger
+silently decouples from the hands: the wash ordered its cards with an analytic model of
+the palm's sweep, that model ignored the orbit's `phase`, and when the lesson gained an
+antiphase left hand half its cards were timed against the wrong circle. Measured, the
+instant a hand was nearest a card and the instant that card moved fastest differed by a
+median 0.233 of the pass and their orderings were indistinguishable from random. Because
+it only re-TIMES motion, it changed mixing not at all (path median 1.470, 0/52 barely
+raked) while taking hand-on-card from 26% to 46%.
+It is NOT a general replacement for rank staggering. Applied to a DEAL rather than a
+rake — cards leaving a squared stack — it drove a pinky 0.086 into a card, because
+re-timing a card's departure to the moment a hand arrives puts the hand where the card
+still is. A rake wants contact timing; a deal needs the card gone before the hand
+arrives. Note also that it required compiling hand tracks BEFORE card tracks, which is
+why `compileLesson` now lays out step timings in a cheap pre-pass.
 
 **`cardDepth` SATURATES, and this is the most expensive thing in this file.** It
 returns a true *overlap* depth, so once a capsule centre reaches a card its reading
@@ -211,11 +366,37 @@ whole finger for frames whose cards ride a curled phalange rather than a pad;
 `tryLesson` already reports whole-finger contact alongside the fingertip number so
 the two can be compared before changing what the ratchets mean.
 
-**The wash cannot be judged by these metrics at all.** Nothing in it is gripped, so
-it reports "0% of 0" and a penetration of 0.0000 whether the hands are raking the
-cards or waving beside them — it passed vacuously for a long time. Use
-`scripts/inspect/washRake.mjs`, which measures pad reach against card spread and each
-card's PATH LENGTH over the smoosh window.
+**Only ONE of the two wash metrics is vacuous, and this file used to claim both were.**
+`CONTACT_FLOOR` genuinely is: nothing in the wash is gripped, so it reports "0% of 0"
+whether the hands are raking the cards or waving beside them.
+`PENETRATION_BUDGET` is NOT. `verifyTracks` scores EVERY finger of the wash against
+EVERY card regardless of grips, so the 0.0000 was never vacuous — it was the pads
+genuinely hovering. Proven: halving the lesson's `CONTACT_AIR` to bring the pads down
+onto the cards produced **184 failures at 0.0260** immediately. The old wording is the
+sentence that would let the next author bury a palm in the deck and believe the metric
+had cleared it. Use `scripts/inspect/washRake.mjs` alongside, which measures pad reach
+against card spread, each card's PATH LENGTH over the smoosh window, and — added
+because neither of those can see a HOVER — the per-step PAD-TO-CARD CLEARANCE.
+
+That third number exists because reach and path length were both satisfied by a lesson
+whose palms never touched anything: the pads swept the right area and the cards moved,
+so both readings looked healthy while a single authored constant (`CONTACT_AIR`) was
+being quoted as though it were a measurement. It prints BOTH definitions for the same
+reason `tryLesson` does — a flat raking hand touches with the pads of its MIDDLE
+phalanges as much as with its tips, so a tip-only reading overstates the air about
+fourfold. Current state, in millimetres:
+
+| step | tip-only min/med | whole-finger min/med |
+|---|---|---|
+| `smoosh-1` | 2.8 / 9.3 | 1.7 / 2.6 |
+| `smoosh-2` | 1.4 / 7.4 | 0.3 / 1.7 |
+| `smoosh-3` | 1.5 / 7.7 | 0.5 / 1.5 |
+| `lift-1` / `lift-2` | 10.1 / 23.8–26.3 | 3.0 / 15.2–18.3 |
+
+So the three raking passes genuinely graze (whole-finger medians 1.5–2.6mm) while the
+lifts correctly leave the cards. A review of this lesson reported "typically 15–26mm of
+air" through the smooshes; that does not reproduce under either definition, which is
+precisely why both are now printed rather than argued about.
 
 ## Invariants and traps
 
@@ -238,8 +419,35 @@ the frame's quaternion, so a 90° wrist turn tips the deck over mid-carry. Move
 the hand into its new orientation first, *then* declare the grip. The charlier
 still relies on this: its grip starts only AFTER the palm-up wrist turn.
 
-**Converging palms need ≥ 0.5 x-separation**, or translucent hands interpenetrate
-and read as one melted shape.
+**"Converging palms need ≥ 0.5 x-separation" IS NOT SUFFICIENT, and the riffle is the
+counter-example.** The rule was written when the hands were 55% translucent; with opaque
+hands the real constraint is on the THUMB BASES, not the palms. `FINGERS.thumb.mcp` puts
+the thumb knuckle a FIXED 0.505 inboard of the palm centre, so two palms 1.047 apart —
+comfortably satisfying the old rule — leave the thumb bases only **0.037 apart against
+0.238 of capsule**. The riffle's thumbs were not merely touching, they crossed in an X:
+the left thumb's mid-joint measured at x **+0.065** and the right at **−0.076**, i.e. each
+had swung across the table's centre line. That is 84 CARD THICKNESSES (25mm) of palm
+inside palm, on 159 of 201 frames, and no metric in this repo could see it until
+`handClash.mjs` existed.
+
+The honest constraint for any two-handed grip whose thumbs work near a shared centre
+line is **thumb-base separation ≥ 0.238**, i.e. palms ≥ ~1.25 apart at zero hand yaw —
+or the hands yawed so the tips converge while the bases diverge, which is what the
+rebuilt riffle does (yaw −0.35 with the wrist outboard).
+
+A second consequence, and it closes off a whole class of attempted fixes: **two hands
+cannot share one deck's centre line on this rig under ANY grip.** That is why the
+reference footage's "both hands on one squared pack" (95s) is unreachable, why the riffle's
+cut cannot be gripped, and why the overhand's `overhandNew` could not take a packet off a
+squared deck. It is a DIFFERENT blocker from the edge pinch's wrap, and it is not
+solvable by choosing another grip vocabulary.
+
+**A thumb target must be inside the thumb's reach, or the solver makes it worse.** The
+riffle's old thumb target sat 0.70 from a thumb with 0.744 of reach, so `solveThumbTo`
+pinned opposition at its limit and swung the whole metacarpal across the centre line
+rather than failing visibly. Same failure mode as the reachability guard in
+`reseatGrippingTips`: a pinned joint does not land near its target, it lands somewhere
+arbitrary.
 
 **Cards released during a weave must stay low** (`arcLift ≤ 0.05`). The engine's
 default riffle values (`arcLift 0.55`, `midBend 3.1`) read as a card fountain; the
@@ -264,6 +472,66 @@ get is just `want − 0.15`. `OVERFLOWS` is the line that matters, and it is rea
 compares the subject's extent against what each preset can see at the subject's own
 distance, reserving the bottom 40% of frame for the transport panel.
 
+**`framing.mjs` now also prints `CROPPED`, and that line is about HANDS.** It used to
+report only wrist JOINT positions, which is why it called the overhand "aim ok" while
+that lesson's drawing hand was entirely out of shot with two fingertips against the top
+edge. It now builds the true world extent of everything that renders — every finger
+joint and tip inflated by its own phalange radius, plus the palm/thenar boxes as
+rotated corners and the wrist/forearm capsules as sphere centres — and projects it
+through the ACTIVE preset. It was written to catch the overhand's `peel-*` beats,
+which it reported at 27–39% in shot; that staging has since been deleted. Current
+counts: overhand 1, riffle 5, charlier 9, wash 15.
+
+**It now models the app's REAL projection, and it did not used to.** It built
+`new PerspectiveCamera(preset.fov, w/h, …)` and both arguments are wrong at runtime:
+`ResponsiveCamera` OVERWRITES every preset's `fov` with `fovForAspect(canvasAspect)`
+(≈37.45° at 1200×860, so the declared 34–38 are dead except as the Canvas seed), and
+`setViewOffset` re-assigns `aspect = w/(h+inset)` = 1.132, not `w/h` = 1.395. The tool
+therefore believed the frame was 11–18% wider than it is, which made every horizontal
+`CROPPED` figure optimistic — in the one tool whose whole job is honesty about what
+leaves frame. Correcting it moved the overhand from 0 cropped beats to 1 and the wash
+from 5 to 15. If you change `ResponsiveCamera`, change this too.
+Two filters keep it honest rather than noisy: an arm stub leaving frame is what real
+footage looks like and is only reported, and a hand more than a card-length from any
+card is "parked", not yet in the shot.
+
+**Two frame models are printed per line, and the difference is real.**
+`ResponsiveCamera` calls `setViewOffset(w, h + inset, 0, inset, w, h)`. three applies
+`fov` to the FULL virtual height and carves the sub-window from its TOP, so the app
+also discards the top `inset/(h+inset)` of the fov frame — the usable band is
+symmetric, `±(1 − 2·PANEL_FRAC)`, not a bottom reserve. `TRANSPORT_RESERVE` (0.40)
+stays the documented gate because every preset's comment quotes half-heights derived
+from it; `PANEL_FRAC` (0.19) is the measured app geometry. A camera pass must use the
+symmetric band.
+
+**There is NO anisotropic-aspect bug, however convincing the argument sounds.** It was
+claimed and written down as fact this session: r3f sets `camera.aspect = w/h` while the
+view offset leaves the horizontal extent at `aspect·(h+inset)`, so the image "should"
+be stretched ~1.23× vertically. It is not, because `PerspectiveCamera.setViewOffset`
+reassigns `this.aspect = fullWidth / fullHeight` as its FIRST statement, and
+`ResponsiveCamera` passes `fullHeight = height + inset` — so the aspect is already
+`w/(h+inset)` before the projection is built and whatever r3f set is overwritten.
+Verified numerically: a 1×1 world square facing the camera renders 336.2px × 336.2px,
+ratio 1.0000, with and without the "fix". Do not change the aspect.
+
+**`pose.spread` and `pose.splay` cannot abduct a straight finger, and this looks like
+a bug in a lesson when it is a rig limitation.** Both are a knuckle yaw in the **Y**
+slot, i.e. a rotation about the finger's OWN axis, so they rotate the plane a finger
+curls in and leave a fully extended finger exactly where it was — every fingertip of the
+wash's flat rake pose is identical at spread 0.5 and at 0.7. Real abduction is a rotation
+about the palm normal (local Z). Until that exists, "the fingers splay" is not
+expressible for a flat hand, and per-finger asymmetry has to come from curl phase lag
+instead.
+
+**The wash's pads overshoot the near edge of the card band by 0.23, and the obvious fix
+is the wrong one.** An elliptical orbit (`ampZ` on `motionOffset`) was added and then
+removed: a hand's pad patch is 0.783 deep in z (the thumb pad sits ~78mm behind the
+middle fingertip — anatomy, not a pose) and the card band is only 0.9 deep, so keeping
+the pad envelope inside the band allows `ampZ <= 0.0585` against an x amplitude of 0.40.
+That is a 7:1 ellipse — a one-dimensional sweep — and "cards move freely in TWO
+dimensions" is the wash's whole teaching point. The real fix is a DEEPER card spread
+(widen `ROW_Z`/`ROW_HALF`, then re-check `framing.mjs`), which is open work.
+
 **`sampleTrack` hands back REUSED card objects.** Keeping a reference to a previous
 sample gives you the current pose, so any probe comparing two instants must snapshot
 plain numbers. This has now produced false readings twice — including one that
@@ -277,18 +545,33 @@ assertion does not catch, it tests the card's origin, not its bent extent.
 
 Ordered by how much evidence is behind them, not by how easy they are.
 
-**A palm-up CRADLE grip does not exist, and the overhand needs it.**
-`overhandNew.lesson.js` is a re-model of the move real shufflers make — bulk lifted
-from below, packets dropped onto a pile — and it measures 81% contact against the
-shipping version's 8%. It is deliberately **unwired**, because it pierces 1 card.
-Nine escape routes were measured and every one is recorded in that file's header;
-the load-bearing one is that with the receiving hand's fingers COMPLETELY straight
-the pierce is unchanged, which proves it is the wrist's placement and not any curl.
-An edge pinch WRAPS the pile, so its fingers occupy the space a packet must pass
-through to reach it. The plan's own wording was always "a pile the receiving hand
-CRADLES"; the rebuild reached for a pinch because the pinch was the vocabulary that
-existed. Every `GRIP_FRAME_TYPES` entry is fingertip-weighted, so a cradle needs a
-palm-referenced frame — a new *kind* of entry, plus a builder.
+**RESOLVED — the palm-up CRADLE grip exists and the overhand ships on it.**
+`GRIP_FRAME_TYPES` was entirely fingertip-weighted, so a pile resting on a PALM had
+no surface that could name where it sat. Three things fixed that: the `contacts`
+split above, a `palm` anchor kind in `contactFrame`, and `cradleGrip`/`cradleGripAuto`
+beside `edgePinchGrip`. The property that made it worth the work is that **a cradle's
+carry anchor does not drift with pile size** — measured 0.0mm across a 15→52-card
+interpolation, against 67.7mm for an edge pinch — which is why the rebuilt overhand
+solves each hand ONCE (compile 1820ms → 83ms) instead of re-solving per beat.
+Two limits are known and accepted rather than fixed: the cradle's four fingers cup the
+pile 0.16–0.34 clear without touching it (the far long edge is inside their minimum
+curl radius, and a pad cannot travel sideways), and every seat on the THUMB side reads
+0.046–0.057 deep however the hand is shaped, because the thumb's metacarpal capsule
+stands 0.055 proud of the palm plane — so the swept seat is 24mm ulnar, which is where
+real hands cradle a deck.
+
+**RESOLVED — `indexPivot` rides the finger's CREST.** The charlier's pivot beat scored
+0% at a median gap of 0.142 (14mm of visible air under the packet, the worst-looking
+thing in that lesson) because the frame rode the index TIP and `SEAT` had to clear the
+deepest curl the cut uses. It now rides the dorsal crest of the index's middle
+phalange and that beat measures **100% at a median gap of 0.001**.
+The direction convention was the open question, and the answer is that it is AUTHORED
+and frame-local — `{kind:'crest', finger, joint, along, facing:±1}` — not "the highest
+point". That phrase was rejected for two measured reasons: it is a world-Y notion on a
+hand that turns over, and it is an argmax over a continuum, so the winning point HOPS
+between phalanges mid-curl — and a jump in a carry anchor is a card snapping. Under a
+palm-up cradle local +z *is* world up, so `facing:+1` returns the highest point in the
+one case where the phrase is well defined.
 
 **A three-face grip: thumb on one END plus both LONG edges.** Requested directly, as
 "the thumb peels up and the fingers grab the deck from the front and back". It is not
@@ -304,6 +587,81 @@ all — which is also the 14mm of visible air that makes the packet look detache
 open question is the direction convention: "crest" means "highest point" only for a
 palm-up cradle, and `contactFrame` runs per frame.
 
+**RESOLVED — the table riffle no longer uses a pinch.** It was authored as an edge
+PINCH, a two-jaw clamp, and a tabled riffle is not one: in the footage the fingers press
+the packet's TOP FACE down, the thumb sits at the near long edge, and **the felt is the
+opposing jaw.** That single substitution was the root of three separate defects (hands
+approaching from the sides; fingers flat across the card faces; a cut that could not be
+gripped), and none of them was visible to any metric — every number on the lesson was
+green. It was found by comparing frames against real footage.
+
+The replacement is `tableTop` in `handKinematics.js` plus `tableTopGrip` in
+`authoring/contacts.js`. Measured, pinch → tableTop on the same lesson:
+
+| | pinch | tableTop |
+|---|---|---|
+| contact | 61% of 275 | **78% of 491** |
+| scored set | `[index middle]` | **`[index middle ring thumb]`** |
+| penetration | 1.2 cards | **0.8 cards** |
+| median gap | 0.018 | **0.013** |
+| max boundary jump | 0.0061 | **0.0030** |
+| carry-anchor drift | 67.7mm (15→52 cards) | **7.9mm** (13→39) |
+
+Note the direction of the set change: it WIDENED. The pinch had to stop scoring its
+thumb because a pinch cannot solve a ~90°-yawed landscape half (residual 0.3094 against
+0.0004 unyawed), so that thumb sat 0.104–0.131 clear of the cards on every frame. Under
+a table-top hold it is genuinely on them. More surfaces scored AND a higher percentage
+is the opposite of the narrowing pattern `CONTACT_FLOOR` warns about.
+
+**Two numbers decide a table-top hold, and neither is obvious.**
+- **The wrist must be HIGH.** At wrist y 0.61 the fingers come down steeply and a
+  steeply-curled finger dips its distal phalange through the card BEHIND the pad —
+  measured 5.4 card thicknesses with every pad reading 0mm. At y 0.70 they reach down
+  shallowly instead and penetration is 0.0. The tangency solve (below) proves the same
+  thing from the other side.
+- **PRESSURE MUST BE FEEBLE.** Pressure exists to tighten fingers on a packet they are
+  CLAMPING; this hold clamps nothing. At pinch-like weights the suite fails outright
+  (index distal 2.2 cards through the face) while the contact percentage is FLAT at ~79%
+  across every weight swept — the squeeze was buying nothing and costing depth.
+
+**A tangency solve now exists** (`solveFingerTo`'s `tangentTo`, opt-in). `surfaceContact`
+constrains a fingertip's POSITION and nothing constrains the distal phalange's ANGLE, so
+a curled finger can touch correctly at the pad and dip the rest of its distal through the
+card. The curl solve has two DOF and pins the distal by `DIST_COUPLING`, so position AND
+orientation needs a third: fixing the distal angle makes the L2 segment a known vector,
+and subtracting it turns the problem into the classic analytic two-link reach. What it
+really constrains is the WRIST — below about y 0.8 the distal would have to hyperextend
+~2.6 rad, so it fails closed and the caller falls back to the curl solve.
+
+Still open on this lesson: the CUT is ungripped (the largest single block of unmotivated
+motion in the catalog). Now that the grip no longer wraps, a hand CAN take the top half
+off a squared deck without its fingers needing the space underneath — so the two attempts
+recorded at that beat are worth retrying against `tableTopGrip`.
+
+In the reference (`scripts/inspect/refjobs.json`, riffle at 75s and 95s) the dealer's
+fingers press the deck's TOP FACE down and the thumb levers the inner end up: **the table
+is the opposing jaw.** The lesson borrows `edgePinchGrip`, a two-jaw clamp, and three
+separate defects all follow from that one substitution:
+
+- **The hands approach from the SIDES**, not from the dealer's near side. `yaw` is the
+  parameter for exactly this and cannot be used: the pinch already fails to solve a
+  ~90°-yawed landscape half (reach residual 0.3094 against 0.0004 unyawed), and adding
+  yaw takes the suite from 0 to 178+ failures.
+- **The fingers lie flat ACROSS the card faces**, covering most of both halves, where in
+  the footage a hand covers about a third and the backs stay readable. This is also why
+  `XRAY_OVER` had to be so high — the fade was compensating for a hand that should not
+  have been over the cards at all.
+- **The cut cannot be gripped**, so the deck separates itself: 709 of that lesson's 5092
+  moving-card samples, the largest single block of unmotivated motion in the catalog.
+  Two authored attempts are recorded in the lesson at that beat; both fail for the same
+  geometric reason that defeated `overhandNew` — a pinch WRAPS its packet, so its fingers
+  need the space below the packet's bottom face, and over a squared deck the other half
+  is in exactly that space.
+
+`tableGrip` in `authoring/contacts.js` is the closer vocabulary — palm down, turned to lie
+along the pile, with a `yaw` that already defaults to 0.12 — and it is currently unused.
+Re-authoring the riffle onto a top-face grip is the one change that would fix all three.
+
 **Penetration is measured per card rather than against the deck envelope.** A pad
 pressed 0.02 into the top card of a 52-card stack is inside the deck's silhouette and
 invisible, but the metric charges a full capsule radius the moment a pad centre enters
@@ -317,9 +675,30 @@ still the right fix.
 by design. Randomisation comes from the initial scatter and the gather rather than the
 swirls. Not a defect, but worth knowing before "improving" the mixing.
 
-**Overhand still ships a hover** (8% contact, median gap 0.156), and it is the worst
-thing in the app to look at: at the peel beat the drawing hand is cropped out of frame
-and the peeled cards float unsupported. Its replacement is the first item above.
+**RESOLVED — the overhand no longer hovers.** It shipped 8% contact at a median gap of
+0.156 with its drawing hand cropped out of frame and the peeled cards floating
+unsupported. Rebuilt on the cradle above, it measures **100% of 562 at a median gap of
+0.014, penetration 0.0034, 0 pierced**, in 12.6s. It has ONE cropped beat, `rest`,
+where the withdrawing hand passes 0.07 off the left edge at 98% in shot — a hand
+leaving frame as the lesson ends, which is what should happen.
+Five things in it were decided by measurement and each is recorded at its call site:
+the pile must be LANDSCAPE (a portrait cradle hovers 0.47); packets must leave the TOP
+of the block or the whole shuffle degenerates to a single cut (`mixing.js` reads the
+order out of the poses, so the staging IS the claim — the permutation is a genuine
+six-block reversal); the two packets must be 0.88 apart in X, because separating them
+in z puts the bulk inside the cradle's own fingers; the pinch's pads must sit LOW on
+the block, since a rigidly-held block cannot re-centre under its pads; and the
+un-aimed index had to be STRAIGHTENED rather than tucked, because it otherwise hangs
+0.164 below the packet, in the fall corridor.
+
+**What the overhand does NOT do: it never puts the deck back on the felt.** It ends
+squared in the receiving hand, and that is a geometric consequence rather than an
+oversight. A cradle's lowest capsule sits 0.25 below the palm seat, so carrying the
+pile down to felt height buries the hand 0.23 under the table; lifting the hand out
+from under the pile drives the palm into it (measured 0.1157, 2 cards pierced); and
+sliding out sideways needs half a card of travel. The honest route is for the empty
+drawing hand to take the finished pile by its edges and set it down — 2–3 more beats
+and a new grip, which would put the lesson near 15s.
 
 ### Task-space interpolation of held fingers
 
@@ -375,7 +754,13 @@ src/
                              edgePinchGrip(+Auto), rotateGripRigid;
                              thumbRatchetKeyframes (staged release)
     catalog/*.lesson.js      per-lesson definitions + index
-    annotations/             drei <Html> callouts
+    annotations/             guides.jsx  ghost cards / arrows / path traces
+                             (the teaching TEXT is not here: it is a docked DOM
+                             banner, ui/LessonInstructions.jsx, because in-scene
+                             3D callouts covered the cards. An unused
+                             AnnotationLayer.jsx held the old <Html> version and
+                             styled itself with a CSS class that no stylesheet
+                             defined; it was never imported and is deleted.)
   visualizer/                free-play fan / flip / layout driver
   ui/                        UIChrome, VisualizerControls, LessonCatalog,
                              TransportBar, chrome.css
@@ -394,6 +779,8 @@ scripts/
                                catalog poster, mid-shuffle switching, transport
                                spam, deck integrity, responsive down to 390px
     washRake.mjs               the wash only: pad reach vs spread, per-card path
+                               length, and per-step pad-to-card clearance (tip AND
+                               whole-finger, because tip-only overstates a flat rake ~4x)
     gripProbe.mjs              sweep a grip's placement; never place one by hand
     mirrorCheck.mjs            left/right parity
     refFrames.mjs              reference footage frames (scratchpad only, never

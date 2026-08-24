@@ -1,10 +1,20 @@
 // Visual review harness: drives the LIVE app through every lesson and writes a
 // PNG per sampled beat, so the hand/card interaction can actually be LOOKED at.
 //
-// Why puppeteer and not the browser extension: Chrome's tab capture composites a
-// WebGL canvas created without `preserveDrawingBuffer` as blank, so extension
-// screenshots of this app are empty. `page.screenshot()` captures the real
-// composited frame (this is how scripts/capture-og.mjs works).
+// Why puppeteer and not the browser extension: extension screenshots of this app
+// come back BLANK, and `preserveDrawingBuffer` does NOT fix it. That was assumed
+// to be the cause and tried: with `gl={{ preserveDrawingBuffer: true }}` confirmed
+// live on the real context (`getContextAttributes()` reports it true), the
+// extension screenshot is still empty, and reading the default framebuffer back
+// with `gl.readPixels` in-page returns all zeros at every sample while
+// `isContextLost()` is false and `getError()` is 0. So the buffer copy bought
+// nothing and was reverted rather than shipped as a permanent per-frame cost.
+// `page.screenshot()` captures the real composited frame (this is how
+// scripts/capture-og.mjs works) and is the only path that works.
+//
+// It is SLOW here and that is expected, not a fault: an x64 node install on Apple
+// Silicon runs puppeteer's bundled Chrome under Rosetta with swiftshader software
+// WebGL, so budget minutes per lesson and use --lessons to keep runs small.
 //
 // Requires a dev server on --port (default 5173) and src/devBridge.js (dev only).
 //
@@ -228,7 +238,22 @@ async function main() {
     // Software WebGL (swiftshader) renders 52 bent cards + two hands at a few
     // seconds a frame, and a long run degrades further; the default 30s
     // protocol timeout kills Page.captureScreenshot partway through the catalog.
-    protocolTimeout: 240000,
+    // 240s was enough until the hands began CASTING shadows and the cards
+    // RECEIVING them. Under swiftshader a shadow pass over 30 capsule casters and
+    // 104 receiving card meshes pushed a single `Runtime.callFunctionOn` past that
+    // ceiling and the run died mid-lesson with a ProtocolError rather than a useful
+    // message. The scene is not broken when this happens - it is software WebGL
+    // rendering a shadowed scene at minutes per frame - so the ceiling is what has
+    // to move.
+    protocolTimeout: 900000,
+    // LAUNCH timeout, which is a different clock from `protocolTimeout` above and
+    // defaults to 30s. On an Apple Silicon machine with an x64 node install,
+    // puppeteer's bundled Chrome is x86_64 and macOS runs it under Rosetta, so it
+    // takes well over 30s just to print its WS endpoint and the launch fails with
+    // "Timed out waiting for the WS endpoint URL to appear in stdout" before a
+    // single frame is captured. Raising this is the whole fix; an arm64 node would
+    // make it unnecessary.
+    timeout: 180000,
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
@@ -246,7 +271,15 @@ async function main() {
     await page.setViewport({ width: WIDTH, height: HEIGHT, deviceScaleFactor: 1 });
     await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "no-preference" }]);
     page.on("pageerror", (e) => console.warn(`  [pageerror] ${e.message}`));
-    await page.goto(URL_BASE, { waitUntil: "networkidle2", timeout: 60000 });
+    // `domcontentloaded` + the dev bridge, NOT `networkidle2`. This file's own header
+    // has said so since it was written, and line 288 below was still using it: with
+    // the Vercel Analytics beacon and vite's HMR socket both open, "no more than two
+    // connections for 500ms" never arrives and this throws
+    // `TimeoutError: Navigation timeout of 60000 ms exceeded` after a full minute -
+    // silently blocking the one tool whose entire job is looking at the app. The
+    // bridge appearing is the real readiness signal and it lands in seconds.
+    await page.goto(URL_BASE, { waitUntil: "domcontentloaded", timeout: 60000 });
+    await page.waitForFunction(() => !!window.__cardistry, { timeout: 60000 });
     await page.waitForFunction("!!window.__cardistry", { timeout: 30000 });
     await sleep(2500); // textures + rapier table settle
 
@@ -260,7 +293,8 @@ async function main() {
 
       // Reload per lesson: a single long-lived software-WebGL context slows to a
       // crawl after a few dozen captures and eventually wedges the compositor.
-      await page.reload({ waitUntil: "networkidle2", timeout: 60000 });
+      await page.reload({ waitUntil: "domcontentloaded", timeout: 60000 });
+      await page.waitForFunction(() => !!window.__cardistry, { timeout: 60000 });
       await page.waitForFunction("!!window.__cardistry", { timeout: 30000 });
       await sleep(2000);
 

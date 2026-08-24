@@ -30,19 +30,25 @@ export default function ResponsiveCamera() {
   const width = useThree((s) => s.size.width)
   const height = useThree((s) => s.size.height)
   const uiInset = useAppStore((s) => s.uiInset)
+  const uiInsetRight = useAppStore((s) => s.uiInsetRight)
 
   useLayoutEffect(() => {
     if (!camera.isPerspectiveCamera || height === 0) return
     applyFov(camera, fovForAspect(width / height))
     // Recentre on the strip of viewport the docked UI leaves visible. Rendering
-    // the window (0, inset)-(w, inset+h) out of a virtual frame `inset` taller
-    // puts the scene's centre at (h - inset)/2, the middle of what you can
-    // actually see, instead of behind the transport panel.
-    const inset = Math.max(0, Math.min(uiInset, height * 0.6))
-    if (inset > 1) camera.setViewOffset(width, height + inset, 0, inset, width, height)
-    else camera.clearViewOffset()
+    // the window (insetX, insetY)-(w, h) out of a virtual frame that much taller
+    // and wider puts the scene's centre at ((w - insetX)/2, (h - insetY)/2), the
+    // middle of what you can actually see, instead of behind the step bar or
+    // under the mixing dock.
+    const insetY = Math.max(0, Math.min(uiInset, height * 0.6))
+    const insetX = Math.max(0, Math.min(uiInsetRight, width * 0.45))
+    if (insetY > 1 || insetX > 1) {
+      camera.setViewOffset(width + insetX, height + insetY, insetX, insetY, width, height)
+    } else {
+      camera.clearViewOffset()
+    }
     camera.updateProjectionMatrix()
-  }, [camera, width, height, uiInset])
+  }, [camera, width, height, uiInset, uiInsetRight])
 
   return null
 }

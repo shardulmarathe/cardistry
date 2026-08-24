@@ -3,6 +3,7 @@ import { stackLayout, faceQuat } from '../engine/layouts'
 import {
   packetGrip,
   poseWithContacts,
+  rotateGripRigid,
   resolvePenetration,
   surfaceContact,
   wristAnchorForContact,
@@ -80,7 +81,13 @@ export const charlierLesson = {
   build: (deck) => {
     const N = deck.length
     const mid = Math.floor(N / 2)
-    const cutOrder = [...deck.slice(mid), ...deck.slice(0, mid)]
+    // THE CUT, AS A FUNCTION OF THE DECK AT THAT MOMENT. This was a constant built
+    // from the pristine array, which was safe only while nothing reordered the deck
+    // before the cut - and `flip` now reverses it (turning a deck over swaps its top
+    // and bottom). A captured constant would hand `finalDeck` a permutation that no
+    // longer matches the cards on the table, and `finalDeck` is what the visualizer
+    // and the mixing dock's write-back read.
+    const cutOrder = (dk) => [...dk.slice(mid), ...dk.slice(0, mid)]
     const TABLE_TOP = 0.02 + (N - 1) * CARD_GAP
     const DECK_H = (N - 1) * CARD_GAP
     const HALF_H = mid * CARD_GAP
@@ -281,7 +288,35 @@ export const charlierLesson = {
     //    the one that broke when HAND_SCALE moved 13 → 8: the clearance a finger
     //    needs is HAND-sized, not card-sized, so a card-fraction went stale by
     //    0.035 the moment the rig changed. Measured, it tracks the rig for free.
-    const FALL = CARD_W * 0.04
+    // HOW FAR THE PACKET FALLS from the apex onto the top half, and it is SWEPT,
+    // because it trades two failures against each other. Too short and the packet
+    // is still rotating out of its on-edge attitude when it arrives, so it passes
+    // through the half it is landing on; too long and the landing spot (derived
+    // below as APEX minus this) sinks onto the fingers holding it. Measured on the
+    // compiled track - penetration / cards pierced / worst clip / clipping pairs:
+    //
+    //   0.04W   0.0037  0   0.0344  123   <- was this: clipping, over budget
+    //   0.08W   0.0037  0   0.0319   56
+    //   0.10W   0.0037  0   0.0237   12
+    //   0.12W   0.0037  0   0.0236    5
+    //   0.16W   0.0037  0   0.0000    0
+    //   0.17W   0.0749  0   0.0000    0   <- a HOLE, see below
+    //   0.18W   0.0037  0   0.0000    0
+    //   0.19W   0.0037  0   0.0000    0
+    //   0.20W   0.0037  0   0.0000    0   <- this
+    //   0.21W   0.0037  0   0.0000    0
+    //   0.22W   0.0758  1   0.0000    0   <- another hole
+    //   0.23W   0.0037  0   0.0000    0
+    //
+    // THIS PARAMETER IS NOT SMOOTH, and that is worth knowing before anyone
+    // "optimises" it. 0.17 and 0.22 are isolated failures with clean neighbours on
+    // both sides: the carriers are placed by a Gauss-Newton solve against the stack
+    // at STACK_Y, and moving that target a hundredth can drop the solve into a
+    // different basin - a ring finger that folds under the stack instead of beside
+    // it (0.075, 25 card thicknesses). So this is NOT chosen as the middle of a
+    // window (0.17 IS the middle of 0.16..0.18 and it is the worst value in the
+    // table); it is chosen as a measured value with measured neighbours.
+    const FALL = CARD_W * 0.2
     const STACK_Y = APEX.y - HALF_H - FALL
     const SWEPT = [0, 0.25, 0.5, 0.75, 1].map((f) => C_APEX + (C_OPEN - C_APEX) * f)
     const INDEX_FRONT = Math.max(...SWEPT.map((c) => frontOf(c, STACK_Y - CARD_T, STACK_Y + DECK_H)))
@@ -392,11 +427,46 @@ export const charlierLesson = {
       cards: heldDeck,
       thumb: nearEdge(cardAt(DY)),
     })
+    // The same cradle with NO thumb contact: the four fingers under the cards and
+    // the thumb still free. This is what the hand arrives in out of the flip, so
+    // the thumb never has to cross the deck to get to its edge (see `to-cradle`).
+    const openHandPose = cradle(C_HOLD, { card: cardAt(DY), cards: heldDeck })
+    // …and the same hand with the thumb swung well clear of the cards. The flip
+    // hands the deck over with `TABLE_GRIP`'s curls and the cradle wants its own,
+    // and it is that CURL morph - not the wrist, which needs no rotation at all
+    // (pickup and cradle are exactly 180 degrees apart about world z, which is the
+    // flip) - that drives the thumb's distal through the deck: measured 0.0630
+    // into K-spades 98ms into the hand-off. Passing through an opened thumb keeps
+    // it outside the cards until the fingers have taken their new shape.
     const stackCard = cardAt(STACK.y, STACK.x, STACK.z)
     // The carriers reach for the landing spot from the RELEASE onward, not from
     // the pivot: moving them mid-sweep walked them straight into the half that
     // was sliding down onto them. Only the index moves during the cut.
     const openPose = cradle(C_DROP, { card: stackCard, cards: dropped })
+    // THE SAME OPEN HAND, RESOLVED AGAINST THE HALF THAT LANDS ON IT. `openPose`
+    // is resolved against `dropped` - the bottom half in the crook - because that
+    // is all there is at the moment the fingers give way. Once the top half has
+    // run down them to the landing spot there is a whole stack sitting on those
+    // pads, and a hand that was never backed off it is inside it: measured 0.0759
+    // of right ring through 3-clubs, one card pierced. Resolved against `settled`
+    // (the full column at the landing spot, which is the tallest it ever gets) the
+    // same reach target lands the pads under its bottom card instead.
+    const landedPose = cradle(C_DROP, { card: stackCard, cards: settled })
+    // THE HAND OPENS BEFORE IT REACHES OUT, and the two have to be separate poses.
+    //
+    // `release` used to end at `openPose`, whose carriers are already extended to
+    // the LANDING SPOT - so the ring finger swept from under the deck column all
+    // the way out there while the top half was still sitting at the column, and
+    // went straight through it: 0.0479 into A-hearts. The fix is to let the index
+    // give way (which is the whole beat - it is what the bottom half drops onto)
+    // while the three carriers stay put UNDER the top half, and only reach out on
+    // the next beat, with the half riding them.
+    //
+    // The top half settles onto those carriers as the bottom half leaves, which is
+    // a fall of one half-deck. It is also the honest reading of the move: take the
+    // bottom half away and what was above it comes down onto your fingers.
+    const topAtColumn = [...stackOf(deckBase, N - mid), cardAt(DY - SHIELD)]
+    const crookPose = cradle(C_DROP, { card: cardAt(DY), cards: topAtColumn })
     // At the apex the carriers are already reaching forward for where the top
     // half is about to land; the index is up, holding the packet over it.
     const apexPose = cradle(C_APEX, { card: stackCard, cards: settled })
@@ -489,6 +559,34 @@ export const charlierLesson = {
           DROP_PAD.y + SEAT + CARD_T / 2 + i * CARD_GAP,
           DROP_PAD.z,
         ),
+        quat: faceQuat(c.isFaceUp),
+        bend: 0,
+      }))
+    // The top half ALONE, settled onto the carriers where the deck was - one
+    // half-deck lower, because the half it was resting on has just left.
+    const settleTop = (dk) =>
+      dk.slice(mid).map((c, i) => ({
+        id: c.id,
+        pos: new THREE.Vector3(DX, DY + i * CARD_GAP, DZ),
+        quat: faceQuat(c.isFaceUp),
+        bend: 0,
+      }))
+    // The top half ALONE, at the landing spot. Only the cards named here move:
+    // `compileLesson` holds every card not in a step's destination array, so the
+    // bottom half stays in the crook the release dropped it into.
+    const layTop = (dk) =>
+      dk.slice(mid).map((c, i) => ({
+        id: c.id,
+        pos: new THREE.Vector3(STACK.x, STACK.y + i * CARD_GAP, STACK.z),
+        quat: faceQuat(c.isFaceUp),
+        bend: 0,
+      }))
+    // The finished cut where it already sits, taking each card's face from the
+    // deck - so it reads face-up before the unflip and face-down after it.
+    const cutStackAt = (dk) =>
+      dk.map((c, i) => ({
+        id: c.id,
+        pos: new THREE.Vector3(STACK.x, STACK.y + i * CARD_GAP, STACK.z),
         quat: faceQuat(c.isFaceUp),
         bend: 0,
       }))
@@ -592,15 +690,91 @@ export const charlierLesson = {
     // frame carries the deck rigidly, so a 180° wrist turn would stand the deck
     // on its edge. The deck simply waits, squared, while the hand goes around.
     const SIDE_X = Math.max(DX, STACK.x) + CARD_W * 1.7
-    const cradleAt = (x, y, z) => [W[0] + (x - DX), W[1] + (y - DY), W[2] + (z - DZ)]
     const HOVER_Y = 0.02 + CARD_W * 0.35
     const NOTE_Y = DY + CARD_H * 0.75
     // The two decks this hand ever carries, and the stations each is carried to.
     const TABLE_GRIP = deckGrip(0, 0.02, 0) // the squared deck on the felt
     const STACK_GRIP = deckGrip(STACK.x, STACK.y, STACK.z) // the finished cut
     const LIFTED = gripAt(TABLE_GRIP, DX, DY - 0.02, DZ) // …up at working height
+    // ---- THE FLIP -----------------------------------------------------------
+    // THE HAND TURNS THE WHOLE DECK OVER WITHOUT LETTING GO OF IT, and that is
+    // what replaced this lesson's worst frame.
+    //
+    // One hand has to do two incompatible things: LIFT the deck off the felt,
+    // which is only possible from ABOVE (a grip that wraps needs room under the
+    // bottom card and on the felt there is none), and then HOLD it from BELOW to
+    // cut it. The old `turn` beat got between those by letting go: the hand slid
+    // out of the deck's column, travelled 1.7 out to the side, turned palm-up out
+    // there and came back in underneath - leaving the deck completely alone in
+    // mid-air, at working height, with the hand at the edge of frame. Measured off
+    // the compiled track it was the single worst frame in the lesson, and it is
+    // the one that got this lesson a second hand.
+    //
+    // A RIGID ROTATION does the same job with the deck still in the hand the whole
+    // way: `rotateGripRigid` turns hand and cards together about one axis, so the
+    // captured card->frame offsets stay exact and no pad ever moves relative to a
+    // card it is holding. Measured on this rotation: zero penetration at every
+    // sample, and the lowest surface the sweep reaches is y 0.171 - the arc clears
+    // the felt with room to spare, which is the one thing that could have killed it.
+    //
+    // ABOUT THE DECK'S LONG AXIS (world z), and the choice is measured. The long
+    // axis lands the hand 0.34 from the cradle station it has to hand off to; the
+    // short axis lands it 0.91 away, and that transfer is the one beat where the
+    // hand is changing its relationship to the cards, so shorter is strictly
+    // better. The cost is that a long-axis flip leaves the deck rotated 180 degrees
+    // IN PLANE from `faceQuat(true)` - and that is invisible, because a card is a
+    // rectangle (identical footprint either way) and a playing card's face is
+    // designed to read upside down. So every layout below can go on using
+    // `faceQuat`, and no contact changes side: both faceQuat(false) and
+    // faceQuat(true) map the card's local +x to world +x, so the thumb's near edge
+    // is the same edge before and after.
+    // How far below its station the hand takes its cradle shape before rising
+    // into the cards. Hand-sized, because what has to clear is a hand.
+    const CLEAR_UNDER = DECK_REST_DROP * 0.3
+    const FLIP_AXIS = new THREE.Vector3(0, 0, 1)
+    const FLIP_Q = new THREE.Quaternion().setFromAxisAngle(FLIP_AXIS, Math.PI)
+    const FLIP_PIVOT = [DX, DY + DECK_H / 2, DZ]
+    const FLIPPED = rotateGripRigid({ pose: TABLE_GRIP.pose, anchor: LIFTED }, FLIP_Q, FLIP_PIVOT)
+    // A mid-flip rung so the turn reads as a roll rather than a slerp: the same
+    // rigid transform at 90 degrees, which is where the deck is standing on edge.
+    const FLIP_HALF = rotateGripRigid(
+      { pose: TABLE_GRIP.pose, anchor: LIFTED },
+      new THREE.Quaternion().setFromAxisAngle(FLIP_AXIS, Math.PI / 2),
+      FLIP_PIVOT,
+    )
+    // THE FLIP'S OWN HAND WITH ITS THUMB SWUNG OFF THE EDGE, in place, before
+    // anything translates. `TABLE_GRIP`'s thumb is braced on the deck's long edge,
+    // and after the flip that edge is above it - so uncurling the thumb on the way
+    // to the cradle swings it INTO the deck's underside (0.0199 into 4-clubs, 49ms
+    // in). Abducting it instead (`thumbOpp.z`, the same lever `cradle`'s own open
+    // thumb uses) takes it off the edge sideways, where there is nothing.
+    // AND THE MIRROR OF IT, on the finished cut where it now sits. Turning a deck
+    // over reverses it, so a lesson that flips ONCE hands back a deck in the
+    // opposite order - and `mixing.js` reads the deck order by HEIGHT, so the dock
+    // scored this display cut as 51 rising sequences of a possible 26, i.e. more
+    // scrambled than random, for a technique whose whole claim is that it does not
+    // mix at all. Flipping back makes the net order a pure cut (2 rising sequences,
+    // which is what a cut is) and leaves the deck face-down the way it was found.
+    // It also retires `handover`, the one beat left in this lesson where the cards
+    // sat still while the hand travelled around them.
+    const UNFLIP_PIVOT = [STACK.x, STACK.y + DECK_H / 2, STACK.z]
+    const STACK_FLIPPED = rotateGripRigid(STACK_GRIP, FLIP_Q, UNFLIP_PIVOT)
+    const STACK_HALF = rotateGripRigid(
+      STACK_GRIP,
+      new THREE.Quaternion().setFromAxisAngle(FLIP_AXIS, -Math.PI / 2),
+      UNFLIP_PIVOT,
+    )
+    const stackThumbOut = {
+      ...STACK_FLIPPED.pose,
+      fingers: { ...STACK_FLIPPED.pose.fingers },
+      thumbOpp: { ...(STACK_FLIPPED.pose.thumbOpp ?? {}), z: (STACK_FLIPPED.pose.thumbOpp?.z ?? 0) - 0.9 },
+    }
+    const flipThumbOut = {
+      ...FLIPPED.pose,
+      fingers: { ...FLIPPED.pose.fingers },
+      thumbOpp: { ...(FLIPPED.pose.thumbOpp ?? {}), z: (FLIPPED.pose.thumbOpp?.z ?? 0) - 0.9 },
+    }
     const ASIDE = gripAt(TABLE_GRIP, SIDE_X, DY - 0.02, DZ) // …and out of its column
-    const RETAKE = gripAt(STACK_GRIP, SIDE_X - STACK.x, 0, 0) // coming back from the side
     const HOVER = gripAt(STACK_GRIP, -STACK.x, HOVER_Y - STACK.y, DZ - STACK.z) // over the felt
 
     return [
@@ -652,27 +826,77 @@ export const charlierLesson = {
         },
       },
       {
-        kind: 'hold',
-        id: 'turn',
-        label: 'Turn the hand palm-up under the deck',
+        kind: 'move',
+        id: 'flip',
+        label: 'Turn the whole deck over in the hand',
         duration: 1100,
         camera: 'handCut',
+        ease: 'easeInOutCubic',
+        // Nominal: while it is gripped the deck goes exactly where the hand goes.
+        // Stated anyway so the beat declares its own end state, and stated as
+        // FACE UP because that is what turning it over means - which is also the
+        // point of the beat, since a face-up deck is one you can read while it is
+        // being cut.
+        to: (dk) => raised(dk),
+        // TURNING A DECK OVER REVERSES IT, and this is the whole of that fact.
+        // The card that was on top is now on the bottom, so the array - which
+        // every layout in this file reads as "index 0 is the lowest card" - has to
+        // be reversed here or the geometry and the bookkeeping disagree by a full
+        // inversion. Measured when it was missing: a 0.157 positional jump (one
+        // whole DECK_H) at this step's boundary as 52 cards snapped from where the
+        // grip had actually left them to where `raised` said they were, and 1326
+        // top-card swaps in that single frame - exactly C(52,2), i.e. every pair
+        // in the deck inverting at once, which is the signature of this bug and
+        // not of anything physical.
+        reorder: (dk) => [...dk].reverse().map((c) => (c.isFaceUp ? c : { ...c, isFaceUp: true })),
+        grip: { right: { cards: 'all', frame: 'packet', pressure: [{ at: 0, v: GRIP_PRESSURE }, { at: 1, v: GRIP_PRESSURE }] } },
         hands: {
           right: [
-            // 1) out of the deck's column, still palm-down and still in the
-            //    grip's own pose, the pads slide out along the top card's own
-            //    plane and the thumb leaves the far edge it was holding.
-            { at: 0.3, pose: TABLE_GRIP.pose, anchor: ASIDE },
-            // 2) turn palm-up out there, at the cradle's own height,
-            { at: 0.68, pose: holdPose, anchor: cradleAt(SIDE_X, DY, DZ), ease: 'easeInOutCubic' },
-            // 3) slide in LAST, horizontally: the pads travel in under the
-            //    deck's bottom card and stop one measured seat below it.
-            { at: 1, pose: holdPose, anchor: W, ease: 'easeInCubic' },
+            { at: 0, pose: TABLE_GRIP.pose, anchor: LIFTED },
+            { at: 0.5, pose: FLIP_HALF.pose, anchor: FLIP_HALF.anchor, ease: 'easeInOutCubic' },
+            { at: 1, pose: FLIPPED.pose, anchor: FLIPPED.anchor, ease: 'easeInOutCubic' },
           ],
         },
         annotations: [
-          { text: 'Deck on the fingers, thumb braced on the near edge', at: [0, NOTE_Y, 0.6], appearAt: 0.55 },
+          { text: 'The hand rolls the deck over — face up, so you can see the cut', at: [0, NOTE_Y, 0.6], appearAt: 0.4 },
         ],
+      },
+      {
+        kind: 'hold',
+        id: 'to-cradle',
+        label: 'Settle it into the cutting grip',
+        duration: 520,
+        // The one beat where the hand changes its relationship to the cards: it
+        // arrives from the flip holding the deck on its pads and closes into the
+        // cradle that will cut it. The DECK DOES NOT MOVE (this is a `hold`), and
+        // the two stations are only 0.34 apart, so the pads stay under the cards
+        // the whole way - which is the difference between this and the beat it
+        // replaced, where the hand travelled 1.7 with nothing under the deck.
+        // THE THUMB ARRIVES LAST, and that is a measured fix rather than a
+        // flourish. `TABLE_GRIP`'s thumb holds the deck's FAR long edge and the
+        // cradle's holds its NEAR one, so interpolating straight between the two
+        // poses walks the thumb across the deck at the deck's own height - measured
+        // 0.0561 into K-spades, twelve times the budget. `openHandPose` is the same
+        // cradle with no thumb contact at all, so the hand closes its four fingers
+        // under the cards first and the thumb only comes up onto the near edge in
+        // `settle-grip`, from below and outside, where there is nothing in its way.
+        // AND IT COMES UP FROM UNDERNEATH. Interpolating straight from the flip's
+        // pose to the cradle's swings the whole hand through the deck's own height
+        // - the thumb was measured 0.0616 into 9-clubs, twelve times the budget.
+        // Taking the cradle's SHAPE first, a hand's depth below the cards, and
+        // only then rising into contact keeps every capsule under the deck for the
+        // whole move: the hand is never beside the cards, only below them.
+        hands: {
+          right: [
+            { at: 0, pose: FLIPPED.pose, anchor: FLIPPED.anchor },
+            // Thumb off the edge FIRST, without the hand moving at all.
+            { at: 0.3, pose: flipThumbOut, anchor: FLIPPED.anchor, ease: 'easeOutCubic' },
+            // …then travel, still with the thumb out and a hand's depth low.
+            { at: 0.72, pose: flipThumbOut, anchor: [W[0], W[1] - CLEAR_UNDER, W[2]], ease: 'easeInOutCubic' },
+            // …and only now take the cradle's shape and rise into the cards.
+            { at: 1, pose: openHandPose, anchor: W, ease: 'easeOutCubic' },
+          ],
+        },
       },
       {
         kind: 'hold',
@@ -695,16 +919,73 @@ export const charlierLesson = {
         id: 'release',
         label: 'Thumb relaxes — the bottom half settles into the fingers',
         duration: 800,
-        ease: 'snapEase',
-        to: (dk) => dropBottom(dk),
+        // GRAVITY EASES IN, and getting this wrong put the index THROUGH the card.
+        // This was `snapEase`, which commits 88% of the travel by t=0.35 - so the
+        // half arrived at its C_DROP height while the fingers were still up near
+        // C_HOLD, and the index's distal was left occupying space the card had
+        // already reached: measured 0.0242 into A-hearts' face. It is the same
+        // collision `pivot` documents ("run on one curve they meet in the middle
+        // and the finger goes through the packet") and it wants the same
+        // treatment. A dropped half also genuinely ACCELERATES, so `easeInCubic`
+        // is both the fix and the honest curve.
+        ease: 'easeInCubic',
+        to: (dk) => [...dropBottom(dk), ...settleTop(dk)],
         // No grip: this beat IS gravity. The fingers give way (C_HOLD → C_DROP)
         // and the half lands exactly on the pad's new position, which is what
         // makes the next step's capture a seated one.
         hands: {
-          right: [{ at: 1, pose: openPose, anchor: W, ease: 'snapEase' }],
+          right: [
+            // Thumb off the edge FIRST, fingers still holding station, so the
+            // thumb is not still braced on the near long edge while the half is
+            // already sliding past it.
+            { at: 0.2, pose: openHandPose, anchor: W, ease: 'easeOutCubic' },
+            { at: 1, pose: crookPose, anchor: W, ease: 'easeOutCubic' },
+          ],
         },
         annotations: [
           { text: 'Let gravity do it — the thumb just lets go', at: [0, NOTE_Y, 0.6], appearAt: 0.25 },
+        ],
+      },
+      {
+        // THE TOP HALF TRAVELS ON ITS OWN BEAT, and that one change is what makes
+        // this cut one-handed.
+        //
+        // It always had to travel: the cut happens in the palm, 0.29 BELOW where
+        // the deck is held (the index's carry arc peaks 0.248 under the top of the
+        // held deck, measured), and it has to land clear of that arc or the sweep
+        // goes through it - `INDEX_FRONT` is not about the landing burying the
+        // finger, it is about the finger's PATH. Swept every offset from under the
+        // deck column outward: 0.066 deep at 0.15 and 0.30, 0.057 at 0.45, and only
+        // clean again at 0.60. So the landing stays out at the fingertips.
+        //
+        // What was wrong was doing it DURING the pivot. The half slid out while the
+        // index swept up through the same volume, and the two met: 0.0522 of right
+        // ring straight through A-hearts, which is the penetration the one-handed
+        // version of this lesson always had. Given its own beat the two motions are
+        // separated in time - the same rule `release`, `pivot` and `fall` are each
+        // already built on - and the sweep is left alone with the one thing it was
+        // ever about.
+        //
+        // AND IT SLIDES DOWN THE FINGERS THAT ARE ALREADY UNDER IT. `openPose`
+        // reaches the three carriers out to the landing spot back at `release`, so
+        // they are extended along the whole path before the half starts moving: the
+        // half runs down them to the fingertips rather than crossing open air. That
+        // is what a second hand was added to do, and the fingers were doing it
+        // anyway.
+        kind: 'move',
+        id: 'slide',
+        label: 'The top half slides down the fingers',
+        duration: 620,
+        ease: 'easeInOutCubic',
+        to: (dk) => layTop(dk),
+        hands: {
+          right: [
+            { at: 0, pose: crookPose, anchor: W },
+            { at: 1, pose: landedPose, anchor: W, ease: 'easeOutCubic' },
+          ],
+        },
+        annotations: [
+          { text: 'The open fingers carry the top half out — nothing else is holding it', at: [0, NOTE_Y, 0.6], appearAt: 0.35 },
         ],
       },
       {
@@ -751,7 +1032,18 @@ export const charlierLesson = {
         // straight through it. snapEase drops the packet flat and forward onto
         // the stack while the finger is still holding station (easeInCubic: 3%
         // moved at t=0.3), and the withdrawal then happens behind it.
-        ease: 'snapEase',
+        //
+        // TURN FIRST, THEN COME DOWN - a card-clipping fix worth 32x. Both curves
+        // used to be `snapEase`, so the packet rotated from on-edge to flat WHILE
+        // descending onto the top half and passed through it at every angle in
+        // between: 2154 clipping pair-frames, up to 22.6 CARD THICKNESSES deep.
+        // There is no BEND involved here, unlike the wash's and the riffle's
+        // clipping - this one is pure rotation. Splitting them (`quatEase` in
+        // sampleTrack) lets the packet snap LEVEL early while `easeInCubic` keeps
+        // it high, so it is already parallel to the stack before it arrives.
+        // Same rule as "a hand and a card must not arrive together".
+        ease: 'easeInCubic',
+        quatEase: 'snapEase',
         to: (dk) => palmStack(dk),
         hands: {
           right: [{ at: 1, pose: openEndPose, anchor: W, ease: 'easeInCubic' }],
@@ -776,24 +1068,56 @@ export const charlierLesson = {
       },
       {
         kind: 'hold',
-        id: 'handover',
-        label: 'Take it back from above',
-        duration: 1000,
-        // Mirror of `turn`: cards perfectly still, hand goes around them.
+        id: 'from-cradle',
+        label: 'Take hold of it to turn it back',
+        duration: 520,
+        // The exact mirror of `to-cradle`: the hand stays UNDER the cards and
+        // changes shape, thumb swung clear, so nothing has to travel around the
+        // stack it is carrying. `handover` used to do that travel - down, out to
+        // the side, up and back in over the top - with the finished deck sitting
+        // motionless in mid-air for half a second, which was this lesson's second
+        // hover and its worst penetration (0.0162, the closing thumb).
         hands: {
           right: [
-            // DOWN first, out from under the deck, and only then sideways -
-            // sliding straight out to the side drags the whole cradle through
-            // the stack it is carrying (measured 0.15 through the thumb).
-            { at: 0.22, pose: catchPose, anchor: cradleAt(DX, DY - CARD_H * 0.7, DZ) },
-            { at: 0.44, pose: catchPose, anchor: cradleAt(SIDE_X, DY - CARD_H * 0.7, DZ) },
-            { at: 0.72, pose: STACK_GRIP.pose, anchor: RETAKE, ease: 'easeInOutCubic' },
-            // …and close IN to the grip along the stack's own top plane, so the
-            // four pads arrive tangent and the thumb meets the far edge
-            // head-on. This frame is the `lower` hold's capture.
-            { at: 1, pose: STACK_GRIP.pose, anchor: STACK_GRIP.anchor, ease: 'easeOutCubic' },
+            { at: 0, pose: catchPose, anchor: W },
+            // Thumb off the near edge FIRST, in place - the same routing
+            // `to-cradle` needs, for the same reason.
+            { at: 0.25, pose: openEndPose, anchor: W, ease: 'easeOutCubic' },
+            { at: 0.62, pose: stackThumbOut, anchor: [STACK_FLIPPED.anchor[0], STACK_FLIPPED.anchor[1] - CLEAR_UNDER, STACK_FLIPPED.anchor[2]], ease: 'easeInOutCubic' },
+            // ARRIVES WITH THE THUMB STILL CLEAR. `STACK_GRIP` carries a
+            // deliberate thumb graze (`THUMB_GRAZE`) resolved against the column
+            // BELOW the stack, and the flip puts that column ABOVE the hand - so
+            // the same pose grazes from underneath instead: 0.0073, against a
+            // 0.0045 budget, and dropping the whole hand does not help because the
+            // intrusion is lateral, at the stack's edge. Holding the thumb out for
+            // the whole approach removes it outright. It closes at this beat's
+            // boundary, where `unflip`'s grip captures - so the deck is not yet
+            // riding the hand when the thumb arrives, and nothing snaps.
+            { at: 1, pose: stackThumbOut, anchor: STACK_FLIPPED.anchor, ease: 'easeOutCubic' },
           ],
         },
+      },
+      {
+        kind: 'move',
+        id: 'unflip',
+        label: 'Roll it back face-down',
+        duration: 1000,
+        ease: 'easeInOutCubic',
+        to: (dk) => cutStackAt(dk),
+        // Reverses the array again, and clears the faces, so the deck goes back
+        // exactly as it came: the two flips cancel and what is left is the cut.
+        reorder: (dk) => [...dk].reverse().map((c) => (c.isFaceUp ? { ...c, isFaceUp: false } : c)),
+        grip: { right: { cards: 'all', frame: 'packet', pressure: [{ at: 0, v: GRIP_PRESSURE }, { at: 1, v: GRIP_PRESSURE }] } },
+        hands: {
+          right: [
+            { at: 0, pose: STACK_FLIPPED.pose, anchor: STACK_FLIPPED.anchor },
+            { at: 0.5, pose: STACK_HALF.pose, anchor: STACK_HALF.anchor, ease: 'easeInOutCubic' },
+            { at: 1, pose: STACK_GRIP.pose, anchor: STACK_GRIP.anchor, ease: 'easeInOutCubic' },
+          ],
+        },
+        annotations: [
+          { text: 'Rolled back over — the two turns cancel, so all that is left is the cut', at: [0, NOTE_Y, 0.6], appearAt: 0.45 },
+        ],
       },
       {
         kind: 'move',
@@ -801,7 +1125,7 @@ export const charlierLesson = {
         label: 'Lower the cut deck toward the table',
         duration: 1200,
         ease: 'easeInOutCubic',
-        reorder: () => cutOrder,
+        reorder: (dk) => cutOrder(dk),
         to: (dk) => stackLayout(dk, HOVER_Y).map((p) => ({ ...p, pos: p.pos.clone().setZ(DZ) })),
         camera: 'overview',
         grip: { right: { cards: 'all', frame: 'packet', pressure: [{ at: 0, v: GRIP_PRESSURE }, { at: 1, v: GRIP_PRESSURE }] } },

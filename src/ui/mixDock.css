@@ -1,0 +1,271 @@
+/* The mixing readout, docked right for the whole of a run. This used to be a
+   toggle-gated strip inside the transport panel, which put the one thing that
+   makes this more than an animation behind a button that was off by default. */
+.mdock {
+  position: absolute;
+  right: max(16px, env(safe-area-inset-right, 0px));
+  top: 50%;
+  transform: translateY(-50%);
+  width: 272px;
+  max-height: calc(100vh - 220px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 16px;
+  background: var(--glass-strong);
+  border: 1px solid var(--glass-brd);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 18px 44px rgba(0, 0, 0, 0.5);
+  pointer-events: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(216, 162, 74, 0.5) transparent;
+}
+
+.mdock-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+/* The headline number: rising sequences now, against a random deck's ~26. */
+.mdock-big {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+.mdock-big-val {
+  font-family: var(--font-display);
+  font-size: 34px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--bone);
+}
+.mdock-big-of {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--bone-faint);
+}
+.mdock-meter {
+  grid-column: 1 / -1;
+  position: relative;
+  height: 5px;
+  margin-top: 4px;
+  border-radius: 3px;
+  background: rgba(247, 241, 230, 0.12);
+  overflow: hidden;
+}
+.mdock-meter i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: linear-gradient(90deg, var(--gold), var(--gold-bright));
+  transition: width 320ms ease;
+}
+.mdock-cap {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  line-height: 1.45;
+  color: rgba(247, 241, 230, 0.5);
+}
+.mdock-cap b {
+  color: rgba(247, 241, 230, 0.82);
+  font-weight: 600;
+}
+
+/* start / now, on the same ramp. `start` is the pristine deck as one gradient;
+   `now` is 52 cells coloured by WHERE EACH CARD STARTED, so a well-mixed deck
+   reads as noise and a cut reads as two clean blocks that swapped ends. */
+.mdock-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.mdock-rowlabel {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--bone-faint);
+}
+.mdock-start,
+.mdock-now {
+  height: 22px;
+  border-radius: 5px;
+  border: 1px solid rgba(247, 241, 230, 0.1);
+}
+.mdock-now {
+  display: grid;
+  grid-template-columns: repeat(var(--cells), minmax(0, 1fr));
+  overflow: hidden;
+}
+.mdock-cell {
+  transition: background 260ms ease;
+}
+.mdock-note {
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: rgba(247, 241, 230, 0.42);
+}
+
+.mdock-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(216, 162, 74, 0.16);
+}
+.mdock-stat-val {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--bone);
+}
+
+.mdock-runs {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(216, 162, 74, 0.16);
+}
+.mdock-seq {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.mdock-pip {
+  min-width: 24px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--bone);
+  background: rgba(216, 162, 74, 0.14);
+  border: 1px solid rgba(216, 162, 74, 0.3);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+.mdock-pip + .mdock-pip::before {
+  content: '→';
+  color: rgba(216, 162, 74, 0.55);
+  margin-right: 6px;
+  font-weight: 400;
+}
+
+.mdock-tint {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--bone-dim);
+  background: rgba(247, 241, 230, 0.05);
+  border: 1px solid rgba(216, 162, 74, 0.26);
+  border-radius: 999px;
+  padding: 8px 14px;
+  transition: color 140ms ease, background 140ms ease, border-color 140ms ease;
+}
+.mdock-tint:hover {
+  color: var(--bone);
+  border-color: var(--glass-brd-strong);
+}
+.mdock-tint.is-on {
+  color: var(--bone);
+  background: rgba(216, 162, 74, 0.2);
+  border-color: var(--glass-brd-strong);
+}
+.mdock-swatch {
+  width: 26px;
+  height: 9px;
+  border-radius: 3px;
+  border: 1px solid rgba(247, 241, 230, 0.14);
+}
+
+/* Below the side-dock width there is no room beside the table, so the dock
+   moves under the top bar and drops to the two numbers plus the strip. It
+   publishes no camera inset there (see MixDock's SIDE_DOCK query), because a
+   panel at the top of the frame is not what the shuffle has to dodge. */
+@media (max-width: 999px) {
+  .mdock {
+    right: max(12px, env(safe-area-inset-right, 0px));
+    left: max(12px, env(safe-area-inset-left, 0px));
+    top: 72px;
+    transform: none;
+    width: auto;
+    max-height: none;
+    overflow: visible;
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+    padding: 10px 14px;
+  }
+  .mdock-head,
+  .mdock-rows {
+    flex: 1 1 200px;
+    min-width: 0;
+  }
+  .mdock-big {
+    grid-template-columns: auto auto;
+    gap: 0 8px;
+  }
+  .mdock-big .mdock-cap,
+  .mdock-note,
+  .mdock-stat .mdock-cap,
+  .mdock-runs .mdock-cap {
+    display: none;
+  }
+  .mdock-meter {
+    display: none;
+  }
+  .mdock-rowlabel {
+    display: none;
+  }
+  .mdock-start {
+    display: none;
+  }
+  .mdock-stat,
+  .mdock-runs {
+    padding-top: 0;
+    border-top: 0;
+  }
+  .mdock-stat {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 6px;
+  }
+  .mdock-stat-val::after {
+    content: ' kept';
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--bone-faint);
+  }
+  .mdock-tint {
+    padding: 6px 10px;
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 560px) {
+  .mdock {
+    top: 64px;
+  }
+  .mdock-runs {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mdock-cell,
+  .mdock-meter i {
+    transition: none;
+  }
+}

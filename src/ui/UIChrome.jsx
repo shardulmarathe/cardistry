@@ -1,16 +1,21 @@
 import { useAppStore } from '../state/useAppStore'
-import LessonCatalog from './LessonCatalog'
-import TransportBar from './TransportBar'
-import LessonInstructions from './LessonInstructions'
+import LessonPicker from './LessonPicker'
+import LessonStrip from './LessonStrip'
+import MixDock from './MixDock'
 import VisualizerControls from './VisualizerControls'
 import './chrome.css'
 
 // DOM overlay above the Canvas. The root ignores pointer events so orbit/click
 // still reach the felt; individual controls re-enable them.
+//
+// Learn has exactly two states: the picker (deck squared on the table, a hand
+// either side, four buttons) and a running technique (steps + scrubber along the
+// bottom, the mixing readout on the right). Nothing else.
 export default function UIChrome() {
   const mode = useAppStore((s) => s.mode)
   const setMode = useAppStore((s) => s.setMode)
   const activeLessonId = useAppStore((s) => s.activeLessonId)
+  const running = mode === 'lesson' && activeLessonId
 
   return (
     <div className="chrome">
@@ -39,9 +44,9 @@ export default function UIChrome() {
       </header>
 
       {mode === 'visualizer' && <VisualizerControls />}
-      {mode === 'lesson' && !activeLessonId && <LessonCatalog />}
-      {mode === 'lesson' && activeLessonId && <LessonInstructions />}
-      {mode === 'lesson' && activeLessonId && <TransportBar />}
+      {mode === 'lesson' && !activeLessonId && <LessonPicker />}
+      {running && <LessonStrip />}
+      {running && <MixDock />}
     </div>
   )
 }

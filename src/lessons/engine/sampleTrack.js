@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { getEase, clamp01 } from '../../lib/ease'
-import { CARD_W, CARD_H } from '../../lib/constants'
+import { CARD_W, CARD_H, FELT_Y } from '../../lib/constants'
 import { lerpHandPose, cloneHandPose } from '../../hands/handPoses'
 import { applyIdle, applyFingerMotion } from '../../hands/handMotion'
 import { applyGripPressure, reseatGrippingTips, grippingFingers } from '../../hands/handKinematics'
@@ -36,7 +36,37 @@ function poseFromSegments(segs, ms, out) {
   const localT = clamp01((ms - seg.tStart) / span)
   const e = getEase(seg.ease)(localT)
   out.pos.lerpVectors(seg.from.pos, seg.to.pos, e)
-  out.quat.copy(seg.from.quat).slerp(seg.to.quat, e)
+  // HEIGHT CAN RUN ON ITS OWN CURVE, and it is a card-clipping fix of the same shape
+  // as `quatEase` below: when two things have to pass each other, separate their
+  // motions in time.
+  //
+  // A packet leaving the TOP of a block has to get laterally clear of that block
+  // before it descends, or it drops straight through the cards it was just sitting on.
+  // Measured on the overhand's `drop-0`: 5-spades starts 1 card ABOVE 4-spades in the
+  // bulk and falls to the pile while their footprints still overlap, so the two trade
+  // which is on top - 1116 such swaps across the lesson, 88 a second, every one of
+  // them covering more than a quarter of a card face. `yEase: 'easeInCubic'` against a
+  // lateral `easeOutCubic` sends the card sideways first and down second, which is
+  // both what a stripped packet does and what stops the crossing.
+  //
+  // Defaults to the position ease, so every existing segment is unchanged. `arcLift`
+  // still applies on top of whichever curve is used.
+  if (seg.yEase) {
+    out.pos.y = seg.from.pos.y + (seg.to.pos.y - seg.from.pos.y) * getEase(seg.yEase)(localT)
+  }
+  // ROTATION CAN RUN ON ITS OWN CURVE, and it is a card-clipping fix.
+  // Sharing the position ease means a packet that has to both TURN and TRAVEL does
+  // both at once - so a half rotating from on-edge to flat while descending onto
+  // another half passes THROUGH it on the way, at every angle in between. Measured on
+  // the charlier's `fall`: 2172 clipping pair-frames up to 22.6 CARD THICKNESSES deep,
+  // at 43 degrees, with zero bend involved (so unlike the wash and the riffle this one
+  // is pure rotation, not arch).
+  //
+  // Splitting the curves lets a lesson say "come level FIRST, then come down", which
+  // is both what the move looks like and what stops the crossing. Same shape as the
+  // fix for a hand and a card arriving together. Defaults to the position ease, so
+  // every existing segment is unchanged.
+  out.quat.copy(seg.from.quat).slerp(seg.to.quat, seg.quatEase ? getEase(seg.quatEase)(localT) : e)
   out.bend = seg.from.bend + (seg.to.bend - seg.from.bend) * e
   if (seg.midBend) out.bend += Math.sin(localT * Math.PI) * seg.midBend
   if (seg.arcLift) out.pos.y += Math.sin(localT * Math.PI) * seg.arcLift
@@ -56,6 +86,16 @@ function motionOffset(m, t, out) {
   const sx = m.sx ?? 1
   const phase = m.phase ?? 0
   if (m.type === 'orbit') {
+    // Deliberately CIRCULAR. An elliptical `ampZ` was added here to stop the wash's
+    // pads overshooting the near edge of the card band by 0.23, and then removed,
+    // because deriving the honest limit shows the cure is worse: a hand's pad patch
+    // is 0.783 deep in z (the thumb pad sits ~78mm behind the middle fingertip -
+    // anatomy, not a pose), and the wash's card band is only 0.9 deep, so keeping
+    // the whole pad envelope inside the band allows ampZ <= 0.0585 against an x amp
+    // of 0.40. That is a 7:1 ellipse, i.e. a one-dimensional sweep - and "cards move
+    // freely in TWO dimensions" is the wash's entire teaching point. The overshoot
+    // wants a DEEPER CARD SPREAD (widen ROW_Z/ROW_HALF and re-check framing), not a
+    // flatter orbit. Do not re-add the option without the deeper spread.
     const ph = 2 * Math.PI * phase
     const ang = 2 * Math.PI * (cycles * t + phase)
     out.x = (Math.cos(ang) - Math.cos(ph)) * amp * sx
@@ -126,7 +166,6 @@ export function sampleCardSegments(segs, ms) {
 // length axes) and push the card up if that corner would dip under the felt.
 // Pure and continuous in the pose, so scrub purity and boundary continuity
 // are preserved; flat resting cards (drop = 0) are untouched.
-const FELT_Y = 0.012
 const _axW = new THREE.Vector3()
 const _axL = new THREE.Vector3()
 const _axN = new THREE.Vector3()

@@ -13,6 +13,14 @@ export const CARD_T = 0.003
 // Stack pitch. Was 0.004, which piled 52 cards to 20.8mm against a real deck's
 // 15.6mm -- a third too tall, so every bow, weave and squared deck was reading
 // as a fatter object than a deck of cards is. 0.003 puts 52 cards at 15.3mm.
+// The felt plane every card is clamped above. It lives here, with the other
+// world geometry, because THREE separate modules had each retyped it as a bare
+// 0.012: the engine's own clamp (sampleTrack), the grip authoring helpers, and
+// the wash lesson, which needs it to lay a palm on the felt without going
+// through it. Exporting it from sampleTrack was tried first and left all three
+// literals in place, which is worse than either alternative.
+export const FELT_Y = 0.012
+
 export const CARD_GAP = 0.003
 export const CARD_ASPECT = CARD_H / CARD_W
 
@@ -72,24 +80,25 @@ export const CAMERA_PRESETS = {
   // Stays ABOVE the cut - dropping under it frames the deck's unlit underside,
   // which renders near-black beneath the overhead key.
   handCut: { position: [-1.35, 3.15, 4.5], target: [0.02, 0.86, 0.1], fov: 34 },
-  // The overhand DRAW: a deck held in the air on one side and a pile growing on
-  // the felt beside it, so the subject is both tall and OFF CENTRE. Measured: cards
-  // y 0.02..0.93 with x 0.00..0.81 (entirely one side of the table), wrist median
-  // 0.88, wanted aim ~0.49 - against `topDown`'s 0 and `overview`'s 0.15. Aimed at
-  // the middle of the two and offset in x so the pile is not stranded at the frame
-  // edge with empty felt opposite it.
-  overhandDraw: { position: [0.42, 2.7, 4.9], target: [0.42, 0.5, 0], fov: 34 },
-  // The overhand as two packets held IN THE AIR, one above the other. This subject is
-  // DEEP rather than wide, and that is what no existing preset frames. Measured on the
-  // rebuilt track: cards span z -0.44..0.62 (both packets lie flat, so each contributes
-  // its full 0.88 of card height in z) against x -0.32..0.00. `framing.mjs` reserves
-  // the bottom 40% of the frame for the transport panel, so `inHands` offers only 0.97
-  // of usable depth against a 1.06 subject - it was the one lesson in the catalog the
-  // tool flagged as OVERFLOWS - while leaving 2.25 of width completely unused.
+  // The overhand's IN-AIR beats: the pack carried clear by its long edges while
+  // packets fall onto a pile in the other hand. This subject is TALL, and no table
+  // preset frames it - every one of them aims at y 0.15..0.35.
   //
-  // So this pulls back and widens rather than re-aiming: at d 5.67 and fov 36 the
-  // usable half-height is 1.11, which clears 1.06. Aimed at y 0.96, the aim the tool
-  // wants for a subject whose cards sit at 0.02..1.00 with a wrist median of 1.32.
+  // RE-MEASURED after the overhand was rebuilt from a top peel into a lift-and-drop
+  // (framing.mjs, which now measures whole hand extents rather than wrist joints):
+  // cards span y 0.02..1.02 and x -0.47..0.43, with z only -0.01..0.01 and a wrist
+  // median of 0.52. The previous note here described the deleted staging - two
+  // packets one above the other, deep in z (-0.44..0.62) and off-centre in x - and
+  // its OVERFLOWS finding was against that subject, not this one.
+  //
+  // It still needs no retune, which is why the numbers above are recorded rather
+  // than acted on: at d 5.4 it frames the current subject with exactly ONE cropped
+  // beat across all sixteen - `rest`, where the withdrawing hand passes 0.07 off the
+  // left edge at 98% in shot, which is a hand leaving frame as the lesson ends. Note
+  // the declared `fov` below is only the Canvas seed: ResponsiveCamera overwrites it
+  // with `fovForAspect(canvasAspect)` at runtime. `overhandDraw` was deleted with the
+  // peel it existed for.
+  // The lesson's opening beats use `dealerPOV`, which already existed.
   overhandBulk: { position: [0, 2.7, 5.4], target: [0, 0.96, 0], fov: 36 },
   // A NEAR-SIDE WASH IS DEEPER THAN A TABLE PRESET CAN SEE. Once the hands come in
   // from the near side rather than sweeping in from left and right, they push cards

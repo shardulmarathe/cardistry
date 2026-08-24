@@ -56,18 +56,25 @@ export default function Card({ id, frontMaterial, backMaterial, stackIndex = 0 }
 
   return (
     <group ref={groupRef}>
+      {/* Cards RECEIVE but never CAST. Receiving is what makes a fingertip read as
+          being ON a card rather than hovering above it: without it, a hand laid
+          across the deck threw its shadow onto the felt on both sides and nothing
+          at all onto the 52 objects it was actually touching, so the deck read as a
+          hole punched in the shadow. Casting stays OFF - 52 coplanar planes 3mm
+          apart in one 2048 shadow map is the textbook self-shadow acne case, and
+          the deck's own grounding is already carried by Stage's ContactShadows. */}
       <mesh
         geometry={geometry}
         material={frontMaterial}
         castShadow={false}
-        receiveShadow={false}
+        receiveShadow
       />
       <mesh
         geometry={geometry}
         material={backMaterial}
         rotation={[0, Math.PI, 0]}
         castShadow={false}
-        receiveShadow={false}
+        receiveShadow
       />
     </group>
   )

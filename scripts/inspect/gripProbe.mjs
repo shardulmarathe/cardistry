@@ -21,6 +21,7 @@ import {
   solveThumbTo,
   applyGripPressure,
   GRIP_FRAME_TYPES,
+  gripContacts,
 } from '../../src/hands/handKinematics.js'
 import { cloneHandPose } from '../../src/hands/handPoses.js'
 import {
@@ -599,7 +600,12 @@ chColumn.push(chCard(deckH))
 for (let h = -CARD_GAP * 4; CH.y + h > 0.012; h -= CARD_GAP * 4) chColumn.push(chCard(h))
 
 function judge(label, pose, frameType, cards) {
-  const scored = Object.keys(GRIP_FRAME_TYPES[frameType].pressure)
+  // `tipGap` walks phalanges, so this probe scores FINGERTIPS only: take the
+  // frame's contact set (which falls back to `pressure` where a frame declares
+  // none) and keep the surfaces that actually name a finger. A palm contact has
+  // no pad to measure here and is skipped rather than faked.
+  const contacts = gripContacts(frameType) ?? {}
+  const scored = Object.keys(contacts).filter((k) => contacts[k].finger).map((k) => contacts[k].finger)
   const gaps = {}
   for (const n of FINGER_NAMES) gaps[n] = tipGap(pose, 'right', n, cards)
   const touching = scored.filter((n) => Math.abs(gaps[n]) < 0.025)

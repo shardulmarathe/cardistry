@@ -115,7 +115,29 @@ async function main() {
       app.closeLesson();
       app.setMode("lesson");
     });
-    await sleep(1400);
+    // WAIT FOR THE POSTER TO BE SET, then test stillness. This was a flat
+    // `sleep(1400)`, and that made the guard FLAKY in the one direction that
+    // matters: entering lesson mode compiles a track and builds 52 card textures,
+    // and on a cold or just-reloaded dev server that can outlast 1400ms - so the
+    // first sample landed at ms 0 before the scrub applied, and the second saw
+    // 9783. Both assertions then fired and reported a moving preview and a ms-0
+    // poster on a build where the poster was demonstrably correct (two immediately
+    // following runs passed at 9783ms). A regression guard that cries wolf gets
+    // ignored, which costs more than the bug it was watching for.
+    //
+    // This does NOT weaken either assertion. The poll only waits for the poster to
+    // exist; if it never does, `c1.ms` stays 0 and the ms-0 check still fires, and
+    // the two-sample stillness comparison below is unchanged.
+    const posterReady = async () => {
+      for (let i = 0; i < 40; i++) {
+        const ms = await page.evaluate(() => window.__cardistry.stores.player.getState().globalMs);
+        if (ms > 0) return true;
+        await sleep(150);
+      }
+      return false;
+    };
+    await posterReady();
+    await sleep(400);
     const c1 = await page.evaluate(() => {
       const p = window.__cardistry.stores.player.getState();
       return { playing: p.playing, ms: p.globalMs, frames: window.__cardistry.frameCounter.n };

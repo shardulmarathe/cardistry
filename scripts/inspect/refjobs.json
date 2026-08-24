@@ -1,0 +1,10 @@
+[
+  { "video": "1hUnss6zG-4", "label": "riffle",   "times": [30, 55, 75, 95, 120, 150],
+    "note": "Table Riffle Shuffle Like A Card Dealer. 95 and 120 are the money frames: two halves flat, short ends adjacent, each hand ON TOP of its own half with the fingertips near the inner end and the card backs still visible." },
+  { "video": "A0J_487VquE", "label": "overhand", "times": [25, 45, 65, 85, 110],
+    "note": "52Kards overhand. Low resolution; the pack is held TILTED, nearly on edge, gripped at the short ends, and packets are stripped off the TOP. 140s never decoded." },
+  { "video": "lxCRFl2S0A8", "label": "charlier", "times": [30, 50, 70, 90, 145],
+    "note": "One-handed cut. 115s never decoded." },
+  { "video": "XBHOa50CW4c", "label": "wash",     "times": [30, 50, 70, 90, 115, 145],
+    "note": "How To Shuffle Like a Casino Dealer - includes the wash/scramble." }
+]

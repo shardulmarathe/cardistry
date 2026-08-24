@@ -5,7 +5,8 @@ import { riffleOrder } from '../../lib/shuffleMath'
 import { CARD_GAP } from '../../lib/constants'
 import { getHandPose, cloneHandPose } from '../../hands/handPoses'
 import { resolveGripCards, frameOf, captureGripOffset, applyGripFrame, pressureAt } from './grips'
-import { applyGripPressure } from '../../hands/handKinematics'
+import { applyGripPressure, fingerJointsWorld, wristLocalToWorld } from '../../hands/handKinematics'
+import { FINGER_NAMES, FINGERS, HAND_SCALE, PALM_MM, THENAR_MM, mmToRig } from '../../hands/handRigSpec'
 import { sampleHandSegments, sampleCardSegments } from './sampleTrack'
 import { buildGuideArrows, buildGuideGhosts, buildGuidePath } from '../annotations/guideUtils'
 
@@ -33,6 +34,97 @@ function resolvePoseArray(to, deck) {
 // is the "one by one" stagger the riffle kind pioneered, now shared.
 function staggerWindow(k, count, spread = 0.55, span = 0.45) {
   const sFrac = count <= 1 ? 0 : (k / (count - 1)) * spread
+  return { sFrac, eFrac: Math.min(1, sFrac + span) }
+}
+
+// --- Contact-timed stagger --------------------------------------------------
+// `stagger: { by: 'contact' }` deals each card at the moment a HAND ACTUALLY
+// REACHES IT, instead of at its rank in an authored order.
+//
+// This exists because rank-based staggering silently decouples from the hands.
+// The wash sorted its cards by an analytic model of the palm's sweep and then
+// spread them evenly by RANK, and measured against the compiled hand track the
+// two had almost nothing to do with each other: the instant a hand was closest
+// to a card and the instant that card moved fastest differed by a median 0.233
+// of the pass (~700ms of 3s), only 6 of 52 cards moved within 0.05 of being
+// touched, and the mean rank displacement between touch order and motion order
+// was 20.4 of 52 - about what random ordering gives. The analytic model had
+// drifted from the authored motion (it ignored the orbit's `phase`, so an
+// antiphase second hand was modelled on the wrong circle) and nothing caught it,
+// because no metric compared the two.
+//
+// Measuring removes the class of bug rather than this instance of it: there is no
+// model to drift. It samples the COMPILED hand track, which is the same data the
+// runtime samples, so "when does a hand reach this card" is answered by the hands
+// the viewer actually sees.
+//
+// Distance is to the card's CENTRE, not its surface: only the ARGMIN over time is
+// used, and taking the nearest instant does not need an absolute clearance (which
+// would drag `cardSurfaceExtents` from the authoring layer into the engine).
+const CONTACT_SAMPLES = 32
+const _cfPad = new THREE.Vector3()
+const _cfJoints = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()]
+// Palm + thenar palmar-face points, as Vector3 (wristLocalToWorld does out.copy(p),
+// so an array here yields NaN silently).
+const CF_SLABS = []
+for (const M of [PALM_MM, THENAR_MM]) {
+  const [sx, sy, sz] = M.size.map(mmToRig)
+  const [px, py, pz] = M.pos.map(mmToRig)
+  for (let a = -1; a <= 1; a++) {
+    for (let b = -1; b <= 1; b++) {
+      CF_SLABS.push(new THREE.Vector3(px + (a * sx) / 2, py + (b * sy) / 2, pz + sz / 2))
+    }
+  }
+}
+
+// For each card id, the fraction of the step (0..1) at which a hand surface is
+// nearest that card's STARTING position. Pure, deterministic, no RNG.
+function contactFractions(hands, tStart, dur, fromPoses) {
+  const best = new Map()
+  const bestD = new Map()
+  for (let i = 0; i <= CONTACT_SAMPLES; i++) {
+    const f = i / CONTACT_SAMPLES
+    const ms = tStart + f * dur
+    const pts = []
+    for (const side of ['left', 'right']) {
+      const pose = sampleHandSegments(hands[side] ?? [], ms, side)
+      if (!pose) continue
+      for (const name of FINGER_NAMES) {
+        fingerJointsWorld(pose, side, name, _cfJoints)
+        for (let sg = 0; sg < 3; sg++) {
+          const r = FINGERS[name].rad[sg] * HAND_SCALE
+          for (let k = 0; k <= 2; k++) {
+            _cfPad.copy(_cfJoints[sg]).lerp(_cfJoints[sg + 1], k / 2)
+            pts.push([_cfPad.x, _cfPad.y, _cfPad.z, r])
+          }
+        }
+      }
+      for (const q of CF_SLABS) {
+        wristLocalToWorld(pose, side, q, _cfPad)
+        pts.push([_cfPad.x, _cfPad.y, _cfPad.z, 0])
+      }
+    }
+    if (!pts.length) continue
+    for (const [id, pose] of fromPoses) {
+      let near = Infinity
+      for (let k = 0; k < pts.length; k++) {
+        const pt = pts[k]
+        const d = Math.hypot(pt[0] - pose.pos.x, pt[1] - pose.pos.y, pt[2] - pose.pos.z) - pt[3]
+        if (Number.isFinite(d) && d < near) near = d
+      }
+      if (near < (bestD.get(id) ?? Infinity)) {
+        bestD.set(id, near)
+        best.set(id, f)
+      }
+    }
+  }
+  return best
+}
+
+// A stagger window placed at a MEASURED fraction rather than at a rank.
+function staggerAt(frac, spread = 0.55, span = 0.45) {
+  const f = frac < 0 ? 0 : frac > 1 ? 1 : frac
+  const sFrac = f * spread
   return { sFrac, eFrac: Math.min(1, sFrac + span) }
 }
 
@@ -198,7 +290,11 @@ function compileHandTracks(steps, stepMeta) {
 function buildHolds(decls, hands, cardTracks) {
   const byKey = new Map()
   for (const d of decls) {
-    const key = `${d.side}|${d.frame}|${[...d.cardIds].sort().join(',')}`
+    // The contact override is part of the key: two time-adjacent decls that score
+    // DIFFERENT surfaces are not the same hold, and coalescing them would apply
+    // one beat's release-time contact set across the whole carry.
+    const contactKey = d.contacts ? JSON.stringify(Object.keys(d.contacts).sort()) : ''
+    const key = `${d.side}|${d.frame}|${contactKey}|${[...d.cardIds].sort().join(',')}`
     if (!byKey.has(key)) byKey.set(key, [])
     byKey.get(key).push(d)
   }
@@ -220,6 +316,7 @@ function buildHolds(decls, hands, cardTracks) {
           tStart: d.tStart,
           tEnd: d.tEnd,
           frame: d.frame,
+          contacts: d.contacts,
           bendGain: d.bendGain,
           pressurePts: [...d.pressurePts],
           releaseDecls: d.release ? [d] : [],
@@ -269,6 +366,7 @@ function buildHolds(decls, hands, cardTracks) {
       tStart: m.tStart,
       tEnd: m.tEnd,
       frame: m.frame,
+      contacts: m.contacts,
       bendGain: m.bendGain,
       pressurePts: m.pressurePts,
       releases: releases.size ? releases : undefined,
@@ -316,12 +414,35 @@ function bakeHoldReleases(holds, hands, cardTracks, trackDuration) {
       const segs = cardTracks.get(id)
       if (!segs) continue
       const next = segs.find((s) => Math.abs(s.tStart - tRel) <= 1)
-      if (!next) continue
+      // NO SEGMENT AT THE RELEASE IS NOT "NOTHING TO DO". A card that is released
+      // and then simply STAYS PUT has no travel segment to start, so this used to
+      // `continue` - and the card then snapped from where the hand was holding it
+      // (frame o offset) to where its last segment's `to` said it should be. On the
+      // charlier that snap is 1.20mm, FOUR CARD THICKNESSES, in half a millisecond,
+      // with the wrist not moving at all; it is that lesson's whole `max jump`
+      // (0.0119) and it is also what produced its worst penetration, because the
+      // cards jumped INTO a stationary thumb. It passed every check: the jump was
+      // inside BOUNDARY_TOL and the depth inside the budget.
+      //
+      // So when nothing follows, bake into the pose the card HOLDS instead - the
+      // last segment's `to`. The card then ends its travel exactly where the hand
+      // let go of it, which is the same guarantee the `next.from` path gives, and
+      // seamless in both scrub directions for the same reason.
       const frame = holdFrameAt(h, hands, tRel)
       if (!frame) continue
       applyGripFrame(frame, offset, _p, _q)
-      next.from.pos.copy(_p)
-      next.from.quat.copy(_q)
+      if (next) {
+        next.from.pos.copy(_p)
+        next.from.quat.copy(_q)
+        continue
+      }
+      let hold = null
+      for (const seg of segs) {
+        if (seg.tEnd <= tRel + 1 && (!hold || seg.tEnd > hold.tEnd)) hold = seg
+      }
+      if (!hold) continue
+      hold.to.pos.copy(_p)
+      hold.to.quat.copy(_q)
     }
   }
 }
@@ -399,6 +520,22 @@ export function compileLesson(lessonDef, initialDeck, { run = 0 } = {}) {
   const guides = []
   const gripDecls = []
 
+  // TIMINGS FIRST, then hands, then cards. Step timings depend only on the steps'
+  // own durations, so they can be laid out in a cheap pre-pass - and doing so lets
+  // the HAND TRACKS be compiled before the card tracks, which is what makes
+  // `stagger: { by: 'contact' }` possible: a card can only be dealt "when a hand
+  // reaches it" if the hands are already known when the card's segment is built.
+  // The hand pass reads nothing from card state, so the reorder is safe.
+  {
+    let t = 0
+    for (const step of steps) {
+      const d = step.duration ?? 800
+      stepMeta.push({ id: step.id, label: step.label, tStart: t, tEnd: t + d })
+      t += d
+    }
+  }
+  const hands = compileHandTracks(steps, stepMeta)
+
   let cursor = 0
 
   for (let si = 0; si < steps.length; si++) {
@@ -407,7 +544,6 @@ export function compileLesson(lessonDef, initialDeck, { run = 0 } = {}) {
     const tStart = cursor
     const tEnd = cursor + dur
     const ease = step.ease || 'easeInOutCubic'
-    stepMeta.push({ id: step.id, label: step.label, tStart, tEnd })
     if (step.camera) cameraByStep.push({ tStart, preset: step.camera })
 
     // Grip declarations resolve against the deck order BEFORE this step's
@@ -433,6 +569,15 @@ export function compileLesson(lessonDef, initialDeck, { run = 0 } = {}) {
           // when its staggered travel segment inside this step begins. The
           // riffle weave peels cards off the thumb one by one this way.
           release: isV2 ? g.release : undefined,
+          // PER-BEAT CONTACT OVERRIDE. A frame's `contacts` names the surfaces
+          // normally on the cards; this lets ONE beat name a different set. It
+          // exists for releases: during the riffle's weave a pad is ~0.074 across
+          // while the contact band is 0.025, so opening a digit by even 12% of its
+          // solved curl puts it outside the band and the beat scores ~0% however
+          // correct the pose is. The honest fix is for that beat to declare the
+          // surfaces STILL on the cards, rather than relaxing the floor a third
+          // time (it has already gone 0.87 -> 0.50 -> 0.30).
+          contacts: isV2 ? g.contacts : undefined,
           pressurePts: isV2 && g.pressure ? g.pressure.map((p) => ({ t: tStart + (p.at ?? 0) * dur, v: p.v ?? 0 })) : [],
         })
       }
@@ -462,6 +607,8 @@ export function compileLesson(lessonDef, initialDeck, { run = 0 } = {}) {
           to,
           ease,
           midBend: step.midBend ?? 3.1,
+          quatEase: step.quatEase,
+          yEase: step.yEase,
           arcLift: step.arcLift ?? 0.55,
         })
       })
@@ -480,6 +627,11 @@ export function compileLesson(lessonDef, initialDeck, { run = 0 } = {}) {
         const { by = 'card', spread, span } = step.stagger
         let count
         let kOf
+        // MEASURED, not ranked. See contactFractions above for why this exists.
+        const contactFrac =
+          by === 'contact'
+            ? contactFractions(hands, tStart, dur, new Map(arr.map((e) => [e.id, currentPoses.get(e.id)])))
+            : null
         if (by === 'packet') {
           const pk = packetIndexer(arr)
           count = pk.count
@@ -494,7 +646,9 @@ export function compileLesson(lessonDef, initialDeck, { run = 0 } = {}) {
           seen.add(e.id)
           const to = clonePose(e)
           if (typeof step.bend === 'number') to.bend = step.bend
-          const { sFrac, eFrac } = staggerWindow(kOf(e), count, spread, span)
+          const { sFrac, eFrac } = contactFrac
+            ? staggerAt(contactFrac.get(e.id) ?? 0, spread, span)
+            : staggerWindow(kOf(e), count, spread, span)
           cardTracks.get(e.id).push({
             tStart: tStart + sFrac * dur,
             tEnd: tStart + eFrac * dur,
@@ -502,7 +656,9 @@ export function compileLesson(lessonDef, initialDeck, { run = 0 } = {}) {
             to,
             ease,
             midBend: step.midBend || 0,
-            arcLift: step.arcLift || 0,
+            quatEase: step.quatEase,
+            yEase: step.yEase,
+              arcLift: step.arcLift || 0,
           })
         }
         // Anything not in the destination array holds its pose for the step.
@@ -524,7 +680,9 @@ export function compileLesson(lessonDef, initialDeck, { run = 0 } = {}) {
             to,
             ease,
             midBend: step.midBend || 0,
-            arcLift: step.arcLift || 0,
+            quatEase: step.quatEase,
+            yEase: step.yEase,
+              arcLift: step.arcLift || 0,
           })
         }
       }
@@ -577,7 +735,6 @@ export function compileLesson(lessonDef, initialDeck, { run = 0 } = {}) {
 
   for (const segs of cardTracks.values()) segs.sort((a, b) => a.tStart - b.tStart)
 
-  const hands = compileHandTracks(steps, stepMeta)
   const holds = buildHolds(gripDecls, hands, cardTracks)
   bakeHoldReleases(holds, hands, cardTracks, cursor)
   alignCardSpin(cardTracks)

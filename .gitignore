@@ -28,4 +28,5 @@ dist-ssr
 # material only, never committed. The scripts warn when their output would land
 # inside the repo; this is the second guard.
 frames/
+riffle-screenshots/
 *-compare.png
