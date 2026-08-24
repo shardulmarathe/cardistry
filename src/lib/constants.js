@@ -98,6 +98,15 @@ export const CAMERA_PRESETS = {
   // move is that the cards visibly BEND, and a bow only reads in silhouette from a
   // shallow angle.
   riffleTable: { position: [0, 2.6, 5.8], target: [0, 0.2, 0], fov: 34 },
+  // THE BRIDGE IS A PROFILE, and no table preset is one. The beat's whole subject is
+  // the arch's shape and the daylight under it: the pack's base sits at y 0.171 once
+  // it is lifted and its crown rises 0.197 above that, so the whole thing lives in
+  // 0.17..0.37 of height and about ±0.44 of length, with the hands out to ±1.0. Every
+  // table preset looks DOWN on that from 2.6-5.8 out, which flattens a semicircle
+  // into a faint curve - captured, the deepest bow this rig will hold read as a
+  // slightly bent deck. Low and close and level with the crown instead. Polar angle
+  // 79°, inside ORBIT's 21.6..84.6 band, so the user can still orbit from here.
+  riffleBridge: { position: [0, 0.8, 2.8], target: [0, 0.25, 0], fov: 34 },
 }
 
 // OrbitControls constraints so users never go under the table or behind the cards.

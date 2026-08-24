@@ -156,15 +156,24 @@ function drawBack(ctx, w, h) {
   // light lifts it into bone instead of clipping it to flat white. The mesh's
   // rounded corners (cardGeometry RADIUS) clip this canvas, so the rim narrows
   // at the corners exactly like a real rounded card.
+  // The sheen runs along the diagonal and is SYMMETRIC ABOUT THE CENTRE - bright
+  // through the middle, deeper at both ends. It used to run light at the top-left
+  // corner to dark at the bottom-right, which is the ordinary way to light a rim
+  // and put ~52/255 of difference into all four corners under a half-turn (the
+  // measurement above; once the monogram was fixed this was the entire remainder).
   const rim = ctx.createLinearGradient(0, 0, w, h)
-  rim.addColorStop(0, '#ded2b6')
-  rim.addColorStop(0.55, '#cdbd9b')
+  rim.addColorStop(0, '#ae9b7a')
+  rim.addColorStop(0.35, '#cdbd9b')
+  rim.addColorStop(0.5, '#ded2b6')
+  rim.addColorStop(0.65, '#cdbd9b')
   rim.addColorStop(1, '#ae9b7a')
   ctx.fillStyle = rim
   ctx.fillRect(0, 0, w, h)
 
   // Plum-shifted field, inset to leave the bone rim.
-  const bg = ctx.createRadialGradient(cx, cy * 0.92, 20, cx, cy, h * 0.6)
+  // Concentric on the card's own centre, not lifted off it: an inner circle at
+  // cy * 0.92 reads as a light source above, which is another up direction.
+  const bg = ctx.createRadialGradient(cx, cy, 20, cx, cy, h * 0.6)
   bg.addColorStop(0, '#93203e')
   bg.addColorStop(0.5, '#701434')
   bg.addColorStop(1, '#3c0a1d')
@@ -181,10 +190,25 @@ function drawBack(ctx, w, h) {
   ctx.save()
   ctx.strokeStyle = 'rgba(226, 178, 96, 0.14)'
   ctx.lineWidth = 1
+  // ONE family of diagonals, then the SAME family half-turned - which produces the
+  // opposing diagonal with its phase locked to the first. Drawing the two families
+  // independently (moveTo(d,0) and moveTo(d,h)) leaves their phases unrelated for
+  // any given w/h/step, so the crossing pattern interfered with its own half-turn:
+  // a faint 6/255 band along the top and bottom edges, which was the last thing
+  // left once the monogram, the rim and the field were symmetric.
   const step = 18
-  for (let d = -h; d < w + h; d += step) {
-    ctx.beginPath(); ctx.moveTo(d, 0); ctx.lineTo(d + h, h); ctx.stroke()
-    ctx.beginPath(); ctx.moveTo(d, h); ctx.lineTo(d + h, 0); ctx.stroke()
+  for (const rot of [0, Math.PI]) {
+    ctx.save()
+    ctx.translate(cx, cy)
+    ctx.rotate(rot)
+    ctx.translate(-cx, -cy)
+    for (let d = -h; d < w + h; d += step) {
+      ctx.beginPath()
+      ctx.moveTo(d, 0)
+      ctx.lineTo(d + h, h)
+      ctx.stroke()
+    }
+    ctx.restore()
   }
   ctx.restore()
 
@@ -252,37 +276,65 @@ function drawBack(ctx, w, h) {
   ctx.stroke()
   ctx.restore()
 
-  // Monogram S.
+  // MONOGRAM S, DRAWN AS TWO HALF-TURN-RELATED ARCS rather than set as type.
+  //
+  // The font's "S" was the whole asymmetry: measured against its own half-turn the
+  // finished canvas differed by a mean of 14.3/255 and every one of the six hottest
+  // 16x16 blocks sat dead centre, on the glyph, at ~155/255. An "S" LOOKS
+  // rotationally symmetric and in any real face is not - the spine's thick/thin
+  // axis and the two terminals give it an up.
+  //
+  // Setting it twice, once turned, does fix the symmetry and reads as "SS", which is
+  // not a monogram. But an S is ALREADY two arcs related by a half-turn, so drawing
+  // one arc and then the same arc rotated 180 degrees gives a real single S that is
+  // symmetric BY CONSTRUCTION. Whatever this curve is tuned to, the letter cannot
+  // acquire an up direction, so the deck cannot read upside down in one tab and
+  // right in the other (see the note over this function for why the two differ).
+  const S_SIZE = h * 0.17
+  const strokeHalf = () => {
+    ctx.beginPath()
+    // From the upper-right terminal, over the top and left, down into the centre.
+    ctx.moveTo(0.92 * S_SIZE, -0.72 * S_SIZE)
+    ctx.bezierCurveTo(
+      0.98 * S_SIZE, -1.5 * S_SIZE,
+      -1.05 * S_SIZE, -1.42 * S_SIZE,
+      0, 0,
+    )
+    ctx.stroke()
+  }
   ctx.save()
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.font = `700 ${Math.round(h * 0.34)}px ${DECO_FONT}`
-  // Soft centered drop shadow, blurred and with NO offset at all - lateral or
-  // vertical. See the symmetry note above: a 1px vertical offset is enough to make
-  // the medallion read as lit from the wrong side once the card is turned.
+  ctx.translate(cx, cy)
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  // Soft centred shadow, blurred, with no offset in any direction.
   ctx.save()
   ctx.shadowColor = 'rgba(20, 3, 6, 0.85)'
   ctx.shadowBlur = 10
-  ctx.fillStyle = 'rgba(20, 3, 6, 0.9)'
-  ctx.fillText('S', cx, cy)
+  ctx.strokeStyle = 'rgba(20, 3, 6, 0.9)'
+  ctx.lineWidth = 0.42 * S_SIZE
+  for (const rot of [0, Math.PI]) {
+    ctx.save()
+    ctx.rotate(rot)
+    strokeHalf()
+    ctx.restore()
+  }
   ctx.restore()
-  // Gold gradient face, SYMMETRIC ABOUT THE CENTRE. It used to run light at the
-  // top to dark at the bottom, which is the ordinary way to bevel a glyph and the
-  // reason the back was not actually 180°-symmetric: spun half a turn the S was
-  // lit from below and read as reversed. A centre-bright ramp keeps the polished
-  // metal without encoding an up direction, so the same three colours now survive
-  // the turn. Same palette, mirrored.
-  const sGrad = ctx.createLinearGradient(0, cy - h * 0.18, 0, cy + h * 0.18)
+  // Gold face. The gradient is symmetric about the centre, so the half-turned arc
+  // is an exact image of the first rather than the same lighting seen upside down.
+  const sGrad = ctx.createLinearGradient(0, -S_SIZE * 1.4, 0, S_SIZE * 1.4)
   sGrad.addColorStop(0, '#b8801f')
   sGrad.addColorStop(0.3, COLORS.goldBright)
   sGrad.addColorStop(0.5, '#ffe0a4')
   sGrad.addColorStop(0.7, COLORS.goldBright)
   sGrad.addColorStop(1, '#b8801f')
-  ctx.fillStyle = sGrad
-  ctx.fillText('S', cx, cy)
-  ctx.lineWidth = 1.5
-  ctx.strokeStyle = 'rgba(255, 226, 170, 0.6)'
-  ctx.strokeText('S', cx, cy)
+  ctx.strokeStyle = sGrad
+  ctx.lineWidth = 0.34 * S_SIZE
+  for (const rot of [0, Math.PI]) {
+    ctx.save()
+    ctx.rotate(rot)
+    strokeHalf()
+    ctx.restore()
+  }
   ctx.restore()
 
   ctx.restore() // end field clip

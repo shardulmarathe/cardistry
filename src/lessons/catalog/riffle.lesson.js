@@ -115,18 +115,61 @@ export const riffleLesson = {
     // clearly reads as a bow rather than removing it. 26 card thicknesses is 7.9mm of
     // arch on a 63mm card.
     const BEND = 0.8
-    // How hard the finished pack is bowed for the bridge. Swept below; a bridge is a
-    // more pronounced arch than the opening bend because it is the whole deck rather
-    // than a half, and the whole point of the beat is that you can see it.
-    const ARCH = 1
-    // THE PACK COMES UP OFF THE FELT as it is squeezed, and this is not decoration.
+    // HOW HARD THE PACK IS BOWED, and it is swept against the gates rather than
+    // dialled to taste. Reference footage of the in-hands bridge shows something very
+    // close to a SEMICIRCLE with clear air under it, so this wants to be as deep as
+    // the geometry allows. Measured (clipping pairs / top-card swaps, budgets 480/125):
+    //
+    //   1.0   471 / 0      <- was this
+    //   1.6   471 / 0
+    //   2.2   471 / 0      <- this
+    //   2.8   471 / 168    swaps over budget
+    //   3.4   471 / 138    ditto
+    //
+    // 2.2 deepens the bow to 0.197 against 0.095 at 1.0 - the rise is
+    // (1 - cos(b * CARD_H / 2)) / b - which is about 70% of the 0.28 a true
+    // semicircle over a card's length would give, and it is where the top-card swap
+    // gate stops it: past 2.2 the arch is steep enough that overlapping cards start
+    // trading which one is in front.
+    //
+    // THE SIGN IS POSITIVE, SO THE PACK CUPS DOWNWARD, and that is a limitation
+    // rather than a choice. Reference footage of the in-hands bridge has the crown
+    // UP, held down at both ends, with daylight under it - and a negative bend does
+    // exactly that shape. It cannot be used, because these hands are `tableTop`
+    // holds: a whole hand lying ON the pack's top face across its span, with the
+    // felt taking the reaction. A crown that rises has nowhere to go but into them.
+    // Measured, and it is not a matter of degree - even a token upward bow buries
+    // them and it gets monotonically worse:
+    //
+    //   arch  -0.2  0.0086 deep, 52 failures      arch  -1.0  0.0759, 83
+    //   arch  -0.4  0.0163 deep, 69 failures      arch  -2.2  0.0837, 89
+    //   arch  -0.6  0.0241 deep, 74 failures      arch  -2.8  0.0907, 91
+    //
+    // Nor is it fixed by moving the hands: swept out to 0.36 and down to -0.10H it is
+    // still 43 failures. A crown-up bridge needs the hold the footage actually shows -
+    // thumbs pressing DOWN on the crown, four fingers curled UNDER the two ends -
+    // which is `bridgeCage`/`cageGrip`, the one grip in the vocabulary that leaves the
+    // middle of the pack free. Dropped onto this station as-is it measures 0.0759-
+    // 0.0907, because a cage has to be PLACED (see `gripProbe.mjs`; every other grip
+    // in this catalog is swept, not positioned by hand). That sweep is the next piece
+    // of work on this lesson, and it is the whole of what stands between this and the
+    // reference.
+    const ARCH = 2.2
+    // AND HOW FAR THE WHOLE PACK COMES UP OFF THE FELT, which is what puts daylight
+    // under the arch - the thing that makes the reference frames read as a bridge
+    // rather than as a bent deck. Swept: 0.09H and 0.16H are clean, 0.24H measures
+    // 0.0419 of finger in card and 0.32H measures 0.0759, because past that the hands
+    // are simply left behind by the pack they are supposed to be holding. 0.16H is
+    // the deepest that keeps them on it, and `BLIFT` below rises to match.
+    //
+    // It is also not decoration for the metrics.
     // A bend pivots about the card's CENTRE, so arching in place moves the pack's
     // ends and leaves its middle exactly where it was - and the middle is under the
     // hands. The inert-contact gate counts precisely that (a card standing still
     // under a moving hand): 238 samples in this one beat, 10% of the lesson against
     // a 4% budget. Lifting the whole pack means every card moves while a hand is on
     // it, which is also what squeezing a pack off a table does.
-    const ARCH_LIFT = CARD_H * 0.09
+    const ARCH_LIFT = CARD_H * 0.16
     // HOW THE HANDS GET OUT OF THE WAY as the arch collapses, and LIFT is the one
     // that matters. The pack's ENDS are what the arch raises and what the fold
     // brings back down, and the hands are ON those ends - so a hand that only slides
@@ -143,7 +186,8 @@ export const riffleLesson = {
     // modest outward opening is kept so the pack is visibly released rather than
     // followed down.
     const BG = 0.25
-    const BLIFT = 0.1
+    const BLIFT = 0.16
+    const BOUT = 0
     const HOLD = 0.3
     const OUT = 0.08
     const LIFT = 0.16
@@ -258,6 +302,7 @@ export const riffleLesson = {
       wristBack: 0.48,
       wristOut: 0.34,
     })
+
 
     // A GRIPPED PACKET GOES WHERE THE HAND GOES, so every packet motion below is
     // produced by moving the HAND and the authored layouts only have to agree with
@@ -722,6 +767,9 @@ export const riffleLesson = {
         label: 'Cup both ends and bow it into a bridge',
         duration: 900,
         ease: 'easeOutCubic',
+        // Down to the arch's own level - see `riffleBridge` in constants.js. The
+        // shape IS the beat, and a table preset looks down on it.
+        camera: 'riffleBridge',
         to: (dk) => landscapeStackLayout(dk, { baseY: TABLE_Y + ARCH_LIFT, bend: ARCH }),
         // NO GRIP, and that is deliberate rather than lazy. `telescope` and `push`
         // before it declare none either: the fingers press the pack and the pack's
@@ -741,8 +789,8 @@ export const riffleLesson = {
         // INTO each other, against this lesson's hard-won 6.4mm clear. So the hands
         // only rise with the arch they are holding.
         hands: {
-          left: [{ at: 1, pose: squareGrip.pose, anchor: sqBy(0, CARD_H * BLIFT), ease: 'easeOutCubic' }],
-          right: [{ at: 1, pose: squareGrip.pose, anchor: sqBy(0, CARD_H * BLIFT), ease: 'easeOutCubic' }],
+          left: [{ at: 1, pose: squareGrip.pose, anchor: sqBy(BOUT, CARD_H * BLIFT), ease: 'easeOutCubic' }],
+          right: [{ at: 1, pose: squareGrip.pose, anchor: sqBy(BOUT, CARD_H * BLIFT), ease: 'easeOutCubic' }],
         },
         annotations: [{ text: 'Fingers under the ends, thumbs on top — squeeze it into an arch', at: NOTE, appearAt: 0.25 }],
       },
