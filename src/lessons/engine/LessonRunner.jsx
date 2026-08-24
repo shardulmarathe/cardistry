@@ -26,6 +26,32 @@ import { risingSequences, intactNeighbours } from './mixing'
 // That's what makes it safe to hit mid-shuffle.
 const FLIP_Y = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI)
 
+// A HALF-TURN ABOUT THE CARD'S OWN NORMAL, applied to every card Learn renders, so
+// that a face-down card here sits the same way up as one in the visualizer.
+//
+// THE TWO TABS DISAGREE, and both are defensible. The visualizer composes its
+// face-down orientation as `faceQuat(true)` turned about the card's LONG axis,
+// because that is its flip animation - one edge lifts and the card lays over. Every
+// lesson layout uses `faceQuat(false)` directly. Measured, those differ by exactly
+// 180 degrees about the card's normal: an in-plane half-turn. Same footprint, same
+// face showing, artwork upside down - which is why the back read wrong in Learn and
+// right in the visualizer, twice reported.
+//
+// WHY THIS IS THE FIX RATHER THAN THE ART. The alternative was to make the back
+// design 180-degree symmetric so the difference cannot show. That is real work on
+// the drawing (a typeset "S" is not symmetric however it looks) and it buys nothing
+// except immunity to a disagreement that should not exist. `faceQuat` itself cannot
+// change: every grip in the catalog is swept against its axis mapping, so an extra
+// half-turn there would move which world side every '+x' contact lands on.
+//
+// AND IT IS FREE. A half-turn about the normal maps a RECTANGLE onto itself, so the
+// card occupies the identical volume - and it maps a BOWED card onto itself too,
+// because the bend shader displaces by (1 - cos(y*b))/b along the normal, which is
+// even in y. So no hand-versus-card, card-versus-card or mixing measurement changes,
+// and none of them is computed here anyway: `verify` scores the COMPILED TRACK, and
+// this is the renderer.
+const SPIN = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI)
+
 // Idle ease rate (per second, exponential). Entering Learn from a fan or a
 // spiral has to LAND the deck in the middle rather than teleport it - and the
 // compiler assumes its first frame is a squared stack, so this ease is also what
@@ -69,6 +95,18 @@ export default function LessonRunner() {
   const lastSeekRef = useRef(0)
   const scratchQuat = useRef(new THREE.Quaternion()).current
 
+  // The authored quaternion is always FACE-DOWN (compileLesson normalizes, and the
+  // idle stack is built face-down below), so turning a card over is a half-turn
+  // about its long axis and matching the visualizer is a half-turn about its normal.
+  // Both post-multiply, and the order matters only in that FLIP_Y comes first:
+  // authored * FLIP_Y * SPIN is a half-turn about the SHORT axis, which is exactly
+  // the visualizer's face-up pose.
+  const renderQuat = (authored, faceUp, out) => {
+    out.copy(authored)
+    if (faceUp) out.multiply(FLIP_Y)
+    return out.multiply(SPIN)
+  }
+
   // Which cards are showing their face. Read every frame by the flip override,
   // so it's a ref rather than a selector.
   const faceUpRef = useRef(new Set())
@@ -94,7 +132,15 @@ export default function LessonRunner() {
     () =>
       activeLessonId
         ? null
-        : { poses: stackLayout(deck), left: idleHand('left'), right: idleHand('right') },
+        : {
+            // FACE-DOWN, always, and the faces come back through `renderQuat` -
+            // the same path a lesson takes. Built from `deck` honouring isFaceUp it
+            // would need its own orientation convention, and one of the two would
+            // drift.
+            poses: stackLayout(deck.map((c) => (c.isFaceUp ? { ...c, isFaceUp: false } : c))),
+            left: idleHand('left'),
+            right: idleHand('right'),
+          },
     [activeLessonId, deck],
   )
 
@@ -138,12 +184,13 @@ export default function LessonRunner() {
   useFrame((_, delta) => {
     if (idle) {
       const k = 1 - Math.exp(-IDLE_EASE * delta)
+      const faceUpIdle = faceUpRef.current
       for (const pose of idle.poses) {
         const handle = getCard(pose.id)
         if (!handle) continue
         const g = handle.mesh
         g.position.lerp(pose.pos, k)
-        g.quaternion.slerp(pose.quat, k)
+        g.quaternion.slerp(renderQuat(pose.quat, faceUpIdle.has(pose.id), scratchQuat), k)
         handle.setTransform(null, null, 0)
       }
       getHand('left')?.setPose(idle.left)
@@ -192,9 +239,7 @@ export default function LessonRunner() {
     for (const [id, pose] of scene.cards) {
       const handle = getCard(id)
       if (!handle) continue
-      let quat = pose.quat
-      if (faceUp.has(id)) quat = scratchQuat.copy(pose.quat).multiply(FLIP_Y)
-      handle.setTransform(pose.pos, quat, pose.bend)
+      handle.setTransform(pose.pos, renderQuat(pose.quat, faceUp.has(id), scratchQuat), pose.bend)
     }
 
     // Drive the procedural hands from the sampled hand poses (null hides them
